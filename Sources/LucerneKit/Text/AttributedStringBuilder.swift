@@ -105,7 +105,8 @@ public enum AttributedStringBuilder {
     private static func tableBlock(for paragraph: Paragraph, tables: [String: NSTextTable]) -> NSTextTableBlock? {
         guard let cell = paragraph.cell, let table = tables[cell.table] else { return nil }
         return makeTableBlock(table: table, row: cell.row, column: cell.column,
-                              rowSpan: cell.rowSpan, columnSpan: cell.columnSpan)
+                              rowSpan: cell.rowSpan, columnSpan: cell.columnSpan,
+                              widthPercent: cell.width.map { CGFloat($0) })
     }
 
     /// A table with `columns` equal-width columns. Public so the editor's "Insert
@@ -116,13 +117,15 @@ public enum AttributedStringBuilder {
         return table
     }
 
-    /// A bordered, padded cell block for `table`, sized to an equal share of the width.
+    /// A bordered, padded cell block for `table`. The column width is `widthPercent`
+    /// (percent of the table) when given, else an equal share.
     public static func makeTableBlock(table: NSTextTable, row: Int, column: Int,
-                                      rowSpan: Int, columnSpan: Int) -> NSTextTableBlock {
+                                      rowSpan: Int, columnSpan: Int,
+                                      widthPercent: CGFloat? = nil) -> NSTextTableBlock {
         let block = NSTextTableBlock(table: table, startingRow: row, rowSpan: max(1, rowSpan),
                                      startingColumn: column, columnSpan: max(1, columnSpan))
-        block.setValue(100.0 / CGFloat(max(1, table.numberOfColumns)),
-                       type: .percentageValueType, for: .width)
+        let percent = widthPercent ?? (100.0 / CGFloat(max(1, table.numberOfColumns)))
+        block.setValue(percent, type: .percentageValueType, for: .width)
         block.setBorderColor(NSColor(calibratedWhite: 0.6, alpha: 1))
         block.setWidth(1, type: .absoluteValueType, for: .border)
         block.setWidth(5, type: .absoluteValueType, for: .padding)

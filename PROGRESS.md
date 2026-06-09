@@ -124,7 +124,12 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   use the Body paragraph style's empty tab array, not NSParagraphStyle's defaults)
 - [x] A table at the **very start of the document** now keeps an empty line above it
   so you can place the caret and type above the table
-- [ ] Table column resize + clean splitting across a page boundary — next
+- [x] **Table column resize** — drag the column dividers on the ruler when the caret
+  is in a table (Format ▸ Table ▸ Distribute Columns Evenly to reset). Widths persist
+  per column (`cell.width`)
+- [~] Tables **split across page boundaries** via TextKit row-breaking + the existing
+  overflow pagination (multi-row tables flow to the next page; a single row taller
+  than a page can't split). Needs on-device QA to confirm rows don't clip
 
 ## On-device feedback (round 8)
 - [x] **Tables** (Insert ▸ Table…) via `NSTextTable` — a rows×columns grid of

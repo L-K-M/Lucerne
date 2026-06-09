@@ -57,18 +57,18 @@ learned along the way, is below, roughly in priority order.
 
 ### Table polish · ~1–3 days
 
-The v1 tables (above) cover create + edit + round-trip; **row/column structure
-edits** (insert/delete row & column, rebuilding and renumbering the grid) and the
-**context menu** are now done too. Remaining:
+The v1 tables (above) cover create + edit + round-trip. **Row/column structure
+edits**, the **context menu**, and **column resize** (drag the dividers on the
+ruler; widths persist as `cell.width`) are now done too. Remaining:
 
 - **Cell navigation** — Tab / Shift-Tab to the next/previous cell, arrows across cell
   boundaries (override `insertTab`/`insertBacktab` in the page text view to move the
   caret to the adjacent cell's range).
 - **Merge cells** — the model already has `rowSpan`/`columnSpan`; wire up a command.
-- **Column resize** — drag column dividers (the ruler could grow column markers);
-  store per-column widths on the table.
-- **Robustness** — a tall table splitting cleanly across a page boundary, and a
-  Markdown rendering of tables in `content.md` (today each cell is its own block).
+- **Page-boundary splitting** — multi-row tables already flow to the next page via
+  TextKit row-breaking + overflow pagination; needs on-device QA to confirm rows
+  don't clip, and a single row taller than a page still can't split.
+- **Markdown** rendering of tables in `content.md` (today each cell is its own block).
 
 ### Editable header/footer click-zones · ~3–5 days (almost all UI)
 

@@ -224,6 +224,22 @@ final class TableRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded.body.first?.cell?.column, 0)
         XCTAssertEqual(decoded.body.first?.cell?.rowSpan, 1)
     }
+
+    func testColumnWidthsSurviveTextBridge() {
+        func cell(_ r: Int, _ c: Int, _ width: Double) -> Paragraph {
+            Paragraph(id: "c\(r)\(c)", style: "body",
+                      cell: TableCellModel(table: "t1", row: r, column: c, width: width), runs: [Run(text: "x")])
+        }
+        // Two columns split 70% / 30%.
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [cell(0, 0, 70), cell(0, 1, 30), cell(1, 0, 70), cell(1, 1, 30)], objects: [])
+        let attributed = AttributedStringBuilder.attributedString(for: model)
+        let restored = AttributedStringReader.paragraphs(from: attributed, styles: model.styles)
+        let cells = restored.compactMap { $0.cell }
+        XCTAssertTrue(cells.filter { $0.column == 0 }.allSatisfy { abs(($0.width ?? 0) - 70) < 0.5 })
+        XCTAssertTrue(cells.filter { $0.column == 1 }.allSatisfy { abs(($0.width ?? 0) - 30) < 0.5 })
+    }
 }
 
 final class FurnitureModelTests: XCTestCase {

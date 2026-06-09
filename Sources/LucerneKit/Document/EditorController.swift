@@ -832,6 +832,7 @@ public final class EditorController: NSObject {
         var rows: Int
         var columns: Int
         var cells: [[NSAttributedString]]  // per-cell content (without the terminating newline)
+        var columnWidths: [Double]         // per-column width, percent of the table
     }
 
     /// Reads a table's grid out of the storage as a rectangular array of cell content
@@ -839,6 +840,7 @@ public final class EditorController: NSObject {
     private func parseTable(containing table: NSTextTable) -> ParsedTable? {
         let ns = textStorage.string as NSString
         var contentByCell: [String: NSAttributedString] = [:]
+        var widthByColumn: [Int: Double] = [:]
         var maxRow = 0, maxColumn = 0
         var rangeStart = -1, rangeEnd = -1
         var location = 0
@@ -856,6 +858,11 @@ public final class EditorController: NSObject {
                     contentByCell[key] = textStorage.attributedSubstring(
                         from: NSRange(location: start, length: contentsEnd - start))
                 }
+                if widthByColumn[block.startingColumn] == nil,
+                   block.valueType(for: .width) == .percentageValueType {
+                    let w = Double(block.value(for: .width))
+                    if w > 0 { widthByColumn[block.startingColumn] = w }
+                }
                 maxRow = max(maxRow, block.startingRow)
                 maxColumn = max(maxColumn, block.startingColumn)
             } else if rangeStart >= 0 {
@@ -869,8 +876,9 @@ public final class EditorController: NSObject {
         let grid = (0 ..< rows).map { r in
             (0 ..< columns).map { c in contentByCell["\(r),\(c)"] ?? NSAttributedString(string: "") }
         }
+        let widths = (0 ..< columns).map { widthByColumn[$0] ?? (100.0 / Double(columns)) }
         return ParsedTable(range: NSRange(location: rangeStart, length: rangeEnd - rangeStart),
-                           rows: rows, columns: columns, cells: grid)
+                           rows: rows, columns: columns, cells: grid, columnWidths: widths)
     }
 
     /// Find the caret's table, apply `transform` to a mutable grid (returning the new
@@ -885,8 +893,11 @@ public final class EditorController: NSObject {
         let caretColumn = min(block.startingColumn, parsed.columns - 1)
         var grid = parsed.cells
         guard let target = transform(&grid, caretRow, caretColumn) else { return }
-        let columns = grid.first?.count ?? 0
-        let rebuilt = rebuildTableAttributed(grid: grid, columns: columns)
+        // Preserve column widths on row edits (column count unchanged); reset to equal
+        // when columns were added or removed.
+        let newColumns = grid.first?.count ?? 0
+        let widths = newColumns == parsed.columns ? parsed.columnWidths : nil
+        let rebuilt = rebuildTableAttributed(grid: grid, columnWidths: widths)
         withUndo("Edit Table") {
             storage.replaceCharacters(in: parsed.range, with: rebuilt)
             let offset = parsed.range.location + cellStartOffset(row: target.0, column: target.1, grid: grid)
@@ -895,18 +906,54 @@ public final class EditorController: NSObject {
     }
 
     /// Rebuilds a table's attributed text from a grid, stamping freshly-numbered cell
-    /// blocks (so inserted/deleted rows and columns renumber correctly).
-    private func rebuildTableAttributed(grid: [[NSAttributedString]], columns: Int) -> NSAttributedString {
+    /// blocks (so inserted/deleted rows and columns renumber correctly). `columnWidths`
+    /// are percentages of the table; nil gives equal columns.
+    private func rebuildTableAttributed(grid: [[NSAttributedString]], columnWidths: [Double]?) -> NSAttributedString {
+        let columns = grid.first?.count ?? 0
         let table = AttributedStringBuilder.makeTextTable(columns: columns)
         let result = NSMutableAttributedString()
         for (r, row) in grid.enumerated() {
             for (c, content) in row.enumerated() {
+                let widthPercent = (columnWidths != nil && c < columnWidths!.count)
+                    ? CGFloat(columnWidths![c]) : nil
                 let block = AttributedStringBuilder.makeTableBlock(
-                    table: table, row: r, column: c, rowSpan: 1, columnSpan: 1)
+                    table: table, row: r, column: c, rowSpan: 1, columnSpan: 1, widthPercent: widthPercent)
                 result.append(buildCell(content: content, block: block))
             }
         }
         return result
+    }
+
+    // MARK: - Table column widths (resize)
+
+    /// The caret's table's column widths as percentages, or nil if not in a table.
+    /// Used by the ruler to draw and drag column dividers.
+    public func currentTableColumnWidths() -> [Double]? {
+        guard let tv = activeTextView,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table) else { return nil }
+        return parsed.columnWidths
+    }
+
+    /// Sets the caret's table's column widths (percentages) and rebuilds it.
+    public func setCurrentTableColumnWidths(_ widths: [Double]) {
+        guard let tv = formattingTextView(), let storage = tv.textStorage,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table),
+              widths.count == parsed.columns else { return }
+        let caret = tv.selectedRange().location
+        let rebuilt = rebuildTableAttributed(grid: parsed.cells, columnWidths: widths)
+        withUndo("Resize Column") {
+            storage.replaceCharacters(in: parsed.range, with: rebuilt)
+            tv.setSelectedRange(NSRange(location: min(caret, (storage.string as NSString).length), length: 0))
+        }
+    }
+
+    /// Resets the caret's table to equal column widths.
+    public func distributeTableColumnsEvenly() {
+        guard let block = tableBlock(atCharacterIndex: activeTextView?.selectedRange().location ?? 0),
+              let parsed = parseTable(containing: block.table), parsed.columns > 0 else { return }
+        setCurrentTableColumnWidths(Array(repeating: 100.0 / Double(parsed.columns), count: parsed.columns))
     }
 
     /// A cell = its content plus a terminating newline, with `block` stamped onto

@@ -287,6 +287,7 @@ and inline/paragraph formatting are expressed exactly as for any paragraph (§6.
 | `column` | integer | REQUIRED | — | 0-based column of the cell. |
 | `rowSpan` | integer | optional | `1` | Number of rows the cell spans. |
 | `columnSpan` | integer | optional | `1` | Number of columns the cell spans. |
+| `width` | number | optional | equal | The cell's column width as a percent of the table; cells in a column share it. Absent ⇒ equal columns. |
 
 The table's **column count is derived** as the maximum `column + columnSpan` over its
 cells; it is not stored separately. Cells **SHOULD** appear in the body in row-major
@@ -493,7 +494,8 @@ prose in §7 is authoritative over the schema here).
         "row": { "type": "integer", "minimum": 0 },
         "column": { "type": "integer", "minimum": 0 },
         "rowSpan": { "type": "integer", "minimum": 1 },
-        "columnSpan": { "type": "integer", "minimum": 1 }
+        "columnSpan": { "type": "integer", "minimum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
     "indent": {

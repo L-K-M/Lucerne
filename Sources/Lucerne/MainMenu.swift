@@ -165,6 +165,8 @@ enum MainMenu {
             tableMenu.addItem(.separator())
             add(tableMenu, "Delete Row", "lucerneDeleteRow:")
             add(tableMenu, "Delete Column", "lucerneDeleteColumn:")
+            tableMenu.addItem(.separator())
+            add(tableMenu, "Distribute Columns Evenly", "lucerneDistributeColumns:")
             table.submenu = tableMenu
             menu.addItem(table)
         }

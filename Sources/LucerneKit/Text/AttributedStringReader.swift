@@ -90,8 +90,11 @@ public enum AttributedStringReader {
             id = "table-\(tableIDs.count + 1)"
             tableIDs[key] = id
         }
+        let widthValue = block.value(for: .width)
+        let width: Double? = block.valueType(for: .width) == .percentageValueType && widthValue > 0
+            ? Double(widthValue) : nil
         return TableCellModel(table: id, row: block.startingRow, column: block.startingColumn,
-                              rowSpan: block.rowSpan, columnSpan: block.columnSpan)
+                              rowSpan: block.rowSpan, columnSpan: block.columnSpan, width: width)
     }
 
     private static func emptyParagraph(role: String,

@@ -211,16 +211,19 @@ public struct TableCellModel: Codable, Equatable {
     public var column: Int                   // 0-based
     public var rowSpan: Int
     public var columnSpan: Int
+    public var width: Double?                // this column's width, percent of the table (nil = equal share)
 
-    public init(table: String, row: Int, column: Int, rowSpan: Int = 1, columnSpan: Int = 1) {
+    public init(table: String, row: Int, column: Int,
+                rowSpan: Int = 1, columnSpan: Int = 1, width: Double? = nil) {
         self.table = table
         self.row = row
         self.column = column
         self.rowSpan = rowSpan
         self.columnSpan = columnSpan
+        self.width = width
     }
 
-    // Tolerate files that omit the defaulted spans.
+    // Tolerate files that omit the defaulted spans / width.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         table = try c.decode(String.self, forKey: .table)
@@ -228,6 +231,7 @@ public struct TableCellModel: Codable, Equatable {
         column = try c.decode(Int.self, forKey: .column)
         rowSpan = try c.decodeIfPresent(Int.self, forKey: .rowSpan) ?? 1
         columnSpan = try c.decodeIfPresent(Int.self, forKey: .columnSpan) ?? 1
+        width = try c.decodeIfPresent(Double.self, forKey: .width)
     }
 }
 

@@ -68,6 +68,7 @@ public final class PageTextView: NSTextView {
         menu.addItem(item("Insert Column After", #selector(DocumentWindowController.lucerneInsertColumnAfter(_:))))
         menu.addItem(item("Delete Row", #selector(DocumentWindowController.lucerneDeleteRow(_:))))
         menu.addItem(item("Delete Column", #selector(DocumentWindowController.lucerneDeleteColumn(_:))))
+        menu.addItem(item("Distribute Columns Evenly", #selector(DocumentWindowController.lucerneDistributeColumns(_:))))
     }
 
     // MARK: - Image drag & drop

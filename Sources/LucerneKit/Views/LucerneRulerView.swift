@@ -30,7 +30,12 @@ public final class LucerneRulerView: NSView {
     private var rightIndent: CGFloat = 0
     private var tabs: [(loc: CGFloat, kind: TabStopModel.Kind)] = []
 
-    private enum Marker: Equatable { case none, left, firstLine, right, tab(Int) }
+    // When the caret is in a table, the ruler switches to "column mode": it shows
+    // draggable dividers for the table's column widths (normalised fractions summing
+    // to 1) instead of the tab/indent markers. nil means not in a table.
+    private var columnFractions: [CGFloat]?
+
+    private enum Marker: Equatable { case none, left, firstLine, right, tab(Int), column(Int) }
     private var dragging: Marker = .none
     private var dragRemovedTab = false
 
@@ -83,7 +88,14 @@ public final class LucerneRulerView: NSView {
     }
 
     public func refresh() {
-        guard let ps = editor?.selectedParagraphStyle() else { return }
+        // Column mode when the caret is in a table with at least two columns.
+        if let widths = editor?.currentTableColumnWidths(), widths.count >= 2 {
+            let total = widths.reduce(0, +)
+            columnFractions = total > 0 ? widths.map { CGFloat($0 / total) } : nil
+        } else {
+            columnFractions = nil
+        }
+        guard let ps = editor?.selectedParagraphStyle() else { needsDisplay = true; return }
         leftIndent = ps.headIndent
         firstLineExtra = ps.firstLineHeadIndent - ps.headIndent
         rightIndent = ps.tailIndent < 0 ? -ps.tailIndent : 0
@@ -150,8 +162,36 @@ public final class LucerneRulerView: NSView {
         border.line(to: CGPoint(x: bounds.width, y: 0.5))
         border.stroke()
 
-        drawIndentMarkers(height: h)
-        drawTabMarkers(height: h)
+        if columnFractions != nil {
+            drawColumnDividers(height: h)   // table mode: column dividers only
+        } else {
+            drawIndentMarkers(height: h)
+            drawTabMarkers(height: h)
+        }
+    }
+
+    private func drawColumnDividers(height h: CGFloat) {
+        guard let fractions = columnFractions, fractions.count >= 2 else { return }
+        NSColor.controlAccentColor.setStroke()
+        NSColor.controlAccentColor.setFill()
+        var cumulative: CGFloat = 0
+        for k in 0 ..< (fractions.count - 1) {
+            cumulative += fractions[k]
+            let x = sx(marginLeft + cumulative * contentWidth)
+            let line = NSBezierPath()
+            line.move(to: CGPoint(x: x, y: 2))
+            line.line(to: CGPoint(x: x, y: h - 2))
+            line.lineWidth = 1
+            line.stroke()
+            let s: CGFloat = 4                  // a small diamond handle at mid-height
+            let handle = NSBezierPath()
+            handle.move(to: CGPoint(x: x, y: h / 2 - s))
+            handle.line(to: CGPoint(x: x + s, y: h / 2))
+            handle.line(to: CGPoint(x: x, y: h / 2 + s))
+            handle.line(to: CGPoint(x: x - s, y: h / 2))
+            handle.close()
+            handle.fill()
+        }
     }
 
     private func drawIndentMarkers(height h: CGFloat) {
@@ -204,6 +244,11 @@ public final class LucerneRulerView: NSView {
         let p = convert(event.locationInWindow, from: nil)
         dragRemovedTab = false
 
+        if columnFractions != nil {
+            dragging = columnMarker(at: p)   // table mode: drag column dividers only
+            return
+        }
+
         if event.clickCount == 2, let i = tabIndex(near: p.x) {
             cycleTabKind(at: i)
             commitTabs()
@@ -237,6 +282,16 @@ public final class LucerneRulerView: NSView {
             guard tabs.indices.contains(i) else { return }
             dragRemovedTab = p.y < -hitTolerance || p.y > bounds.height + hitTolerance
             tabs[i].loc = clampTabLocation(docPoint)
+        case .column(let k):
+            guard var fractions = columnFractions, k + 1 < fractions.count, contentWidth > 0 else { return }
+            let boundary = clamp((documentX(p.x) - marginLeft) / contentWidth, 0, 1)
+            let leftEdge = fractions[0 ..< k].reduce(0, +)
+            let combined = fractions[k] + fractions[k + 1]
+            let minFraction: CGFloat = 0.05
+            let newK = clamp(boundary - leftEdge, minFraction, combined - minFraction)
+            fractions[k] = newK
+            fractions[k + 1] = combined - newK
+            columnFractions = fractions
         }
         needsDisplay = true
     }
@@ -251,6 +306,10 @@ public final class LucerneRulerView: NSView {
             if dragRemovedTab, tabs.indices.contains(i) { tabs.remove(at: i) }
             tabs.sort { $0.loc < $1.loc }
             commitTabs()
+        case .column:
+            if let fractions = columnFractions {
+                editor?.setCurrentTableColumnWidths(fractions.map { Double($0 * 100) })
+            }
         }
         dragging = .none
     }
@@ -276,12 +335,15 @@ public final class LucerneRulerView: NSView {
 
     private func help(at p: CGPoint) -> String? {
         switch marker(at: p) {
+        case .column:
+            return "Column divider — drag to resize the table's columns"
         case .tab:
             return "Tab stop — double-click to change type (left/center/right/decimal), "
                 + "drag to move, or drag off the ruler to delete"
         case .left, .firstLine, .right:
             return "Indent marker — drag to set the paragraph's indent"
         case .none:
+            if columnFractions != nil { return nil }   // table mode: no tab-adding
             if p.x >= sx(marginLeft), p.x <= sx(contentRightX) {
                 return "Click to add a tab stop"
             }
@@ -291,7 +353,18 @@ public final class LucerneRulerView: NSView {
 
     // MARK: - Hit testing (screen space)
 
+    private func columnMarker(at p: CGPoint) -> Marker {
+        guard let fractions = columnFractions, fractions.count >= 2 else { return .none }
+        var cumulative: CGFloat = 0
+        for k in 0 ..< (fractions.count - 1) {
+            cumulative += fractions[k]
+            if abs(p.x - sx(marginLeft + cumulative * contentWidth)) <= hitTolerance { return .column(k) }
+        }
+        return .none
+    }
+
     private func marker(at p: CGPoint) -> Marker {
+        if columnFractions != nil { return columnMarker(at: p) }
         if p.y > bounds.height / 2 {
             if abs(p.x - sx(marginLeft + leftIndent + firstLineExtra)) <= hitTolerance { return .firstLine }
         } else {
