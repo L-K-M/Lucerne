@@ -17,14 +17,13 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     public init(editor: EditorController) {
         self.editor = editor
 
-        let metrics = editor.pageMetrics
-        // Wide enough for the page (plus canvas insets) AND the whole toolbar.
-        let pageFitWidth = metrics.pageSize.width + 2 * 28 + 16
         let toolbarFitWidth = toolbar.preferredContentWidth + 24
-        let initialWidth = max(pageFitWidth, toolbarFitWidth, 720)
-        let initialHeight: CGFloat = 880
+        // Size the window — and the initial zoom — to the screen and the page format,
+        // so a full page is visible at a comfortable scale (see initialLayout).
+        let layout = DocumentWindowController.initialLayout(
+            page: editor.pageMetrics.pageSize, toolbarWidth: toolbarFitWidth)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight),
+            contentRect: NSRect(origin: .zero, size: layout.size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "Lucerne"
@@ -41,6 +40,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         window.delegate = self
         buildContentView()
         wireEditor()
+        applyInitialZoom(layout.zoom)
         window.center()
 
         // Reposition the ruler when the user scrolls or zooms (the clip view's
@@ -54,6 +54,35 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    // MARK: - Initial window size + zoom
+
+    private struct InitialLayout { let size: NSSize; let zoom: CGFloat }
+
+    /// Picks a window size and starting zoom from the screen and the page format:
+    /// zoom so a whole page fits within ~90% of the screen (capped at 100%, so we
+    /// never start enlarged), then a window just big enough to show that page plus
+    /// the toolbar/ruler/status chrome — capped to the screen.
+    private static func initialLayout(page: CGSize, toolbarWidth: CGFloat) -> InitialLayout {
+        let chromeHeight: CGFloat = 96     // toolbar (44) + ruler (30) + status (22)
+        let titleBar: CGFloat = 28         // outside the content rect, but must fit on screen
+        let canvasVPad: CGFloat = 56       // PageCanvasView top + bottom inset
+        let canvasHPad: CGFloat = 56       // PageCanvasView left + right inset
+        let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
+
+        let zoomToFitHeight = (screen.height * 0.90 - titleBar - chromeHeight) / (page.height + canvasVPad)
+        let zoomToFitWidth = (screen.width * 0.92) / (page.width + canvasHPad)
+        let zoom = min(1.0, max(0.3, min(zoomToFitHeight, zoomToFitWidth)))
+
+        let height = min(screen.height * 0.95 - titleBar, (page.height + canvasVPad) * zoom + chromeHeight)
+        let width = min(screen.width * 0.95, max(toolbarWidth, (page.width + canvasHPad) * zoom))
+        return InitialLayout(size: NSSize(width: width.rounded(), height: height.rounded()), zoom: zoom)
+    }
+
+    private func applyInitialZoom(_ zoom: CGFloat) {
+        scrollView.magnification = zoom
+        statusBar.setZoom(percent: Int((zoom * 100).rounded()))
+    }
 
     // MARK: - Build
 
