@@ -37,6 +37,7 @@ yield the entries below.
   | `document.json` | **REQUIRED** | The canonical document model (§3–§7). The sole source of truth. |
   | `images/…` | optional | Image payload files referenced by placed objects (§7). |
   | `content.md` | recommended | A derived, human-readable Markdown rendering of the text (§8). Non-authoritative. |
+  | `history/…` | optional | Dated, non-authoritative Markdown backups (§2.3) for recovery. |
 
 - A reader **MUST** locate `document.json` by its exact name at the archive root.
 - A writer **MUST** write exactly one `document.json` at the archive root.
@@ -54,6 +55,22 @@ yield the entries below.
   them.
 - ZIP64 extensions are not required for conformant version-1 files and **MAY** be
   unsupported by readers. Encryption **MUST NOT** be used.
+
+### 2.3 `history/` — dated Markdown backups (optional)
+
+A writer **MAY** keep a trail of past `content.md` renderings under `history/`, so a
+person who accidentally deletes text and saves can still recover earlier prose by
+unzipping the file. This is purely additive and does not change `formatVersion`.
+
+- Each entry is named `history/<UTC-timestamp>.md`, where the timestamp is
+  `yyyyMMdd'T'HHmmss'Z'` (e.g. `history/20260609T120000Z.md`).
+- The bytes are a Markdown rendering identical in form to `content.md` (§8).
+- Like `content.md`, history entries are **non-authoritative**: readers **MUST NOT**
+  treat them as the source of truth.
+- Retention is implementation-defined. The reference writer adds a snapshot on each
+  save (skipping duplicates) and thins them with age — keeping the most recent dozen,
+  then roughly hourly for a day, daily for a month, weekly for a year, and monthly
+  beyond, capped to a maximum — so the trail stays small.
 
 ## 3. `document.json`
 

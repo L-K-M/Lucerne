@@ -78,6 +78,15 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] `.luce` package round-trip (model + image bytes + content.md present)
 - [x] `PageMetrics` exclusion-rect + clamp geometry
 
+## On-device feedback (round 6)
+- [x] Ruler now spans the full window width (fixes the side rendering discontinuity);
+  its scale is aligned to the page and tracks scroll/zoom
+- [x] Ruler hover help + tooltip (add a tab, change tab type, move/delete, indents)
+- [x] **Markdown version history** in the `.luce` (`history/`, staggered retention)
+  so accidentally-deleted text can be recovered from the package
+- [ ] Page numbers / headers-footers, table of contents, tables — design note in
+  `docs/roadmap.md` (not yet built)
+
 ## On-device feedback (round 5)
 - [x] Icons: artwork is edge-to-edge (clipped to the squircle/page; no white inset)
 - [x] Nice About box (custom standard about panel: name, version, credits, icon)

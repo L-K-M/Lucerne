@@ -19,7 +19,9 @@ my-letter.luce          (a ZIP archive)
 ├── images/              placed images as their original files
 │   ├── lake.png
 │   └── …
-└── content.md           derived Markdown copy of the text (write-only escape hatch)
+├── content.md           derived Markdown copy of the text (write-only escape hatch)
+└── history/             optional dated Markdown backups (thinned with age) for recovery
+    └── 20260609T120000Z.md
 ```
 
 Rules that keep this honest:

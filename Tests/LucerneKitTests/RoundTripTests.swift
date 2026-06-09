@@ -105,6 +105,60 @@ final class LuceArchiveRoundTripTests: XCTestCase {
         XCTAssertTrue(rawEntries.contains { $0.name == LuceArchive.markdownEntryName })
         XCTAssertTrue(rawEntries.contains { $0.name == LuceArchive.documentEntryName })
     }
+
+    func testHistorySnapshotsRoundTrip() throws {
+        let model = DefaultDocuments.empty()
+        let history = [
+            HistorySnapshot(timestamp: Date(timeIntervalSince1970: 1_700_000_000), markdown: "v1"),
+            HistorySnapshot(timestamp: Date(timeIntervalSince1970: 1_700_086_400), markdown: "v2")
+        ]
+        let packaged = try LuceArchive.write(model: model, images: [:], history: history)
+        let contents = try LuceArchive.read(packaged)
+        XCTAssertEqual(contents.history.count, 2)
+        XCTAssertEqual(contents.history.map(\.markdown).sorted(), ["v1", "v2"])
+    }
+}
+
+final class HistoryPrunerTests: XCTestCase {
+
+    func testEntryNameRoundTrips() {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let name = HistoryPruner.entryName(for: date)
+        XCTAssertTrue(name.hasPrefix("history/"))
+        XCTAssertTrue(name.hasSuffix(".md"))
+        XCTAssertEqual(HistoryPruner.timestamp(fromEntryName: name)?.timeIntervalSince1970,
+                       date.timeIntervalSince1970, accuracy: 1)
+        XCTAssertNil(HistoryPruner.timestamp(fromEntryName: "content.md"))
+    }
+
+    func testNoDuplicateSnapshotWhenTextUnchanged() {
+        let now = Date()
+        let h1 = HistoryPruner.updated(history: [], addingMarkdown: "hello", now: now)
+        XCTAssertEqual(h1.count, 1)
+        let h2 = HistoryPruner.updated(history: h1, addingMarkdown: "hello", now: now.addingTimeInterval(60))
+        XCTAssertEqual(h2.count, 1, "identical text must not add a snapshot")
+        let h3 = HistoryPruner.updated(history: h2, addingMarkdown: "hello world", now: now.addingTimeInterval(120))
+        XCTAssertEqual(h3.count, 2)
+    }
+
+    func testRetentionThinsOldSnapshotsButKeepsRecent() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let day: TimeInterval = 86_400
+        let timestamps = (0 ..< 200).map { now.addingTimeInterval(-Double($0) * day) }
+        let kept = HistoryPruner.keep(timestamps: timestamps, now: now)
+        XCTAssertLessThan(kept.count, timestamps.count, "old snapshots should be thinned")
+        XCTAssertLessThanOrEqual(kept.count, 120)
+        for recent in timestamps.prefix(12) {
+            XCTAssertTrue(kept.contains(recent), "the most recent snapshots must be kept")
+        }
+    }
+
+    func testFrequentEditsThinToAboutHourly() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let timestamps = (0 ..< 100).map { now.addingTimeInterval(-Double($0) * 900) }  // every 15 min
+        let kept = HistoryPruner.keep(timestamps: timestamps, now: now, recent: 4, maxCount: 120)
+        XCTAssertLessThan(kept.count, 40, "sub-hour edits should collapse to roughly hourly")
+    }
 }
 
 final class PageMetricsTests: XCTestCase {

@@ -93,7 +93,7 @@ Scripts/
   Info.plist          bundle metadata + .luce document type / UTI declarations
   GenerateIcons.swift renders the app + document icons from media-sources/icon.png
 media-sources/        artwork sources (icon.png, icon.af) for the icons
-docs/                 architecture, file format, building notes
+docs/                 architecture, file format, building, roadmap notes
 ```
 
 ## License

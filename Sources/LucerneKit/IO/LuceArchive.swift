@@ -12,9 +12,12 @@ public enum LuceArchive {
     public struct Contents {
         public var model: LucerneDocumentModel
         public var images: [String: Data]      // keyed by src path, e.g. "images/lake.png"
-        public init(model: LucerneDocumentModel, images: [String: Data]) {
+        public var history: [HistorySnapshot]  // dated Markdown backups under history/
+        public init(model: LucerneDocumentModel, images: [String: Data],
+                    history: [HistorySnapshot] = []) {
             self.model = model
             self.images = images
+            self.history = history
         }
     }
 
@@ -24,7 +27,8 @@ public enum LuceArchive {
 
     // MARK: - Write
 
-    public static func write(model: LucerneDocumentModel, images: [String: Data]) throws -> Data {
+    public static func write(model: LucerneDocumentModel, images: [String: Data],
+                             history: [HistorySnapshot] = []) throws -> Data {
         var entries: [MiniZip.Entry] = []
 
         let documentJSON = try DocumentCoding.encode(model)
@@ -39,6 +43,12 @@ public enum LuceArchive {
 
         let markdown = MarkdownExporter.export(model)
         entries.append(MiniZip.Entry(name: markdownEntryName, data: Data(markdown.utf8)))
+
+        // Dated Markdown backups (oldest→newest), tiny plain-text recovery trail.
+        for snapshot in history.sorted(by: { $0.timestamp < $1.timestamp }) {
+            entries.append(MiniZip.Entry(name: HistoryPruner.entryName(for: snapshot.timestamp),
+                                         data: Data(snapshot.markdown.utf8)))
+        }
 
         return MiniZip.archive(entries)
     }
@@ -57,7 +67,14 @@ public enum LuceArchive {
         for entry in entries where entry.name.hasPrefix(imagesPrefix) && !entry.name.hasSuffix("/") {
             images[entry.name] = entry.data
         }
-        return Contents(model: model, images: images)
+
+        var history: [HistorySnapshot] = []
+        for entry in entries {
+            guard let timestamp = HistoryPruner.timestamp(fromEntryName: entry.name) else { continue }
+            history.append(HistorySnapshot(timestamp: timestamp,
+                                           markdown: String(decoding: entry.data, as: UTF8.self)))
+        }
+        return Contents(model: model, images: images, history: history)
     }
 
     // MARK: -

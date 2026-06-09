@@ -15,6 +15,7 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
 
     private var pendingModel: LucerneDocumentModel = DefaultDocuments.empty()
     private var pendingImages: [String: Data] = [:]
+    private var history: [HistorySnapshot] = []
     public private(set) var editor: EditorController?
 
     public override init() {
@@ -44,13 +45,17 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     public override func data(ofType typeName: String) throws -> Data {
         let model = editor?.snapshotModel() ?? pendingModel
         let images = editor?.imageData ?? pendingImages
-        return try LuceArchive.write(model: model, images: images)
+        // Append the current text to the staggered Markdown backup trail.
+        history = HistoryPruner.updated(history: history,
+                                        addingMarkdown: MarkdownExporter.export(model), now: Date())
+        return try LuceArchive.write(model: model, images: images, history: history)
     }
 
     public override func read(from data: Data, ofType typeName: String) throws {
         let contents = try LuceArchive.read(data)
         pendingModel = contents.model
         pendingImages = contents.images
+        history = contents.history
         if let editor {
             editor.load(model: contents.model)
             editor.setImageData(contents.images)
