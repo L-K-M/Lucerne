@@ -64,7 +64,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     /// never start enlarged), then a window just big enough to show that page plus
     /// the toolbar/ruler/status chrome — capped to the screen.
     private static func initialLayout(page: CGSize, toolbarWidth: CGFloat) -> InitialLayout {
-        let chromeHeight: CGFloat = 96     // toolbar (44) + ruler (30) + status (22)
+        let chromeHeight: CGFloat = 86     // toolbar (34) + ruler (30) + status (22)
         let titleBar: CGFloat = 28         // outside the content rect, but must fit on screen
         let canvasVPad: CGFloat = 56       // PageCanvasView top + bottom inset
         let canvasHPad: CGFloat = 56       // PageCanvasView left + right inset
@@ -374,7 +374,7 @@ private final class EditorContainerView: NSView {
     private let statusBar: StatusBarView
     private let navigator: NavigatorView
     private var pageWidth: CGFloat
-    private let toolbarHeight: CGFloat = 44
+    private let toolbarHeight: CGFloat = ToolbarView.barHeight
     private let statusHeight: CGFloat = 22
     private let navigatorWidth: CGFloat = 210
     private(set) var navigatorVisible = false

@@ -110,7 +110,8 @@ is character *i* on?" use one shared primitive,
   `.lucerneStyleRole` custom attribute that carries paragraph-style roles through
   round-trips.
 - `Layout/` — `PageMetrics` (pure math), `ExclusionPathController`.
-- `Views/` — canvas, page, text view, ruler, navigator, status bar, sheets, floating image.
+- `Views/` — canvas, page, text view, ruler, navigator, status bar, sheets, floating
+  image, and the format bar's hand-drawn classic control chrome (`ClassicControls.swift`).
 - `IO/` — `MiniZip`, `.luce` archive, version history, `NSDocument` subclass, PDF/print.
 - `Document/` — `EditorController` (conductor: pagination, exclusions, furniture,
   outline, ToC) + `DocumentWindowController` (toolbar/ruler/canvas/status/navigator).
