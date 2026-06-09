@@ -22,6 +22,19 @@ public final class PageTextView: NSTextView {
         super.mouseDown(with: event)
     }
 
+    // In a table, ↑/↓ move to the cell above/below in the same column (the default
+    // moves by visual line and lands in the wrong cell). Outside a table — or at the
+    // table's top/bottom edge — fall through to normal movement.
+    public override func moveDown(_ sender: Any?) {
+        if editor?.moveCaretInTable(rowDelta: 1) == true { return }
+        super.moveDown(sender)
+    }
+
+    public override func moveUp(_ sender: Any?) {
+        if editor?.moveCaretInTable(rowDelta: -1) == true { return }
+        super.moveUp(sender)
+    }
+
     // MARK: - Context menu
 
     // Augment the standard editing menu (Cut/Copy/Paste/…) with Lucerne's formatting
@@ -62,10 +75,12 @@ public final class PageTextView: NSTextView {
     private func appendTableCommands(to menu: NSMenu) {
         guard editor?.selectionIsInTableCell == true else { return }
         menu.addItem(.separator())
+        menu.addItem(item("Select Table", #selector(DocumentWindowController.lucerneSelectTable(_:))))
         menu.addItem(item("Insert Row Above", #selector(DocumentWindowController.lucerneInsertRowAbove(_:))))
         menu.addItem(item("Insert Row Below", #selector(DocumentWindowController.lucerneInsertRowBelow(_:))))
         menu.addItem(item("Insert Column Before", #selector(DocumentWindowController.lucerneInsertColumnBefore(_:))))
         menu.addItem(item("Insert Column After", #selector(DocumentWindowController.lucerneInsertColumnAfter(_:))))
+        menu.addItem(item("Merge Cells", #selector(DocumentWindowController.lucerneMergeCells(_:))))
         menu.addItem(item("Delete Row", #selector(DocumentWindowController.lucerneDeleteRow(_:))))
         menu.addItem(item("Delete Column", #selector(DocumentWindowController.lucerneDeleteColumn(_:))))
         menu.addItem(item("Distribute Columns Evenly", #selector(DocumentWindowController.lucerneDistributeColumns(_:))))

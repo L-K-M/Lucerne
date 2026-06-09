@@ -833,13 +833,16 @@ public final class EditorController: NSObject {
         var columns: Int
         var cells: [[NSAttributedString]]  // per-cell content (without the terminating newline)
         var columnWidths: [Double]         // per-column width, percent of the table
+        var spans: [[(Int, Int)?]]         // [r][c] = (rowSpan, colSpan) for a real cell; nil = covered by a span
     }
 
     /// Reads a table's grid out of the storage as a rectangular array of cell content
-    /// (single paragraph per cell — multi-paragraph cells collapse to their first).
+    /// (single paragraph per cell — multi-paragraph cells collapse to their first),
+    /// plus each real cell's span (positions covered by a span are nil in `spans`).
     private func parseTable(containing table: NSTextTable) -> ParsedTable? {
         let ns = textStorage.string as NSString
         var contentByCell: [String: NSAttributedString] = [:]
+        var spanByCell: [String: (Int, Int)] = [:]
         var widthByColumn: [Int: Double] = [:]
         var maxRow = 0, maxColumn = 0
         var rangeStart = -1, rangeEnd = -1
@@ -857,14 +860,15 @@ public final class EditorController: NSObject {
                 if contentByCell[key] == nil {
                     contentByCell[key] = textStorage.attributedSubstring(
                         from: NSRange(location: start, length: contentsEnd - start))
+                    spanByCell[key] = (max(1, block.rowSpan), max(1, block.columnSpan))
                 }
                 if widthByColumn[block.startingColumn] == nil,
                    block.valueType(for: .width) == .percentageValueType {
                     let w = Double(block.value(for: .width))
                     if w > 0 { widthByColumn[block.startingColumn] = w }
                 }
-                maxRow = max(maxRow, block.startingRow)
-                maxColumn = max(maxColumn, block.startingColumn)
+                maxRow = max(maxRow, block.startingRow + block.rowSpan - 1)
+                maxColumn = max(maxColumn, block.startingColumn + block.columnSpan - 1)
             } else if rangeStart >= 0 {
                 break   // a table's cells are contiguous; stop at the first paragraph after it
             }
@@ -876,9 +880,14 @@ public final class EditorController: NSObject {
         let grid = (0 ..< rows).map { r in
             (0 ..< columns).map { c in contentByCell["\(r),\(c)"] ?? NSAttributedString(string: "") }
         }
+        var spans = Array(repeating: Array<(Int, Int)?>(repeating: nil, count: columns), count: rows)
+        for (key, span) in spanByCell {
+            let parts = key.split(separator: ",").compactMap { Int($0) }
+            if parts.count == 2, parts[0] < rows, parts[1] < columns { spans[parts[0]][parts[1]] = span }
+        }
         let widths = (0 ..< columns).map { widthByColumn[$0] ?? (100.0 / Double(columns)) }
         return ParsedTable(range: NSRange(location: rangeStart, length: rangeEnd - rangeStart),
-                           rows: rows, columns: columns, cells: grid, columnWidths: widths)
+                           rows: rows, columns: columns, cells: grid, columnWidths: widths, spans: spans)
     }
 
     /// Find the caret's table, apply `transform` to a mutable grid (returning the new
@@ -907,17 +916,30 @@ public final class EditorController: NSObject {
 
     /// Rebuilds a table's attributed text from a grid, stamping freshly-numbered cell
     /// blocks (so inserted/deleted rows and columns renumber correctly). `columnWidths`
-    /// are percentages of the table; nil gives equal columns.
-    private func rebuildTableAttributed(grid: [[NSAttributedString]], columnWidths: [Double]?) -> NSAttributedString {
+    /// are percentages of the table; nil gives equal columns. `spans` (when given)
+    /// carries per-cell row/column spans — a nil entry is a position covered by another
+    /// cell's span and is skipped; nil `spans` emits every position as a 1×1 cell.
+    private func rebuildTableAttributed(grid: [[NSAttributedString]], columnWidths: [Double]?,
+                                        spans: [[(Int, Int)?]]? = nil) -> NSAttributedString {
         let columns = grid.first?.count ?? 0
         let table = AttributedStringBuilder.makeTextTable(columns: columns)
         let result = NSMutableAttributedString()
         for (r, row) in grid.enumerated() {
             for (c, content) in row.enumerated() {
-                let widthPercent = (columnWidths != nil && c < columnWidths!.count)
-                    ? CGFloat(columnWidths![c]) : nil
+                let span: (rows: Int, cols: Int)
+                if let spans {
+                    guard r < spans.count, c < spans[r].count, let s = spans[r][c] else { continue }
+                    span = (max(1, s.0), max(1, s.1))
+                } else {
+                    span = (1, 1)
+                }
+                // A cell spanning multiple columns is as wide as those columns combined.
+                let widthPercent: CGFloat? = columnWidths.map { widths in
+                    CGFloat((c ..< min(c + span.cols, widths.count)).reduce(0.0) { $0 + widths[$1] })
+                }
                 let block = AttributedStringBuilder.makeTableBlock(
-                    table: table, row: r, column: c, rowSpan: 1, columnSpan: 1, widthPercent: widthPercent)
+                    table: table, row: r, column: c, rowSpan: span.rows, columnSpan: span.cols,
+                    widthPercent: widthPercent)
                 result.append(buildCell(content: content, block: block))
             }
         }
@@ -942,7 +964,8 @@ public final class EditorController: NSObject {
               let parsed = parseTable(containing: block.table),
               widths.count == parsed.columns else { return }
         let caret = tv.selectedRange().location
-        let rebuilt = rebuildTableAttributed(grid: parsed.cells, columnWidths: widths)
+        // Preserve any merged cells across a resize (column count is unchanged).
+        let rebuilt = rebuildTableAttributed(grid: parsed.cells, columnWidths: widths, spans: parsed.spans)
         withUndo("Resize Column") {
             storage.replaceCharacters(in: parsed.range, with: rebuilt)
             tv.setSelectedRange(NSRange(location: min(caret, (storage.string as NSString).length), length: 0))
@@ -954,6 +977,109 @@ public final class EditorController: NSObject {
         guard let block = tableBlock(atCharacterIndex: activeTextView?.selectedRange().location ?? 0),
               let parsed = parseTable(containing: block.table), parsed.columns > 0 else { return }
         setCurrentTableColumnWidths(Array(repeating: 100.0 / Double(parsed.columns), count: parsed.columns))
+    }
+
+    // MARK: - Table navigation & selection
+
+    /// Moves the caret `rowDelta` rows within the current table (used for ↑/↓ arrow
+    /// keys, which otherwise move by visual line and skip to the wrong cell). Returns
+    /// false when not in a table or at the table's top/bottom edge, so the caller
+    /// falls back to normal movement (and steps out of the table).
+    public func moveCaretInTable(rowDelta: Int) -> Bool {
+        guard let tv = activeTextView,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table) else { return false }
+        let targetRow = block.startingRow + rowDelta
+        guard targetRow >= 0, targetRow < parsed.rows else { return false }
+        let column = min(block.startingColumn, parsed.columns - 1)
+        let offset = parsed.range.location + cellStartOffset(row: targetRow, column: column, grid: parsed.cells)
+        revealHeading(atCharacterIndex: offset)   // places the caret (handles a table that spans pages)
+        return true
+    }
+
+    /// Selects the whole table the caret is in (so it can be deleted/cut/copied like
+    /// a single object). Returns false if the caret isn't in a table.
+    @discardableResult
+    public func selectCurrentTable() -> Bool {
+        guard let tv = activeTextView,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table) else { return false }
+        revealHeading(atCharacterIndex: parsed.range.location)   // focus the table's page
+        activeTextView?.setSelectedRange(parsed.range)
+        selectionObserver?(self)
+        return true
+    }
+
+    // MARK: - Cell merging
+
+    /// Whether the selection covers more than one cell of one table (enables "Merge Cells").
+    public var selectionSpansMultipleCells: Bool {
+        guard let tv = activeTextView, tv.selectedRange().length > 0,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let region = cellRegion(in: tv.selectedRange(), table: block.table) else { return false }
+        return region.maxRow > region.minRow || region.maxColumn > region.minColumn
+    }
+
+    /// Merges the selected rectangular block of cells into one spanning cell (their
+    /// text is concatenated into the top-left cell; the rest become covered).
+    public func mergeSelectedCells() {
+        guard let tv = formattingTextView(), let storage = tv.textStorage,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table),
+              let region = cellRegion(in: tv.selectedRange(), table: block.table) else { return }
+        let minRow = max(0, region.minRow), minCol = max(0, region.minColumn)
+        let maxRow = min(parsed.rows - 1, region.maxRow), maxCol = min(parsed.columns - 1, region.maxColumn)
+        guard maxRow > minRow || maxCol > minCol else { return }      // need at least two cells
+
+        var grid = parsed.cells
+        var spans = parsed.spans
+        let merged = NSMutableAttributedString()
+        for r in minRow ... maxRow {
+            for c in minCol ... maxCol {
+                let content = grid[r][c]
+                if content.length > 0 {
+                    if merged.length > 0 { merged.append(NSAttributedString(string: " ")) }
+                    merged.append(content)
+                }
+                if r == minRow && c == minCol { continue }
+                grid[r][c] = NSAttributedString(string: "")
+                spans[r][c] = nil                                    // covered by the merged cell
+            }
+        }
+        grid[minRow][minCol] = merged
+        spans[minRow][minCol] = (maxRow - minRow + 1, maxCol - minCol + 1)
+        let rebuilt = rebuildTableAttributed(grid: grid, columnWidths: parsed.columnWidths, spans: spans)
+        withUndo("Merge Cells") {
+            storage.replaceCharacters(in: parsed.range, with: rebuilt)
+            tv.setSelectedRange(NSRange(location: min(parsed.range.location, (storage.string as NSString).length), length: 0))
+        }
+    }
+
+    /// The bounding rectangle of table cells (of `table`) that a selection touches.
+    private func cellRegion(in selection: NSRange,
+                            table: NSTextTable) -> (minRow: Int, minColumn: Int, maxRow: Int, maxColumn: Int)? {
+        let ns = textStorage.string as NSString
+        guard ns.length > 0 else { return nil }
+        var minRow = Int.max, minColumn = Int.max, maxRow = -1, maxColumn = -1
+        var location = min(selection.location, ns.length - 1)
+        let end = min(max(selection.location, NSMaxRange(selection)), ns.length)
+        while true {
+            var start = 0, paragraphEnd = 0, contentsEnd = 0
+            ns.getParagraphStart(&start, end: &paragraphEnd, contentsEnd: &contentsEnd,
+                                 for: NSRange(location: location, length: 0))
+            let probe = contentsEnd > start ? start : min(start, max(0, ns.length - 1))
+            if let block = (textStorage.attribute(.paragraphStyle, at: probe, effectiveRange: nil) as? NSParagraphStyle)?
+                .textBlocks.compactMap({ $0 as? NSTextTableBlock }).first, block.table === table {
+                minRow = min(minRow, block.startingRow)
+                minColumn = min(minColumn, block.startingColumn)
+                maxRow = max(maxRow, block.startingRow + block.rowSpan - 1)
+                maxColumn = max(maxColumn, block.startingColumn + block.columnSpan - 1)
+            }
+            if paragraphEnd >= end || paragraphEnd == location { break }
+            location = paragraphEnd
+        }
+        guard maxRow >= 0 else { return nil }
+        return (minRow, minColumn, maxRow, maxColumn)
     }
 
     /// A cell = its content plus a terminating newline, with `block` stamped onto

@@ -241,6 +241,8 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     @objc func lucerneDeleteRow(_ sender: Any?) { editor.deleteTableRow(); syncUI() }
     @objc func lucerneDeleteColumn(_ sender: Any?) { editor.deleteTableColumn(); syncUI() }
     @objc func lucerneDistributeColumns(_ sender: Any?) { editor.distributeTableColumnsEvenly(); syncUI() }
+    @objc func lucerneSelectTable(_ sender: Any?) { editor.selectCurrentTable() }
+    @objc func lucerneMergeCells(_ sender: Any?) { editor.mergeSelectedCells(); syncUI() }
 
     // MARK: - Document setup (page size + margins)
 
@@ -313,8 +315,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         case #selector(lucerneInsertRowAbove(_:)), #selector(lucerneInsertRowBelow(_:)),
              #selector(lucerneInsertColumnBefore(_:)), #selector(lucerneInsertColumnAfter(_:)),
              #selector(lucerneDeleteRow(_:)), #selector(lucerneDeleteColumn(_:)),
-             #selector(lucerneDistributeColumns(_:)):
+             #selector(lucerneDistributeColumns(_:)), #selector(lucerneSelectTable(_:)):
             return editor.selectionIsInTableCell   // only valid with the caret in a table
+        case #selector(lucerneMergeCells(_:)):
+            return editor.selectionSpansMultipleCells   // needs ≥2 selected cells
         default:
             return true
         }

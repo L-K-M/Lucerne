@@ -225,6 +225,22 @@ final class TableRoundTripTests: XCTestCase {
         XCTAssertEqual(decoded.body.first?.cell?.rowSpan, 1)
     }
 
+    func testMergedCellSpanSurvivesTextBridge() {
+        // A merged cell at (0,0) spanning 2×2; covered positions have no paragraph.
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [Paragraph(id: "m", style: "body",
+                             cell: TableCellModel(table: "t1", row: 0, column: 0, rowSpan: 2, columnSpan: 2),
+                             runs: [Run(text: "merged")])],
+            objects: [])
+        let attributed = AttributedStringBuilder.attributedString(for: model)
+        let restored = AttributedStringReader.paragraphs(from: attributed, styles: model.styles)
+        let cell = restored.compactMap { $0.cell }.first
+        XCTAssertEqual(cell?.rowSpan, 2)
+        XCTAssertEqual(cell?.columnSpan, 2)
+        XCTAssertEqual(restored.compactMap { $0.cell }.count, 1, "covered positions have no cell paragraph")
+    }
+
     func testColumnWidthsSurviveTextBridge() {
         func cell(_ r: Int, _ c: Int, _ width: Double) -> Paragraph {
             Paragraph(id: "c\(r)\(c)", style: "body",
