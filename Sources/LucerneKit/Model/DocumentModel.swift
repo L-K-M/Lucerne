@@ -133,6 +133,12 @@ public struct Paragraph: Codable, Equatable {
     public var align: String?                // per-paragraph override
     public var indent: IndentModel?
     public var tabStops: [TabStopModel]?
+    // Optional per-paragraph spacing overrides (additive to the §7 sketch; the
+    // base values live on the style role). Present only when they differ from the
+    // style, so direct-formatting commands round-trip without bloating the file.
+    public var lineSpacing: Double?          // line-height multiple
+    public var spaceBefore: Double?          // points before paragraph
+    public var spaceAfter: Double?           // points after paragraph
     public var runs: [Run]
 
     public init(id: String,
@@ -140,12 +146,18 @@ public struct Paragraph: Codable, Equatable {
                 align: String? = nil,
                 indent: IndentModel? = nil,
                 tabStops: [TabStopModel]? = nil,
+                lineSpacing: Double? = nil,
+                spaceBefore: Double? = nil,
+                spaceAfter: Double? = nil,
                 runs: [Run]) {
         self.id = id
         self.style = style
         self.align = align
         self.indent = indent
         self.tabStops = tabStops
+        self.lineSpacing = lineSpacing
+        self.spaceBefore = spaceBefore
+        self.spaceAfter = spaceAfter
         self.runs = runs
     }
 
