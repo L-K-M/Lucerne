@@ -3,6 +3,10 @@ import LucerneKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
+    private let updateChecker = UpdateChecker(
+        configuration: .init(owner: "L-K-M", repo: "Lucerne", appName: "Lucerne")
+    )
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
     }
@@ -11,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
+        updateChecker.start()   // check GitHub for a newer release on launch + daily
         // Let macOS restore/recover documents first; if nothing opened, show the
         // welcome screen (recent documents + New/Open/Sample). The small delay lets
         // window/draft restoration settle so we don't show it alongside a restored doc.
@@ -70,10 +75,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesWindowController: PreferencesWindowController?
 
     @objc func showSettings(_ sender: Any?) {
-        if preferencesWindowController == nil { preferencesWindowController = PreferencesWindowController() }
+        if preferencesWindowController == nil {
+            preferencesWindowController = PreferencesWindowController(updateChecker: updateChecker)
+        }
         NSApp.activate(ignoringOtherApps: true)
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - Updates
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        updateChecker.checkNow()
     }
 
     private func openSampleDocument() {

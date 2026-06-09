@@ -45,6 +45,7 @@ enum MainMenu {
     private static func makeAppMenu() -> NSMenuItem {
         submenu("Lucerne") { menu in
             add(menu, "About Lucerne", "showAbout:", key: "")
+            add(menu, "Check for Updates…", "checkForUpdates:", key: "")
             menu.addItem(.separator())
             add(menu, "Settings…", "showSettings:", key: ",")
             menu.addItem(.separator())

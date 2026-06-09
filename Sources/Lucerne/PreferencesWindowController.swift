@@ -6,15 +6,19 @@ import LucerneKit
 final class PreferencesWindowController: NSWindowController {
 
     private let unitPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let updatesCheckbox = NSButton(checkboxWithTitle: "Automatically check for updates",
+                                           target: nil, action: nil)
+    private var updateChecker: UpdateChecker?
 
-    convenience init() {
+    convenience init(updateChecker: UpdateChecker) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 140),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 180),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Settings"
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .aqua)
         self.init(window: window)
+        self.updateChecker = updateChecker
         buildContent()
         window.center()
     }
@@ -41,7 +45,11 @@ final class PreferencesWindowController: NSWindowController {
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
 
-        let stack = NSStackView(views: [row, note])
+        updatesCheckbox.state = (updateChecker?.automaticChecksEnabled ?? true) ? .on : .off
+        updatesCheckbox.target = self
+        updatesCheckbox.action = #selector(toggleAutoUpdate)
+
+        let stack = NSStackView(views: [row, note, updatesCheckbox])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
@@ -58,5 +66,9 @@ final class PreferencesWindowController: NSWindowController {
         let index = unitPopup.indexOfSelectedItem
         guard RulerUnit.allCases.indices.contains(index) else { return }
         Preferences.rulerUnit = RulerUnit.allCases[index]
+    }
+
+    @objc private func toggleAutoUpdate(_ sender: NSButton) {
+        updateChecker?.automaticChecksEnabled = (sender.state == .on)
     }
 }
