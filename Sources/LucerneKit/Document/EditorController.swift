@@ -901,6 +901,77 @@ public final class EditorController: NSObject {
         }
     }
 
+    // MARK: - Table of contents
+
+    private static let tocRole = "toc"
+
+    /// Inserts (or, if one already exists, replaces) a table of contents at the top
+    /// of the document: one entry per heading, with the page number right-aligned at
+    /// the margin. Page numbers are converged by re-laying out a couple of times.
+    public func insertOrUpdateTableOfContents() {
+        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        ensureTOCStyle()
+        withUndo("Table of Contents") {
+            removeTOCParagraphs(in: storage)
+            let headings = headingOutline()             // clean indices (ToC removed)
+            guard !headings.isEmpty else { return }     // nothing to list (old ToC cleared)
+            var pages = headings.map { pageNumber(forCharacterAt: $0.characterIndex) }
+            for _ in 0 ..< 3 {
+                removeTOCParagraphs(in: storage)
+                let toc = buildTOCAttributed(headings: headings, pages: pages)
+                storage.insert(toc, at: 0)
+                relayoutText(syncImages: false)         // settle pagination
+                let shifted = headings.map { pageNumber(forCharacterAt: $0.characterIndex + toc.length) }
+                if shifted == pages { break }
+                pages = shifted
+            }
+        }
+    }
+
+    private func ensureTOCStyle() {
+        guard model.styles[EditorController.tocRole] == nil else { return }
+        let body = model.resolvedStyle(for: LucerneDocumentModel.defaultStyleRole)
+        model.styles[EditorController.tocRole] = ParagraphStyleDef(
+            name: "Contents Entry", font: body.font, size: body.size,
+            spaceAfter: 2, markdown: "p")
+    }
+
+    private func removeTOCParagraphs(in storage: NSTextStorage) {
+        let ns = storage.string as NSString
+        var ranges: [NSRange] = []
+        var location = 0
+        while location < ns.length {
+            var start = 0, end = 0, contentsEnd = 0
+            ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                 for: NSRange(location: location, length: 0))
+            if (storage.attribute(.lucerneStyleRole, at: start, effectiveRange: nil) as? String) == EditorController.tocRole {
+                ranges.append(NSRange(location: start, length: end - start))
+            }
+            if end == location { break }
+            location = end
+        }
+        for range in ranges.reversed() { storage.deleteCharacters(in: range) }
+    }
+
+    private func buildTOCAttributed(headings: [HeadingItem], pages: [Int]) -> NSAttributedString {
+        var tocModel = model
+        tocModel.objects = []
+        tocModel.body = zip(headings, pages).map { heading, page in
+            Paragraph(id: IDGenerator.next("toc"),
+                      style: EditorController.tocRole,
+                      indent: IndentModel(left: Double((heading.level - 1) * 18)),
+                      tabStops: [TabStopModel(pos: Double(metrics.contentSize.width), type: "right")],
+                      runs: [Run(text: "\(heading.title)\t\(page)")])
+        }
+        let attributed = NSMutableAttributedString(
+            attributedString: AttributedStringBuilder.attributedString(for: tocModel))
+        // Trailing paragraph break so the body stays its own paragraph after the ToC.
+        let separator = AttributedStringBuilder.typingAttributes(
+            role: EditorController.tocRole, in: tocModel, paragraphID: IDGenerator.next("toc"))
+        attributed.append(NSAttributedString(string: "\n", attributes: separator))
+        return attributed
+    }
+
     /// Scrolls the given character into view and places the caret there.
     public func revealHeading(atCharacterIndex index: Int) {
         guard index >= 0, index < textStorage.length else { return }

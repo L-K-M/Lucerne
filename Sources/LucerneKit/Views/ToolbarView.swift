@@ -2,11 +2,9 @@ import AppKit
 
 // The control strip across the top of the window (the plan's "simple toolbar at
 // the top of the page"). It talks straight to the EditorController and is kept in
-// sync with the selection via syncFromSelection().
-//
-// The controls live inside a horizontal scroll view so that if the window is
-// narrower than the toolbar, it scrolls (an overlay scroller appears) instead of
-// clipping. `preferredContentWidth` lets the window size itself to fit.
+// sync with the selection via syncFromSelection(). `preferredContentWidth` lets the
+// window size its minimum width so the controls always fit. Bold/Italic/Underline
+// and alignment are segmented controls, so the selected ones take the accent color.
 public final class ToolbarView: NSView {
 
     public weak var editor: EditorController?
@@ -21,9 +19,7 @@ public final class ToolbarView: NSView {
     private let stylePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let fontPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let sizeCombo = NSComboBox()
-    private let boldButton = NSButton()
-    private let italicButton = NSButton()
-    private let underlineButton = NSButton()
+    private let formatControl = NSSegmentedControl()   // Bold / Italic / Underline
     private let colorWell = NSColorWell()
     private let alignControl = NSSegmentedControl()
     private let lineSpacingPopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -70,10 +66,14 @@ public final class ToolbarView: NSView {
         (sizeCombo.cell as? NSTextFieldCell)?.sendsActionOnEndEditing = true
         fixedWidth(sizeCombo, 56)
 
-        configureToggle(boldButton, title: "B", selector: #selector(boldClicked))
-        boldButton.font = NSFont.boldSystemFont(ofSize: 13)
-        configureToggle(italicButton, title: "I", selector: #selector(italicClicked))
-        configureToggle(underlineButton, title: "U", selector: #selector(underlineClicked))
+        formatControl.segmentCount = 3
+        let formatSymbols = ["bold", "italic", "underline"]
+        for (i, symbol) in formatSymbols.enumerated() {
+            formatControl.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: nil), forSegment: i)
+            formatControl.setWidth(30, forSegment: i)
+        }
+        formatControl.trackingMode = .selectAny    // each toggles independently; selected → accent
+        formatControl.target = self; formatControl.action = #selector(formatChanged)
 
         colorWell.target = self; colorWell.action = #selector(colorChanged)
         fixedWidth(colorWell, 40)
@@ -93,7 +93,7 @@ public final class ToolbarView: NSView {
 
         stack = NSStackView(views: [
             stylePopup, fontPopup, sizeCombo,
-            boldButton, italicButton, underlineButton, colorWell,
+            formatControl, colorWell,
             alignControl, lineSpacingPopup
         ])
         stack.orientation = .horizontal
@@ -120,23 +120,12 @@ public final class ToolbarView: NSView {
         view.widthAnchor.constraint(equalToConstant: width).isActive = true
     }
 
-    private func configureToggle(_ button: NSButton, title: String, selector: Selector) {
-        button.title = title
-        button.bezelStyle = .texturedRounded
-        button.setButtonType(.pushOnPushOff)
-        button.target = self
-        button.action = selector
-        fixedWidth(button, 30)
-    }
-
     private func registerHelp() {
         let entries: [(NSView, String)] = [
             (stylePopup, "Paragraph style — apply a named style (Body, Heading 1, …) to the selected paragraphs"),
             (fontPopup, "Font family for the selected text"),
             (sizeCombo, "Font size in points for the selected text"),
-            (boldButton, "Bold (⌘B)"),
-            (italicButton, "Italic (⌘I)"),
-            (underlineButton, "Underline (⌘U)"),
+            (formatControl, "Bold (⌘B), Italic (⌘I), Underline (⌘U)"),
             (colorWell, "Text color for the selection"),
             (alignControl, "Paragraph alignment: left, center, right, or justified"),
             (lineSpacingPopup, "Line spacing for the selected paragraphs")
@@ -193,9 +182,15 @@ public final class ToolbarView: NSView {
         }
         if let value = Double(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
     }
-    @objc private func boldClicked() { editor?.toggleBold(); syncFromSelection() }
-    @objc private func italicClicked() { editor?.toggleItalic(); syncFromSelection() }
-    @objc private func underlineClicked() { editor?.toggleUnderline(); syncFromSelection() }
+    @objc private func formatChanged() {
+        switch formatControl.selectedSegment {
+        case 0: editor?.toggleBold()
+        case 1: editor?.toggleItalic()
+        case 2: editor?.toggleUnderline()
+        default: break
+        }
+        syncFromSelection()   // reflect the true state (and accent) back on the control
+    }
     @objc private func colorChanged() { editor?.setTextColor(colorWell.color) }
     @objc private func alignChanged() {
         let map: [NSTextAlignment] = [.left, .center, .right, .justified]
@@ -219,10 +214,10 @@ public final class ToolbarView: NSView {
         if let font = attrs[.font] as? NSFont {
             if let family = font.familyName { fontPopup.selectItem(withTitle: family) }
             sizeCombo.stringValue = String(Int(font.pointSize.rounded()))
-            boldButton.state = FontResolver.isBold(font) ? .on : .off
-            italicButton.state = FontResolver.isItalic(font) ? .on : .off
+            formatControl.setSelected(FontResolver.isBold(font), forSegment: 0)
+            formatControl.setSelected(FontResolver.isItalic(font), forSegment: 1)
         }
-        underlineButton.state = ((attrs[.underlineStyle] as? Int) ?? 0) != 0 ? .on : .off
+        formatControl.setSelected(((attrs[.underlineStyle] as? Int) ?? 0) != 0, forSegment: 2)
         if let color = attrs[.foregroundColor] as? NSColor { colorWell.color = color }
 
         if let ps = editor.selectedParagraphStyle() {

@@ -216,6 +216,11 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         (window?.contentView as? EditorContainerView)?.toggleNavigator()
     }
 
+    @objc func lucerneTableOfContents(_ sender: Any?) {
+        editor.insertOrUpdateTableOfContents()
+        syncUI()
+    }
+
     // MARK: - Document setup (page size + margins)
 
     @objc func lucerneDocumentSetup(_ sender: Any?) {

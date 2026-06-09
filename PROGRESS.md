@@ -89,8 +89,19 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
   margins per page; Insert ▸ Page Number and Insert ▸ Header & Footer…
 - [x] **Heading navigator** sidebar (View ▸ Show Navigator) listing headings;
   click to scroll to one. Built on `pageNumber(forCharacterAt:)` + `headingOutline()`.
-- [ ] Printed table of contents, editable header/footer click-zones, tables —
-  see `docs/roadmap.md`
+- [x] **Printed table of contents** (Insert ▸ Table of Contents) — entries with
+  right-aligned page numbers (converged via relayout), persisted as a `toc`
+  paragraph style; re-run to update
+- [ ] Editable header/footer click-zones, dotted ToC leaders, tables — `docs/roadmap.md`
+
+## On-device feedback (round 7)
+- [x] Custom About window with the app icon (replaces the stock panel)
+- [x] Toolbar Bold/Italic/Underline are a segmented control now, so the selected
+  ones take the accent color (matching alignment)
+- [x] Crash/draft recovery via `NSDocument` autosave-in-place (untitled drafts are
+  recovered on relaunch); saved docs restore via macOS Resume
+- [x] **Welcome window** on launch when nothing is open: recent documents +
+  New / Open / New Sample Letter
 
 ## On-device feedback (round 5)
 - [x] Icons: artwork is edge-to-edge (clipped to the squircle/page; no white inset)

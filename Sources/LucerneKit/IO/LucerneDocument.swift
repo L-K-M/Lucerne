@@ -28,7 +28,10 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
         pendingModel = DefaultDocuments.sampleLetter()
     }
 
-    public override class var autosavesInPlace: Bool { false }
+    // Autosave in place enables Versions and, crucially, crash/draft recovery:
+    // edits are autosaved periodically and untitled documents are kept as drafts
+    // that the system offers to recover on relaunch (autosavesDrafts defaults true).
+    public override class var autosavesInPlace: Bool { true }
 
     // MARK: - Window
 
