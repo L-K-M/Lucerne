@@ -121,13 +121,13 @@ final class LuceArchiveRoundTripTests: XCTestCase {
 
 final class HistoryPrunerTests: XCTestCase {
 
-    func testEntryNameRoundTrips() {
+    func testEntryNameRoundTrips() throws {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let name = HistoryPruner.entryName(for: date)
         XCTAssertTrue(name.hasPrefix("history/"))
         XCTAssertTrue(name.hasSuffix(".md"))
-        XCTAssertEqual(HistoryPruner.timestamp(fromEntryName: name)?.timeIntervalSince1970,
-                       date.timeIntervalSince1970, accuracy: 1)
+        let parsed = try XCTUnwrap(HistoryPruner.timestamp(fromEntryName: name))
+        XCTAssertEqual(parsed.timeIntervalSince1970, date.timeIntervalSince1970, accuracy: 1)
         XCTAssertNil(HistoryPruner.timestamp(fromEntryName: "content.md"))
     }
 
