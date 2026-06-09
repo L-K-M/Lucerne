@@ -36,10 +36,13 @@ public final class StatusBarView: NSView {
         shadow.shadowColor = NSColor(calibratedWhite: 1.0, alpha: 0.65)
         shadow.shadowOffset = NSSize(width: 0, height: -1)
         shadow.shadowBlurRadius = 0
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
         return NSAttributedString(string: string, attributes: [
             .font: NSFont.systemFont(ofSize: 11),
             .foregroundColor: NSColor(calibratedWhite: 0.22, alpha: 1),
-            .shadow: shadow
+            .shadow: shadow,
+            .paragraphStyle: paragraph
         ])
     }
 
