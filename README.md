@@ -40,8 +40,10 @@ content.md      a derived, human-readable Markdown copy of the text (write-only 
 ```
 
 `content.md` is **regenerated on every save and never read back** — it exists so a
-future human can recover the words and pictures even if this app is gone. The full
-format is described in [`docs/file-format.md`](docs/file-format.md).
+future human can recover the words and pictures even if this app is gone. A short
+overview is in [`docs/file-format.md`](docs/file-format.md); the complete,
+normative specification — enough to build a compatible tool, with a JSON Schema —
+is in [`docs/luce-format-spec.md`](docs/luce-format-spec.md).
 
 Other formats:
 

@@ -1,5 +1,11 @@
 # The `.luce` file format
 
+> **Looking for the normative spec?** This page is a friendly overview. The
+> complete, precise specification an independent implementer should follow —
+> RFC-2119 wording, full field tables, the exact `content.md` derivation, a JSON
+> Schema, and conformance requirements — is in
+> [`luce-format-spec.md`](luce-format-spec.md). Where the two differ, the spec wins.
+
 A `.luce` document **is a ZIP archive** whose UTI conforms to
 `public.zip-archive` (D4). The recovery story is therefore literally: *rename it to
 `.zip` and unzip*. This document describes the package layout and the canonical

@@ -116,8 +116,11 @@ on these views.
 
 ## Adding a feature — checklist
 
-1. If it touches the file, update `Model/` structs **and** `docs/file-format.md`,
-   and bump `formatVersion` if the change isn't backward compatible.
+1. If it touches the file format, update `Model/` structs **and both**
+   `docs/file-format.md` (overview) and `docs/luce-format-spec.md` (the normative
+   spec + JSON Schema), and bump `formatVersion` if the change isn't backward
+   compatible. The spec is the contract third-party tools build against — keep it
+   exact.
 2. If it affects layout, add/adjust a geometry test in `Tests/`.
 3. Update `PROGRESS.md` (and this file if architecture shifts).
 4. On a Mac: `swift build && swift test`. Otherwise rely on CI.
