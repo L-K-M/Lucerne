@@ -2,76 +2,70 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>Lucerne</string>
-    <key>CFBundleDisplayName</key>
-    <string>Lucerne</string>
-    <key>CFBundleIdentifier</key>
-    <string>ch.lkmc.Lucerne</string>
-    <key>CFBundleExecutable</key>
-    <string>Lucerne</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <key>NSAppleScriptEnabled</key>
-    <true/>
-    <key>OSAScriptingDefinition</key>
-    <string>Lucerne.sdef</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-
-    <!-- .luce documents: a sealed ZIP package (D3/D4). -->
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Lucerne Document</string>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-            <key>CFBundleTypeIconFile</key>
-            <string>DocumentIcon</string>
-            <key>LSHandlerRank</key>
-            <string>Owner</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>ch.lkmc.lucerne.document</string>
-            </array>
-            <!-- Instantiated by name; the class is exported with @objc(LucerneDocument). -->
-            <key>NSDocumentClass</key>
-            <string>LucerneDocument</string>
-        </dict>
-    </array>
-
-    <!-- Our document UTI conforms to public.zip-archive so the OS treats a .luce
-         as a single opaque file, and "rename to .zip" recovers everything. -->
-    <key>UTExportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key>
-            <string>ch.lkmc.lucerne.document</string>
-            <key>UTTypeDescription</key>
-            <string>Lucerne Document</string>
-            <key>UTTypeConformsTo</key>
-            <array>
-                <string>public.zip-archive</string>
-            </array>
-            <key>UTTypeTagSpecification</key>
-            <dict>
-                <key>public.filename-extension</key>
-                <array>
-                    <string>luce</string>
-                </array>
-            </dict>
-        </dict>
-    </array>
+	<key>CFBundleDisplayName</key>
+	<string>Lucerne</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>DocumentIcon</string>
+			<key>CFBundleTypeName</key>
+			<string>Lucerne Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>ch.lkmc.lucerne.document</string>
+			</array>
+			<key>NSDocumentClass</key>
+			<string>LucerneDocument</string>
+		</dict>
+	</array>
+	<key>CFBundleExecutable</key>
+	<string>Lucerne</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>ch.lkmc.Lucerne</string>
+	<key>CFBundleName</key>
+	<string>Lucerne</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSAppleScriptEnabled</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>OSAScriptingDefinition</key>
+	<string>Lucerne.sdef</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Lucerne Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>ch.lkmc.lucerne.document</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>luce</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
