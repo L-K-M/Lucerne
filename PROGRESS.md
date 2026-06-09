@@ -112,6 +112,12 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## On-device feedback (round 11)
+- [x] The default window now sizes itself to the **screen and the page format**: it
+  picks a zoom so a whole page fits within ~90% of the screen (capped at 100%, never
+  starting enlarged), then a window just big enough to show that page plus the
+  toolbar/ruler/status — capped to the screen (`DocumentWindowController.initialLayout`)
+
 ## On-device feedback (round 10)
 - [x] Ruler numbers no longer overlap the tick marks — taller ruler, with numbers
   centered above the ticks (the ticks rise from the bottom edge)
