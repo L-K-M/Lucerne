@@ -3,6 +3,10 @@ import AppKit
 // One page: a white sheet with a soft shadow, flipped so its coordinate system
 // matches the model (origin top-left, y down). Hosts the page's text view and any
 // floating image views as subviews.
+//
+// The white fill + border are drawn in draw(_:) (not via the layer's
+// backgroundColor) so that dataWithPDF(inside:) — used for PDF export and
+// printing — captures a real white page. The layer carries only the drop shadow.
 public final class PageContainerView: NSView {
 
     public let pageIndex: Int
@@ -13,16 +17,23 @@ public final class PageContainerView: NSView {
         self.pageIndex = pageIndex
         super.init(frame: frame)
         wantsLayer = true
-        guard let layer else { return }
-        layer.backgroundColor = NSColor.white.cgColor
-        layer.borderColor = NSColor(calibratedWhite: 0.78, alpha: 1).cgColor
-        layer.borderWidth = 1
-        layer.shadowColor = NSColor.black.cgColor
-        layer.shadowOpacity = 0.22
-        layer.shadowRadius = 6
-        layer.shadowOffset = .zero
+        if let layer {
+            layer.shadowColor = NSColor.black.cgColor
+            layer.shadowOpacity = 0.22
+            layer.shadowRadius = 6
+            layer.shadowOffset = .zero
+        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.setFill()
+        bounds.fill()
+        NSColor(calibratedWhite: 0.80, alpha: 1).setStroke()
+        let border = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
+        border.lineWidth = 1
+        border.stroke()
+    }
 }

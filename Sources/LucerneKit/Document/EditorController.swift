@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 
 /// The document object the editor talks back to for undo + dirty tracking.
 public protocol EditorControllerDocument: AnyObject {
@@ -19,8 +20,10 @@ public final class EditorController: NSObject {
     private var metrics: PageMetrics
     public weak var document: EditorControllerDocument?
 
-    /// Loaded image bytes keyed by their `src` path (e.g. "images/lake.png").
+    /// Decoded images for display, keyed by their `src` path (e.g. "images/lake.png").
     public var images: [String: NSImage] = [:]
+    /// Original image bytes keyed by `src`, kept so saving is byte-for-byte lossless.
+    public var imageData: [String: Data] = [:]
 
     // MARK: Views
     public let canvasView = PageCanvasView()
@@ -194,12 +197,9 @@ public final class EditorController: NSObject {
     private func applyExclusionPaths(toPage index: Int) {
         guard index < pages.count else { return }
         let paths = ExclusionPathController.exclusionPaths(forPage: index, objects: model.objects, metrics: metrics)
-        let container = pages[index].container
         // Setting exclusionPaths invalidates and re-lays-out that container, which
         // is exactly the reflow we want.
-        if container.exclusionPaths != paths {
-            container.exclusionPaths = paths
-        }
+        pages[index].container.exclusionPaths = paths
     }
 
     private func applyAllExclusionPaths() {
@@ -270,11 +270,15 @@ public final class EditorController: NSObject {
 
     private func restackImages() {
         for (index, page) in pages.enumerated() {
-            let objectsOnPage = model.objects
+            let desired = model.objects
                 .filter { $0.anchorMode == .page && $0.page == index }
                 .sorted { $0.z < $1.z }
-            for object in objectsOnPage {
-                guard let view = imageViews[object.id], view.superview === page.pageView else { continue }
+                .compactMap { imageViews[$0.id] }
+            let current = page.pageView.subviews.compactMap { $0 as? FloatingImageView }
+            // Idempotent: only reorder when the z-order actually differs, so typing
+            // near an image doesn't churn its view every keystroke.
+            if current.count == desired.count, zip(current, desired).allSatisfy({ $0 === $1 }) { continue }
+            for view in desired {
                 view.removeFromSuperview()
                 page.pageView.addSubview(view)         // re-add in ascending z → last is frontmost
             }
@@ -283,14 +287,31 @@ public final class EditorController: NSObject {
 
     // MARK: - Image operations (public)
 
+    /// Replace the image store (used after opening a .luce) and refresh the views.
+    public func setImageData(_ data: [String: Data]) {
+        imageData = data
+        images = data.compactMapValues { NSImage(data: $0) }
+        relayoutText(syncImages: true)
+    }
+
+    public func insertImage(data: Data, suggestedName: String) {
+        insertImageCore(image: NSImage(data: data), data: data, suggestedName: suggestedName)
+    }
+
     public func insertImage(_ image: NSImage, suggestedName: String) {
+        insertImageCore(image: image, data: image.pngData() ?? Data(), suggestedName: suggestedName)
+    }
+
+    private func insertImageCore(image: NSImage?, data: Data, suggestedName: String) {
         let pageIndex = activePageIndex ?? 0
         let src = uniqueImageSrc(forSuggestedName: suggestedName)
-        images[src] = image
+        if !data.isEmpty { imageData[src] = data }
+        if let image { images[src] = image }
 
         let maxW = metrics.contentSize.width * 0.5
-        let w = min(image.size.width > 0 ? image.size.width : maxW, maxW)
-        let h = image.size.width > 0 ? image.size.height * (w / image.size.width) : w * 0.75
+        let nativeW = image?.size.width ?? 0
+        let w = min(nativeW > 0 ? nativeW : maxW, maxW)
+        let h = nativeW > 0 ? (image!.size.height) * (w / nativeW) : w * 0.75
         let frame = RectModel(x: Double(metrics.marginLeft + 24),
                               y: Double(metrics.marginTop + 24),
                               width: Double(w), height: Double(h))
@@ -342,7 +363,7 @@ public final class EditorController: NSObject {
         let safeExt = ext.isEmpty ? "png" : ext
         var candidate = "images/\(safeStem).\(safeExt)"
         var counter = 2
-        while images[candidate] != nil {
+        while images[candidate] != nil || imageData[candidate] != nil {
             candidate = "images/\(safeStem)-\(counter).\(safeExt)"
             counter += 1
         }
@@ -585,6 +606,38 @@ public final class EditorController: NSObject {
         return storage.attribute(.lucerneStyleRole, at: loc, effectiveRange: nil) as? String
     }
 
+    /// Attributes at the caret/selection start (or typing attributes), for toolbar sync.
+    public func currentAttributes() -> [NSAttributedString.Key: Any] {
+        guard let tv = activeTextView else { return [:] }
+        if let storage = tv.textStorage, storage.length > 0 {
+            let loc = min(tv.selectedRange().location, storage.length - 1)
+            return storage.attributes(at: loc, effectiveRange: nil)
+        }
+        return tv.typingAttributes
+    }
+
+    public var hasSelectedImage: Bool { selectedImageView != nil }
+
+    public var selectedImageWrapMode: PlacedObject.Wrap? {
+        guard let id = selectedImageView?.objectID,
+              let object = model.objects.first(where: { $0.id == id }) else { return nil }
+        return object.wrapMode
+    }
+
+    public func adjustSelectedStandoff(by delta: Double) {
+        guard let id = selectedImageView?.objectID,
+              let index = model.objects.firstIndex(where: { $0.id == id }) else { return }
+        let newValue = max(0, model.objects[index].standoff + delta)
+        setStandoffByID(id, newValue, undoName: "Change Standoff")
+    }
+
+    /// Put the keyboard focus on the first page so typing works as soon as the
+    /// window appears.
+    public func focusInitialResponder() {
+        guard let tv = pages.first?.textView else { return }
+        tv.window?.makeFirstResponder(tv)
+    }
+
     // MARK: - Active view / selection tracking
 
     public var activePageIndex: Int? {
@@ -630,6 +683,28 @@ public final class EditorController: NSObject {
     }
 
     public var pageMetrics: PageMetrics { metrics }
+
+    // MARK: - PDF / print rendering
+
+    /// One single-page PDF per document page, captured from the real view drawing
+    /// (text + images), so fidelity matches the screen. Selection chrome is hidden
+    /// first. The page size is the document page size, in points.
+    public func makePagePDFs() -> [Data] {
+        deselectAllImages()
+        canvasView.layoutPages()
+        if let last = pages.last?.container { layoutManager.ensureLayout(for: last) }
+        return pages.map { $0.pageView.dataWithPDF(inside: $0.pageView.bounds) }
+    }
+
+    /// The whole document as a single multi-page PDF (share / print / export).
+    public func makePDFData() -> Data {
+        let document = PDFDocument()
+        for data in makePagePDFs() {
+            guard let pageDoc = PDFDocument(data: data), let page = pageDoc.page(at: 0) else { continue }
+            document.insert(page, at: document.pageCount)
+        }
+        return document.dataRepresentation() ?? Data()
+    }
 }
 
 // MARK: - NSTextStorageDelegate (drive pagination on every edit)
