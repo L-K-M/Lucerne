@@ -38,17 +38,21 @@ floating objects that *punch holes* in it. This document goes a level deeper tha
 
 ## Pagination
 
-`EditorController` keeps the number of pages in sync with the text:
+`EditorController.paginateAndExclude()` keeps the number of pages in sync with the
+text and assigns each container's exclusion paths in one pass:
 
-1. After an edit (`NSTextStorageDelegate.textStorageDidProcessEditing`), call
-   `ensurePageCount()`.
-2. Force layout of the last container. If laid-out glyphs in it end before
-   `numberOfGlyphs`, there's overflow → append a page (new container + text view +
-   page view), recompute that page's exclusion paths, repeat.
-3. Trim trailing empty pages (keep at least one).
+1. Reset every container to its image-wrap exclusion paths.
+2. Force layout of the last container. If laid-out glyphs end before
+   `numberOfGlyphs`, there's overflow → append a page and repeat.
+3. If a paragraph is flagged `pageBreakBefore` and lands partway down a page, add a
+   full-width **exclusion band** from its line to the page bottom, forcing it (and
+   the text after it) onto the next page; then re-check overflow.
+4. Trim trailing empty pages (keep at least one).
 
-Because pages are uniform (D1), there is no geometry-change reflow case — only the
-boundary-straddling image, handled per D1.
+It runs after every edit (`NSTextStorageDelegate.textStorageDidProcessEditing`) and
+after object changes. Because pages are uniform (D1), there is no geometry-change
+reflow case — only the boundary-straddling image, handled per D1. Documents with no
+page breaks skip step 3 entirely (identical to plain overflow pagination).
 
 ## Coordinates — the part that bites
 
