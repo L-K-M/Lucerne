@@ -4,6 +4,39 @@ This file orients anyone (human or AI) working on the Lucerne codebase. Read
 [`lucerne-plan.md`](lucerne-plan.md) first for the *why*; this file is the *how*.
 Keep it and [`PROGRESS.md`](PROGRESS.md) updated as the code evolves.
 
+Lucerne is a native macOS application built on AppKit and TextKit 1. Its defining
+feature is **100% free image placement with live text flow**: drop an image
+anywhere on the page and the body text reflows around it, staying correct through
+every subsequent edit. This is implemented the way the platform intends — via
+`NSTextContainer.exclusionPaths` — rather than fought for. See
+[`lucerne-plan.md`](lucerne-plan.md) for the full design rationale (this project
+implements **Avenue A**).
+
+> **Status:** the four core areas below are implemented and the macOS CI build +
+> unit tests are green; the app is in interactive on-device QA. See
+> [`PROGRESS.md`](PROGRESS.md) for the live feature checklist, [`AGENTS.md`](AGENTS.md)
+> for the engineering guide, and [`docs/roadmap.md`](docs/roadmap.md) for what's next.
+
+---
+
+## What it does
+
+1. **A simple editing surface** — type, edit, select, undo, print, save/open, on
+   discrete A4 (or Letter) pages.
+2. **Basic text formatting** — font, size, bold/italic/underline, color,
+   alignment, line spacing, paragraph spacing.
+3. **Rulers and tabs** — a horizontal ruler with draggable indent markers and tab
+   stops (left/center/right/decimal).
+4. **Free image placement with text flow** — drag an image to any `(x, y)` on a
+   page; text wraps around its rectangle and reflows live as you edit. Drag it
+   across a page boundary and it re-anchors on the page it lands on.
+
+Built on top of those four pillars: named paragraph styles, forced page breaks,
+page zoom, running **headers & footers** with page-number / date / title tokens, a
+**heading navigator** sidebar, a generated **table of contents**, PDF and (lossy)
+RTF export, AppleScript scripting, a welcome screen with recent documents, and
+crash/draft recovery. See [`PROGRESS.md`](PROGRESS.md) for the full list.
+
 ## What this is
 
 A native **macOS / AppKit / Swift** word processor implementing **Avenue A** of the
