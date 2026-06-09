@@ -273,7 +273,11 @@ public final class LucerneRulerView: NSView {
             let loc = clampTabLocation(documentX(p.x) - marginLeft)
             tabs.append((loc: loc, kind: .left))
             tabs.sort { $0.loc < $1.loc }
-            dragging = .tab(tabIndex(near: sx(marginLeft + loc)) ?? tabs.count - 1)
+            // Recover the new tab by its exact location, not by hit-testing:
+            // tabIndex(near:) returns the *first* tab within tolerance, so a click
+            // near an existing tab would grab that one and strand the new tab.
+            let inserted = tabs.firstIndex { $0.loc == loc && $0.kind == .left }
+            dragging = .tab(inserted ?? tabs.count - 1)
             needsDisplay = true
         }
     }
