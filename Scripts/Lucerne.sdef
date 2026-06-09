@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="Lucerne" xmlns:xi="http://www.w3.org/2003/XInclude">
+
+    <!-- Standard suite: application, documents, windows, open/close/save/print/quit. -->
+    <xi:include href="file:///System/Library/ScriptingDefinitions/CocoaStandard.sdef"
+                xpointer="xpointer(/dictionary/suite)"/>
+
+    <suite name="Lucerne Suite" code="Luce"
+           description="Lucerne-specific document properties.">
+        <class-extension extends="document" description="A Lucerne document.">
+            <cocoa class="LucerneDocument"/>
+            <property name="text" code="Ltxt" type="text"
+                      description="The plain text of the document (setting it replaces the body text).">
+                <cocoa key="scriptingText"/>
+            </property>
+            <property name="page count" code="Lpgc" type="integer" access="r"
+                      description="The number of laid-out pages in the document.">
+                <cocoa key="scriptingPageCount"/>
+            </property>
+        </class-extension>
+    </suite>
+</dictionary>
