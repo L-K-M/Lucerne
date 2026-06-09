@@ -120,6 +120,11 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   arrow well, a white inset size field joined to a preset menu well, B/I/U and
   alignment as single-outline segment groups with path-drawn glyphs, and a
   framed color-well swatch that goes sunken while active. Bar height 44 → 34.
+- [x] The **status bar** and **ruler** join the chrome so the window reads as one
+  piece: the footer becomes a gradient strip with engraved (white-drop) text and
+  a momentary − / % / + bezel cluster replacing the borderless zoom buttons; the
+  ruler gets the chrome gradient outside its writable band, hairline band edges,
+  and an etched seam where it meets the format bar's border.
 
 ## On-device feedback (round 11)
 - [x] The default window now sizes itself to the **screen and the page format**: it

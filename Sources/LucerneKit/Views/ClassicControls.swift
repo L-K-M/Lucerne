@@ -103,25 +103,29 @@ enum ClassicGlyph {
 
 // MARK: - Segmented control
 
-/// A grouped row of gradient-bezel toggle buttons sharing one rounded outline,
-/// split by hairlines — the classic B/I/U and alignment clusters. `selectOne`
-/// keeps exactly one segment on; `selectAny` toggles each independently.
+/// A grouped row of gradient-bezel buttons sharing one rounded outline, split by
+/// hairlines — the classic B/I/U and alignment clusters. `selectOne` keeps
+/// exactly one segment on; `selectAny` toggles each independently; `momentary`
+/// only flashes pressed and reports the click (the status bar's zoom cluster).
 final class ClassicSegmentedControl: NSControl {
 
-    enum Mode { case selectOne, selectAny }
+    enum Mode { case selectOne, selectAny, momentary }
 
-    private let glyphs: [ClassicGlyph]
+    private var glyphs: [ClassicGlyph]
     private let mode: Mode
-    private let segmentWidth: CGFloat
+    private let widths: [CGFloat]
+    private let controlHeight: CGFloat
     private var isOn: [Bool]
     private var trackedSegment: Int?
     private var pressedSegment: Int?
     private(set) var selectedSegment: Int = -1   // the segment the user last clicked
 
-    init(glyphs: [ClassicGlyph], mode: Mode, segmentWidth: CGFloat = 25) {
+    init(glyphs: [ClassicGlyph], mode: Mode, segmentWidth: CGFloat = 25,
+         segmentWidths: [CGFloat]? = nil, height: CGFloat = ClassicChrome.controlHeight) {
         self.glyphs = glyphs
         self.mode = mode
-        self.segmentWidth = segmentWidth
+        self.widths = segmentWidths ?? Array(repeating: segmentWidth, count: glyphs.count)
+        self.controlHeight = height
         self.isOn = Array(repeating: false, count: glyphs.count)
         super.init(frame: .zero)
     }
@@ -130,10 +134,16 @@ final class ClassicSegmentedControl: NSControl {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: segmentWidth * CGFloat(glyphs.count), height: ClassicChrome.controlHeight)
+        NSSize(width: widths.reduce(0, +), height: controlHeight)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    func setGlyph(_ glyph: ClassicGlyph, forSegment index: Int) {
+        guard glyphs.indices.contains(index) else { return }
+        glyphs[index] = glyph
+        needsDisplay = true
+    }
 
     func isSelected(forSegment index: Int) -> Bool {
         isOn.indices.contains(index) ? isOn[index] : false
@@ -183,18 +193,25 @@ final class ClassicSegmentedControl: NSControl {
             isOn[tracked] = true
         case .selectAny:
             isOn[tracked].toggle()
+        case .momentary:
+            break
         }
         sendAction(action, to: target)
     }
 
     private func segment(at point: NSPoint) -> Int? {
-        guard bounds.contains(point), segmentWidth > 0 else { return nil }
-        let index = Int(point.x / segmentWidth)
-        return glyphs.indices.contains(index) ? index : nil
+        guard bounds.contains(point) else { return nil }
+        var x: CGFloat = 0
+        for (index, width) in widths.enumerated() {
+            if point.x < x + width { return index }
+            x += width
+        }
+        return nil
     }
 
     private func segmentRect(_ index: Int) -> NSRect {
-        NSRect(x: CGFloat(index) * segmentWidth, y: 0, width: segmentWidth, height: bounds.height)
+        let x = widths.prefix(index).reduce(0, +)
+        return NSRect(x: x, y: 0, width: widths[index], height: bounds.height)
     }
 
     private func state(for index: Int) -> ClassicChrome.BezelState {
@@ -212,8 +229,10 @@ final class ClassicSegmentedControl: NSControl {
             ClassicChrome.drawInnerHint(state(for: index), in: rect)
         }
         ClassicChrome.segmentSeparator.setFill()
-        for index in 1..<glyphs.count {
-            NSRect(x: CGFloat(index) * segmentWidth - 0.5, y: 0, width: 1, height: bounds.height).fill()
+        var boundary: CGFloat = 0
+        for width in widths.dropLast() {
+            boundary += width
+            NSRect(x: boundary - 0.5, y: 0, width: 1, height: bounds.height).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
         ClassicChrome.bezelBorder.setStroke()

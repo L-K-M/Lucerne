@@ -118,12 +118,18 @@ public final class LucerneRulerView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         let h = bounds.height
-        NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
-        bounds.fill()
+        // Chrome strip outside the writable band, continuing the format bar's
+        // classic look; the etched highlight under the bar's border seams them.
+        ClassicChrome.gradient(top: 0.93, bottom: 0.84).draw(in: bounds, angle: 90)
+        NSColor(calibratedWhite: 1.0, alpha: 0.5).setFill()
+        NSRect(x: 0, y: h - 1, width: bounds.width, height: 1).fill()
 
         let band = NSRect(x: sx(marginLeft), y: 0, width: contentWidth * scale, height: h)
         NSColor.white.setFill()
         band.fill()
+        NSColor(calibratedWhite: 0.72, alpha: 1).setFill()    // hairline band edges
+        NSRect(x: band.minX - 1, y: 0, width: 1, height: h).fill()
+        NSRect(x: band.maxX, y: 0, width: 1, height: h).fill()
 
         NSColor(calibratedWhite: 0.55, alpha: 1).setStroke()
         let labelAttrs: [NSAttributedString.Key: Any] = [
@@ -160,7 +166,7 @@ public final class LucerneRulerView: NSView {
             p += minorStep
         }
 
-        NSColor(calibratedWhite: 0.6, alpha: 1).setStroke()
+        NSColor(calibratedWhite: 0.55, alpha: 1).setStroke()
         let border = NSBezierPath()
         border.move(to: CGPoint(x: 0, y: 0.5))
         border.line(to: CGPoint(x: bounds.width, y: 0.5))
