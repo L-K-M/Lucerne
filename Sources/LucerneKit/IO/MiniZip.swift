@@ -27,6 +27,12 @@ public enum MiniZip {
         case unsupported(String)
     }
 
+    /// Upper bound on a single entry's uncompressed size. The size field in a
+    /// (possibly hostile) archive is attacker-controlled and is used to size the
+    /// inflate buffer, so it must not be trusted blindly — a 1 KB file could
+    /// otherwise demand a 4 GiB allocation. Generous for a letters document.
+    private static let maxEntrySize = 512 * 1024 * 1024
+
     // Signatures
     private static let localHeaderSig: UInt32 = 0x0403_4b50
     private static let centralHeaderSig: UInt32 = 0x0201_4b50
@@ -115,28 +121,45 @@ public enum MiniZip {
                 throw ZipError.corrupt("bad central directory header")
             }
             let method = readLE16(bytes, cursor + 10)
+            let crc = readLE32(bytes, cursor + 16)
             let compressedSize = Int(readLE32(bytes, cursor + 20))
             let uncompressedSize = Int(readLE32(bytes, cursor + 24))
             let nameLen = Int(readLE16(bytes, cursor + 28))
             let extraLen = Int(readLE16(bytes, cursor + 30))
             let commentLen = Int(readLE16(bytes, cursor + 32))
             let localOffset = Int(readLE32(bytes, cursor + 42))
+            // The variable-length tail (name + extra + comment) must also fit; the
+            // declared lengths come from the file and can't be trusted.
+            let recordEnd = cursor + 46 + nameLen + extraLen + commentLen
+            guard recordEnd <= bytes.count else {
+                throw ZipError.corrupt("central directory entry overruns the file")
+            }
             let name = String(decoding: bytes[cursor + 46 ..< cursor + 46 + nameLen], as: UTF8.self)
 
             let payload = try readLocalEntry(bytes, localOffset: localOffset,
                                              method: method,
                                              compressedSize: compressedSize,
                                              uncompressedSize: uncompressedSize)
+            // The central directory always carries the entry's CRC-32; checking it
+            // catches truncation and bit rot that the structure checks can't.
+            if crc != 0, CRC32.checksum(payload) != crc {
+                throw ZipError.corrupt("CRC mismatch for \(name)")
+            }
             result.append(Entry(name: name, data: payload))
-            cursor += 46 + nameLen + extraLen + commentLen
+            cursor = recordEnd
         }
         return result
     }
 
     private static func readLocalEntry(_ bytes: [UInt8], localOffset: Int, method: UInt16,
                                        compressedSize: Int, uncompressedSize: Int) throws -> Data {
-        guard localOffset + 30 <= bytes.count, readLE32(bytes, localOffset) == localHeaderSig else {
+        guard localOffset >= 0, localOffset + 30 <= bytes.count,
+              readLE32(bytes, localOffset) == localHeaderSig else {
             throw ZipError.corrupt("bad local header")
+        }
+        guard compressedSize >= 0, uncompressedSize >= 0,
+              compressedSize <= maxEntrySize, uncompressedSize <= maxEntrySize else {
+            throw ZipError.corrupt("entry size out of bounds")
         }
         let nameLen = Int(readLE16(bytes, localOffset + 26))
         let extraLen = Int(readLE16(bytes, localOffset + 28))
