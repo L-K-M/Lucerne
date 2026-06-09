@@ -7,9 +7,12 @@
 - **Swift 5.9+** — either Xcode 15+ (recommended) or the Swift.org toolchain.
 
 > This repository was authored in a Linux container with no Swift toolchain, so it
-> is **not compiled there**. Compilation is verified on a macOS GitHub Actions
-> runner (`.github/workflows/ci.yml`). If you are picking this up on a Mac, the
-> first thing to do is `swift build` and address anything CI hasn't already caught.
+> is **not compiled there**. The macOS GitHub Actions runner
+> (`.github/workflows/ci.yml`) verifies it: `swift build`, `swift test`, and the
+> icon generator (`swift Scripts/GenerateIcons.swift`). What CI *cannot* check is
+> interactive behaviour, so on a Mac the first thing to do is `swift build` and then
+> exercise the app — live reflow, ruler dragging, multi-page editing — and address
+> anything CI hasn't already caught.
 
 ## Develop (fast loop)
 

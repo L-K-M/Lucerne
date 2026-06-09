@@ -9,6 +9,22 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 > unit-tested* — pending interactive on-device QA on a Mac for the things tests
 > can't cover (live reflow feel, ruler dragging, pagination across many pages).
 
+## Current state at a glance
+
+All four pillars of the brief are implemented and CI-green: the **editing surface**
+(NSDocument-based, undo/redo, printing), **text formatting** (font/size/bold/italic/
+underline/color/alignment/spacing + named paragraph styles), **rulers & tabs**, and
+the defining feature — **free image placement with live text reflow** around
+rectangular wrap, including dragging images across page boundaries. On top of those:
+page zoom, forced page breaks, running headers/footers, a heading navigator, a
+generated table of contents, `.luce` (ZIP) read/write with Markdown version history,
+PDF + lossy RTF export, AppleScript, a welcome screen, and crash/draft recovery.
+
+What's **not** done is tracked in Milestone 3 below and, with design notes and
+effort estimates, in [`docs/roadmap.md`](docs/roadmap.md) — chiefly tables, lists,
+cross-page selection, irregular wrap, dotted ToC leaders, and in-place header/footer
+editing. The whole app still needs on-device QA (CI only verifies compile + units).
+
 ## Milestone 0 — scaffolding
 - [x] Package manifest (`Package.swift`), executable + library + test targets
 - [x] README, AGENTS, PROGRESS, docs skeleton
@@ -64,6 +80,8 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [ ] DOCX lossy export
 
 ## Milestone 3 — polish (later)
+> Design notes + effort estimates for these (and tables/lists) are in
+> [`docs/roadmap.md`](docs/roadmap.md).
 - [ ] Cross-page text selection
 - [ ] Image overhang at page boundary (currently clipped)
 - [ ] Irregular wrap from image alpha

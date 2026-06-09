@@ -11,8 +11,10 @@ every subsequent edit. This is implemented the way the platform intends — via
 [`lucerne-plan.md`](lucerne-plan.md) for the full design rationale (this project
 implements **Avenue A**).
 
-> **Status:** under active construction. See [`PROGRESS.md`](PROGRESS.md) for the
-> live feature checklist and [`AGENTS.md`](AGENTS.md) for the engineering guide.
+> **Status:** the four core areas below are implemented and the macOS CI build +
+> unit tests are green; the app is in interactive on-device QA. See
+> [`PROGRESS.md`](PROGRESS.md) for the live feature checklist, [`AGENTS.md`](AGENTS.md)
+> for the engineering guide, and [`docs/roadmap.md`](docs/roadmap.md) for what's next.
 
 ---
 
@@ -25,7 +27,14 @@ implements **Avenue A**).
 3. **Rulers and tabs** — a horizontal ruler with draggable indent markers and tab
    stops (left/center/right/decimal).
 4. **Free image placement with text flow** — drag an image to any `(x, y)` on a
-   page; text wraps around its rectangle and reflows live as you edit.
+   page; text wraps around its rectangle and reflows live as you edit. Drag it
+   across a page boundary and it re-anchors on the page it lands on.
+
+Built on top of those four pillars: named paragraph styles, forced page breaks,
+page zoom, running **headers & footers** with page-number / date / title tokens, a
+**heading navigator** sidebar, a generated **table of contents**, PDF and (lossy)
+RTF export, AppleScript scripting, a welcome screen with recent documents, and
+crash/draft recovery. See [`PROGRESS.md`](PROGRESS.md) for the full list.
 
 ## Documents: the `.luce` file
 
@@ -37,6 +46,7 @@ unzip." Inside:
 document.json   canonical, lossless model — text runs + placed objects (the source of truth)
 images/         the placed images as their original files
 content.md      a derived, human-readable Markdown copy of the text (write-only escape hatch)
+history/        optional dated Markdown backups, thinned with age, for recovery
 ```
 
 `content.md` is **regenerated on every save and never read back** — it exists so a

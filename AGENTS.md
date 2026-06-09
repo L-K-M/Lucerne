@@ -79,14 +79,35 @@ on these views.
 | Path | Responsibility |
 |---|---|
 | `Sources/Lucerne/main.swift` | `NSApplication` bootstrap |
-| `Sources/Lucerne/AppDelegate.swift` | app lifecycle, document controller |
-| `Sources/Lucerne/MainMenu.swift` | programmatic menu bar (File/Edit/Format/View) |
+| `Sources/Lucerne/AppDelegate.swift` | app lifecycle, welcome/about, document controller |
+| `Sources/Lucerne/MainMenu.swift` | programmatic menu bar (File/Edit/Format/Insert/View) |
+| `Sources/Lucerne/WelcomeWindowController.swift` | start screen (recents + New/Open/Sample) |
+| `Sources/Lucerne/AboutWindowController.swift` | custom About window with the app icon |
 | `Sources/LucerneKit/Model/` | Codable `document.json` model + Markdown export |
-| `Sources/LucerneKit/Text/` | model ⇆ `NSAttributedString` bridge |
+| `Sources/LucerneKit/Text/` | model ⇆ `NSAttributedString` bridge (`.lucerne*` attributes) |
 | `Sources/LucerneKit/Layout/` | page metrics, pagination, exclusion paths |
-| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, floating images |
-| `Sources/LucerneKit/IO/` | `MiniZip`, `.luce` archive read/write, `NSDocument` |
-| `Sources/LucerneKit/Document/` | the editor controller tying model↔views together |
+| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, navigator, status bar, sheets, floating images |
+| `Sources/LucerneKit/IO/` | `MiniZip`, `.luce` archive read/write, version history, `NSDocument`, printing |
+| `Sources/LucerneKit/Document/` | `EditorController` + window controller tying model↔views together |
+| `Sources/LucerneKit/Support/` | small AppKit helpers (color↔hex, image↔data, geometry bridge) |
+
+### Feature subsystems (all on the core pipeline above)
+
+- **Headers & footers** are *repeated margin content*, not part of the shared
+  `NSTextStorage`. `EditorController` resolves `{page}{pages}{date}{title}` tokens
+  per page and `PageContainerView` draws them in the top/bottom margins. Model:
+  `header`/`footer` (`PageFurniture`, three zones). Edited via `HeaderFooterSheet`.
+- **Heading navigator** (`NavigatorView`): `EditorController.headingOutline()` scans
+  body paragraphs for heading style roles; clicking scrolls via `revealHeading`.
+- **Printed table of contents**: `insertOrUpdateTableOfContents()` generates a block
+  of paragraphs (a `toc` style role) with right-aligned page numbers, converged over
+  a ≤3-pass relayout loop because inserting it shifts the very page numbers it lists.
+  It is ordinary paragraphs in the model — no special block type.
+- **Version history** (`IO/DocumentHistory.swift`): each save appends a dated
+  Markdown snapshot under `history/` in the `.luce`, thinned with age
+  (`HistoryPruner`) so accidentally-deleted prose is recoverable by unzipping.
+- All three structural features lean on the shared
+  `EditorController.pageNumber(forCharacterAt:)` glyph→page primitive.
 
 ## Conventions
 
@@ -113,6 +134,15 @@ on these views.
 - **MiniZip** writes *stored* (uncompressed) entries — fine because images are
   already compressed and text is tiny — and reads stored + deflate (via the
   `Compression` framework). It is not a general-purpose ZIP library.
+- **Printed ToC** has no dotted tab leader (Cocoa's `NSTextTab` doesn't support
+  one) and goes stale as the document changes until you re-run the command.
+- **Headers/footers** are edited in a dialog; clicking into the margin to edit them
+  in place is future work (the model already supports the three zones).
+- **Tables and lists** are not implemented yet (TextKit 1 supports both natively —
+  `NSTextTable` / `NSTextList`); see `docs/roadmap.md`.
+
+Future direction lives in [`docs/roadmap.md`](docs/roadmap.md); the live feature
+checklist is [`PROGRESS.md`](PROGRESS.md).
 
 ## Adding a feature — checklist
 

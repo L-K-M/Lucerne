@@ -109,6 +109,14 @@ top-left, y increasing downward**.
 - **Defaults on read.** `type` ("image"), `anchor` ("page"), `wrap`
   ("rectangular"), `standoff` (12), and `z` (0) are filled in if absent, so
   hand-edited or older files still load.
+- **Optional `header` / `footer`.** Two top-level objects with three string zones
+  (`left`/`center`/`right`) drawn in the page margins; each zone may contain the
+  tokens `{page}`, `{pages}`, `{date}`, `{title}`. Additive and presentational —
+  not represented in `content.md`. Full rules in the spec, §3.2.
+- **Generated regions carry no special structure.** A printed table of contents,
+  for example, is just ordinary paragraphs (the app tags them with a `toc` style
+  role); the format has no dedicated "ToC" or "field" block. An unknown style role
+  falls back to `body` on read.
 
 ## Versioning
 

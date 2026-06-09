@@ -183,6 +183,13 @@ referenced by any paragraph's `style`.
 `body` is an ordered array of **paragraph** objects. The document's text is the
 concatenation of paragraphs in order, separated by paragraph breaks.
 
+> *Informative.* `body` is a flat list; the format has no nested block types in
+> version 1. Generated regions such as a printed table of contents are therefore
+> represented as **ordinary paragraphs** — a writer MAY group them under a
+> dedicated style role (the reference app uses `"toc"`), but they carry no special
+> semantics, and a reader treats an unrecognized role per §5 (fall back to `body`).
+> Tables and lists are out of scope for version 1 (see the project roadmap).
+
 ### 6.1 Paragraph object
 
 | Member | Type | Presence | Notes |

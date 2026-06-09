@@ -88,6 +88,20 @@ tests so it can't silently drift.
 | Changing standoff / wrap | recompute exclusions → relayout |
 | Window resize | none for text (pages are fixed size, D1); canvas just recentres |
 
+## Structural features on top of the pipeline
+
+These were layered on without changing the core pipeline. All that need "which page
+is character *i* on?" use one shared primitive,
+`EditorController.pageNumber(forCharacterAt:)` (glyph → container → page index).
+
+| Feature | Where it lives | Note |
+|---|---|---|
+| **Headers & footers** | `EditorController` resolves `{page}{pages}{date}{title}` per page; `PageContainerView` draws them in the margins | *Repeated margin content*, deliberately **not** in the shared `NSTextStorage`, so it never touches body reflow. Model: `header`/`footer` zones. |
+| **Heading navigator** | `headingOutline()` scans body paragraphs by style role; `NavigatorView` lists them; `revealHeading` scrolls | No document mutation; pure read of the model + page lookup. |
+| **Printed ToC** | `insertOrUpdateTableOfContents()` writes a `toc`-styled paragraph block with right-aligned page numbers | Generated, so it goes stale; inserting it shifts later pages, so it **converges over a ≤3-pass relayout loop** (same idea as page-break bands). Ordinary paragraphs in the model — no special block type. |
+| **Forced page breaks** | `pageBreakBefore` paragraph flag → a full-width exclusion *band* in `paginateAndExclude()` | Isolated, so break-free documents are byte-for-byte the plain overflow case. |
+| **Version history** | `IO/DocumentHistory.swift` appends a dated Markdown snapshot to `history/` on save; `HistoryPruner` thins with age | Recovery convenience; non-authoritative (`document.json` is the source of truth). |
+
 ## Module boundaries
 
 - `Model/` — AppKit-free Codable model + Markdown export + geometry. Unit-tested.
@@ -95,11 +109,14 @@ tests so it can't silently drift.
   `.lucerneStyleRole` custom attribute that carries paragraph-style roles through
   round-trips.
 - `Layout/` — `PageMetrics` (pure math), `ExclusionPathController`.
-- `Views/` — canvas, page, text view, ruler, floating image.
-- `IO/` — `MiniZip`, `.luce` archive, `NSDocument` subclass, PDF export.
-- `Document/` — `EditorController`, the conductor wiring model ⇆ views.
+- `Views/` — canvas, page, text view, ruler, navigator, status bar, sheets, floating image.
+- `IO/` — `MiniZip`, `.luce` archive, version history, `NSDocument` subclass, PDF/print.
+- `Document/` — `EditorController` (conductor: pagination, exclusions, furniture,
+  outline, ToC) + `DocumentWindowController` (toolbar/ruler/canvas/status/navigator).
+- `Support/` — small AppKit helpers (color↔hex, image↔data, geometry bridge).
 
 ## Known limitations
 
-See `AGENTS.md` ▸ "Gotchas / known limitations" — cross-page selection,
-boundary overhang, irregular wrap, and the scope of `MiniZip`.
+See `AGENTS.md` ▸ "Gotchas / known limitations" and `docs/roadmap.md` — cross-page
+selection, boundary overhang, irregular wrap, the scope of `MiniZip`, no dotted ToC
+leader, dialog-only header/footer editing, and tables/lists not yet implemented.

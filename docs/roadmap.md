@@ -1,102 +1,123 @@
-# Design notes — page numbers, table of contents, tables
+# Roadmap
 
-Exploratory design for three related features, with effort estimates and how each
-fits Lucerne's architecture (TextKit 1, one layout manager + one container per page,
-named paragraph styles, page-anchored objects). Estimates are rough developer-days.
+Forward-looking plan for Lucerne. For the full, granular feature checklist see
+[`PROGRESS.md`](../PROGRESS.md); for the file-format contract see
+[`luce-format-spec.md`](luce-format-spec.md). This document focuses on **what's
+next and why**, with rough effort estimates (developer-days) and how each item
+fits the architecture: TextKit 1, one layout manager + one container per page
+(D1), named paragraph styles (D3), and page-anchored objects that punch holes in
+the text frame.
 
-## Shared primitive: page-number-for-character
+> **Verification reality.** The project is authored without a local Swift
+> toolchain and is verified only by macOS CI (build + unit tests). Anything that
+> can't be unit-tested needs on-device QA, so the working rhythm is: ship a first
+> cut, QA on a Mac, iterate. Estimates below are for the *implementation*; budget
+> extra for that QA loop.
 
-Almost everything here needs "which page is character *i* on?". We already have the
-machinery: the layout manager maps a glyph to its container, and containers map 1:1
-to pages. So a small helper on `EditorController` underpins all of it:
+## Shared primitive (the thing everything leans on)
 
-```swift
-func pageNumber(forCharacterAt index: Int) -> Int   // 1-based
-// glyphIndexForCharacter → textContainer(forGlyphAt:) → pages.firstIndex(of: container)
-```
+Almost every structural feature needs "which page is character *i* on?". That's
+shipped as `EditorController.pageNumber(forCharacterAt:)` (1-based; via
+`glyphIndexForCharacter → textContainer(forGlyphAt:) → pages.firstIndex`). Page
+numbers, the ToC's page column, and the navigator's "jump to heading" all use it,
+and tables will too (cells have character indices).
 
-Build this first; page numbers, the ToC's page column, and "jump to heading" all use it.
+## Shipped (the roadmap so far)
 
-## 1. Page numbers (headers & footers)
+The original exploration proposed five steps; the first four are done:
 
-Headers/footers are **repeated margin content**, not part of the flowing body — so
-they don't belong in the shared `NSTextStorage`. Draw them per page in the top/bottom
-margin of each `PageContainerView`.
+1. ✅ **`pageNumber(forCharacterAt:)`** — the shared glyph→page primitive above.
+2. ✅ **Headers & footers / page numbers** — three zones (left/center/right) with
+   `{page} {pages} {date} {title}` tokens, drawn in the top/bottom page margins of
+   every page. Set via a dialog (Insert ▸ Header & Footer…) and persisted as
+   `header`/`footer` in `document.json`. They are *repeated margin content*, not
+   part of the flowing `NSTextStorage`, so they don't interact with body reflow.
+3. ✅ **Heading navigator** — a sidebar (View ▸ Show Navigator) listing the
+   document's headings, built by scanning body paragraphs for heading style roles;
+   click an entry to scroll to it.
+4. ✅ **Printed table of contents** — Insert ▸ Table of Contents generates a block
+   of entries with right-aligned page numbers. Because inserting it shifts later
+   content (and thus the page numbers it lists), it **converges over a short
+   relayout loop** (≤3 passes), like the page-break bands. It's persisted as a
+   `toc` paragraph style and carries no special structure in the file (it's just
+   paragraphs); re-run the command to refresh it.
 
-- **Model:** add an optional `header`/`footer` to `page`, each with up to three
-  zones (left/center/right) — the classic word-processor layout — where a zone is a
-  short string that may contain field tokens: page number, page count, date, title.
-  This is additive to the file format (bump nothing; new optional keys).
-- **Rendering:** each page view draws its footer, substituting the page number
-  (its index + 1) and total (`pages.count`). No interaction with body reflow, so it's
-  cheap and stable.
-- **Margins:** reserve a band inside the existing margin for the header/footer (or
-  simply draw within the current margin). The body container size is unchanged.
+What remains from the original plan — **editable** headers/footers and **tables** —
+plus items learned along the way, is below, roughly in priority order.
 
-**Effort**
-- Auto footer only ("Page N" / "N of M"), set via a small dialog, non-interactive:
-  **~0.5–1 day.** Recommended first step — high value, low risk.
-- Fully editable headers/footers (click into the margin to edit, three tab zones,
-  field insertion UI): **~3–5 days**, almost entirely UI.
+## Next up
 
-## 2. Table of contents
+### Tables — `NSTextTable` (the big one) · ~3–6 days
 
-We already have named heading styles (`heading1/2/3`) with markdown hints, which is
-exactly the structure a ToC needs. Two flavors, independent:
+**TextKit 1 supports tables natively** via `NSTextTable` / `NSTextTableBlock`
+attached to paragraph styles. Cells are ranges of the same text storage, and the
+layout manager flows a table within the container and **paginates it across pages**
+for us — so tables do *not* require a new layout engine; they fit the current model.
 
-**(a) Heading navigator (sidebar) — for navigation, not print.**
-A source-list outline of the document's headings; click to scroll to one. Built by
-scanning body paragraphs for heading style roles; uses the shared page-number helper
-only to optionally show page numbers. No pagination coupling, no document mutation.
-**Effort: ~1–2 days.** Recommended — cheap, very useful, and it validates the
-heading-scanning code the printed ToC reuses.
+- **Model.** Tables are the first body content that isn't a flat paragraph list, so
+  the file format needs a table block type (rows/cells, each cell a paragraph list),
+  or — to stay flat — a per-paragraph "this paragraph is cell (table, row, col,
+  span)" descriptor that the reader regroups into shared `NSTextTable` instances on
+  load. The flat approach keeps `body` an ordered paragraph array and round-trips
+  through the existing bridge with one more custom attribute; it's the recommended
+  first cut. Either way this is the largest model change of the roadmap (bump
+  nothing if additive/optional; otherwise bump `formatVersion`).
+- **Editing.** Cell navigation (Tab / arrows), insert/delete row & column, and later
+  column resize (the ruler could grow column markers). This is the bulk of the work.
+- **Interaction with shipped features.** The page-number helper still works (cells
+  have character indices); the ToC scanner and heading navigator ignore table
+  content; headers/footers are unaffected.
+- **Known hard parts:** a table row straddling a page boundary, and serializing the
+  shared-table object graph faithfully. Ship rectangular, non-splitting tables
+  first; document the limits.
 
-**(b) Printed ToC (a generated block with page numbers).**
-A generated region (usually page 1) listing each heading and its page, with a dotted
-tab leader to a right/decimal tab. The wrinkle is that it's *generated* and goes
-**stale** as the document changes, and inserting it shifts later content (which
-changes the very page numbers it lists — converges in 1–2 passes, like our page-break
-bands).
+### Dotted leaders for the printed ToC · ~0.5–1 day
 
-- Represent it as a **generated block**: a contiguer run of paragraphs tagged with a
-  custom attribute (e.g. `.lucerneGeneratedToC`) so it can be located and replaced
-  wholesale on "Update Table of Contents" (and before print/PDF/save).
-- Each entry is a paragraph with a right tab + leader; page number from the shared
-  helper. Regeneration is: remove the old tagged block, recompute, re-insert,
-  re-paginate.
-- It does **not** round-trip as structure — on save it's just paragraphs (and the
-  tag, which we can persist like `lucerneStyleRole`). Re-running "Update" rebuilds it.
+The ToC right-aligns page numbers with a tab today; the classic look adds a dotted
+leader (`Chapter One .......... 12`). Cocoa's `NSTextTab` has **no** leader/fill
+support, so the approach is to **fill the gap with dots manually**: measure the
+title and number widths in the ToC font, divide the remaining line width by the
+dot-glyph width, and insert that many `.` characters between them (no tab needed —
+the dots push the number to the right edge). The dot count is a pure,
+unit-testable function; exact alignment needs on-device QA. Degrade gracefully:
+clamp to ≥0 dots and fall back to plain spacing when there's no room or the title
+wraps to a second line.
 
-**Effort: ~2–4 days** (generated-block management + leader/tab formatting + refresh
-triggers). Do after the navigator and page numbers.
+### Editable header/footer click-zones · ~3–5 days (almost all UI)
 
-## 3. Tables (future)
+Headers/footers are edited in a dialog today. The richer experience is to click
+into the margin band and type in place, with three tab zones and a field-token
+insertion UI. This is hit-testing in the margins plus an inline editor overlay; **no
+model change** is needed — the `header`/`footer` zones already exist.
 
-Good news: **TextKit 1 supports tables natively** via `NSTextTable` /
-`NSTextTableBlock` attached to paragraph styles. Cells are ranges of the same text
-storage, and the layout manager flows a table within the container and **paginates it
-across pages** for us. So tables do *not* require a new layout engine — they fit the
-current model.
+### Lists (numbering / nesting) · ~2–4 days
 
-- **Model:** tables are the first body content that isn't a flat paragraph list, so
-  the file format needs a table block type (rows/cells, each cell a paragraph list).
-  This is the largest model change of the three.
-- **Editing:** cell navigation (Tab/arrows), insert/delete row/column, resize columns
-  (the ruler could grow column markers later) — this is the bulk of the work.
-- **Interaction with the above:** the page-number helper still works (cells have
-  character indices); the ToC scanner ignores table content; headers/footers are
-  unaffected.
+`NSTextList` attaches to a paragraph style's `textLists`, so TextKit renders the
+bullets/numbers and handles the indentation. Model: a per-paragraph list descriptor
+(marker format + nesting level); bridge it through the text storage; expose it on
+the Format menu + toolbar. The model round-trip is unit-testable. A natural
+companion to tables.
 
-**Effort: ~3–6 days** for basic tables (create, edit cells, add/remove rows/cols),
-more for column resize and irregular spans.
+## Later / backlog
 
-## Suggested order
+- **Cross-page text selection.** Each `NSTextView` owns selection within its own
+  page (a property of the shared-layout-manager pattern). Unifying selection and the
+  caret across page boundaries is the largest editing-surface gap.
+- **Irregular (alpha-outline) image wrap.** Modeled as `wrap: "irregular"` but today
+  it falls back to the bounding rectangle. Build the outline path from image alpha.
+- **Image overhang at page edges.** A floating image is currently clipped to its
+  page; the plan permits overhang past the edge.
+- **Paragraph-anchored objects in the UI.** The model supports `anchor: "paragraph"`
+  (objects that move with their text); only page-anchored placement is wired into
+  the UI so far.
+- **DOCX lossy export.** RTF export exists; DOCX is the next interchange target.
+- **Document inspector & preferences.** A panel for page size / margins / styles,
+  and app-level preferences.
 
-1. `pageNumber(forCharacterAt:)` helper (tiny, unblocks everything).
-2. Auto page-number footer (cheap, visible win).
-3. Heading navigator sidebar (cheap, high value, reuses heading scanning).
-4. Printed ToC with page numbers (builds on 1 + 3).
-5. Editable headers/footers (UI-heavy) and tables (model-heavy) as larger follow-ups.
+## Architectural through-line
 
-Items 1–3 are each ~1–2 days and largely independent; 4 and 5 are the bigger lifts.
-None require abandoning the TextKit-1 + per-page-container architecture.
+None of the above requires abandoning the TextKit-1 + per-page-container
+architecture. The shared `pageNumber(forCharacterAt:)` primitive, the
+named-paragraph-style system, and the page-anchored object model are the
+foundations each new feature builds on — which is exactly why the file format and
+the layout pipeline have stayed stable as features accrue.
