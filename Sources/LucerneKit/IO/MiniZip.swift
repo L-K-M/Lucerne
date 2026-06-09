@@ -108,7 +108,14 @@ public enum MiniZip {
 
     // MARK: - Reading
 
-    public static func entries(from data: Data) throws -> [Entry] {
+    /// Reads every entry, verifying structure and each entry's CRC-32. Strict by
+    /// default: any corruption fails the whole read. `droppingCorruptEntriesWhere`
+    /// names the entries whose own corruption (bad payload or CRC mismatch) merely
+    /// drops them from the result instead — for best-effort content (e.g. the
+    /// .luce recovery snapshots) that shouldn't block opening an intact document.
+    public static func entries(from data: Data,
+                               droppingCorruptEntriesWhere isDroppable: (String) -> Bool = { _ in false })
+        throws -> [Entry] {
         let bytes = [UInt8](data)
         guard let eocd = findEndOfCentralDirectory(in: bytes) else { throw ZipError.notAZip }
 
@@ -135,18 +142,25 @@ public enum MiniZip {
                 throw ZipError.corrupt("central directory entry overruns the file")
             }
             let name = String(decoding: bytes[cursor + 46 ..< cursor + 46 + nameLen], as: UTF8.self)
-
-            let payload = try readLocalEntry(bytes, localOffset: localOffset,
-                                             method: method,
-                                             compressedSize: compressedSize,
-                                             uncompressedSize: uncompressedSize)
-            // The central directory always carries the entry's CRC-32; checking it
-            // catches truncation and bit rot that the structure checks can't.
-            if crc != 0, CRC32.checksum(payload) != crc {
-                throw ZipError.corrupt("CRC mismatch for \(name)")
-            }
-            result.append(Entry(name: name, data: payload))
             cursor = recordEnd
+
+            do {
+                let payload = try readLocalEntry(bytes, localOffset: localOffset,
+                                                 method: method,
+                                                 compressedSize: compressedSize,
+                                                 uncompressedSize: uncompressedSize)
+                // The central directory always carries the entry's CRC-32; checking
+                // it catches truncation and bit rot the structure checks can't.
+                if crc != 0, CRC32.checksum(payload) != crc {
+                    throw ZipError.corrupt("CRC mismatch for \(name)")
+                }
+                result.append(Entry(name: name, data: payload))
+            } catch {
+                // Damage confined to a droppable entry's own payload skips just
+                // that entry; the central-directory walk above stays strict.
+                if isDroppable(name) { continue }
+                throw error
+            }
         }
         return result
     }

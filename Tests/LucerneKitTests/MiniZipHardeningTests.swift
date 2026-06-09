@@ -86,4 +86,45 @@ final class MiniZipHardeningTests: XCTestCase {
         // Slicing off the tail removes the end-of-central-directory record.
         assertThrowsZipError(data.prefix(data.count - 8), "a truncated archive must throw")
     }
+
+    // MARK: - Droppable (best-effort) entries
+
+    func testCorruptDroppableEntryIsSkippedNotFatal() throws {
+        let keep = MiniZip.Entry(name: "document.json", data: Data("{\"k\":1}".utf8))
+        let bestEffort = MiniZip.Entry(name: "history/2026.md", data: Data("old prose".utf8))
+        var data = MiniZip.archive([keep, bestEffort])
+        let needle = Data("old prose".utf8)
+        guard let range = data.range(of: needle) else { return XCTFail("payload not found") }
+        data[range.lowerBound] ^= 0xff
+
+        // Strict read refuses the whole archive…
+        assertThrowsZipError(data, "strict read must fail on any CRC mismatch")
+        // …while the lenient read drops only the rotted best-effort entry.
+        let entries = try MiniZip.entries(from: data,
+                                          droppingCorruptEntriesWhere: { $0.hasPrefix("history/") })
+        XCTAssertEqual(entries, [keep], "the intact entry must survive; the rotted one is dropped")
+    }
+
+    func testCorruptAuthoritativeEntryStillThrowsUnderLenientRead() {
+        var data = sampleArchive()   // single entry "a.txt"
+        let payloadStart = 30 + "a.txt".utf8.count
+        data[payloadStart] ^= 0xff
+        XCTAssertThrowsError(try MiniZip.entries(
+            from: data, droppingCorruptEntriesWhere: { $0.hasPrefix("history/") }),
+            "corruption in a non-droppable entry must stay fatal")
+    }
+
+    func testRottedHistorySnapshotDoesNotBlockOpeningTheDocument() throws {
+        let model = DefaultDocuments.empty()
+        let snapshot = HistorySnapshot(timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+                                       markdown: "recoverable prose")
+        var data = try LuceArchive.write(model: model, images: [:], history: [snapshot])
+        let needle = Data("recoverable prose".utf8)
+        guard let range = data.range(of: needle) else { return XCTFail("snapshot payload not found") }
+        data[range.lowerBound] ^= 0xff
+
+        let contents = try LuceArchive.read(data)    // must still open
+        XCTAssertEqual(contents.model, model)
+        XCTAssertTrue(contents.history.isEmpty, "the rotted snapshot is dropped, not fatal")
+    }
 }
