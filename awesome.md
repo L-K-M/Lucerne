@@ -326,6 +326,8 @@ they merge independently:
 | #9 Updater polish | `claude/updater-semver-polish` | Bug 1.4 + tests, download timeout (2.10), "last checked" in Settings (3.7), honest unparseable-tag message (2.9) |
 | #10 Editor correctness & polish | `claude/editor-polish` | Bug 1.5, relayout coalescing (2.1), spell checking (3.2), arrow-key nudge + Esc-cancel (3.5, 3.6) |
 | #11 Find panel & friends | `claude/find-panel` | Find & Replace (3.1), word count (3.3), Fit Page / Fit Width zoom (3.4) |
+| #12 Format safety | `claude/format-safety` | formatVersion guard (1.6), zip-slip name validation (2.7) + tests |
+| #13 Ruler tab fix | `claude/ruler-tab-fix` | Bug 1.8 — verified against the code while implementing |
 
 `PROGRESS.md`/`AGENTS.md` updates were deliberately left out of the
 implementation PRs to keep them conflict-free; a follow-up housekeeping
