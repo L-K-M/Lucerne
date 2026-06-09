@@ -112,6 +112,26 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## Design feedback (round 12)
+- [x] **Classic format bar** — the toolbar is redrawn in the pre-flat Mac style
+  (think iWork '09): a polished gradient strip with a 1 px top highlight and
+  etched group dividers, holding hand-drawn gradient-bezel controls
+  (`Views/ClassicControls.swift`): pop-ups with stacked chevrons in a hairline
+  arrow well, a white inset size field joined to a preset menu well, B/I/U and
+  alignment as single-outline segment groups with path-drawn glyphs, and a
+  framed color-well swatch that goes sunken while active. Bar height 44 → 34.
+- [x] The **status bar** and **ruler** join the chrome so the window reads as one
+  piece: the footer becomes a gradient strip with engraved (white-drop) text and
+  a momentary − / % / + bezel cluster replacing the borderless zoom buttons; the
+  ruler gets the chrome gradient outside its writable band, hairline band edges,
+  and an etched seam where it meets the format bar's border.
+- [~] **Classic window silhouette** — the document window keeps the standard
+  rounded top corners but only slightly rounded (5 pt) bottom corners, via
+  `ClassicWindow`, which answers the private `_cornerMask` shape hook with a
+  two-radius template. Degrades to stock rounded corners if a future macOS
+  drops the hook; the hook is private API, so this one *needs on-device
+  confirmation*.
+
 ## On-device feedback (round 11)
 - [x] The default window now sizes itself to the **screen and the page format**: it
   picks a zoom so a whole page fits within ~90% of the screen (capped at 100%, never

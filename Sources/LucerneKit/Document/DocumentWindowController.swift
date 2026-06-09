@@ -22,7 +22,9 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         // so a full page is visible at a comfortable scale (see initialLayout).
         let layout = DocumentWindowController.initialLayout(
             page: editor.pageMetrics.pageSize, toolbarWidth: toolbarFitWidth)
-        let window = NSWindow(
+        // ClassicWindow: standard rounded top corners, gently rounded bottom
+        // corners (the pre–Big Sur window silhouette, matching the classic chrome).
+        let window = ClassicWindow(
             contentRect: NSRect(origin: .zero, size: layout.size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
@@ -64,7 +66,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     /// never start enlarged), then a window just big enough to show that page plus
     /// the toolbar/ruler/status chrome — capped to the screen.
     private static func initialLayout(page: CGSize, toolbarWidth: CGFloat) -> InitialLayout {
-        let chromeHeight: CGFloat = 96     // toolbar (44) + ruler (30) + status (22)
+        let chromeHeight: CGFloat = 86     // toolbar (34) + ruler (30) + status (22)
         let titleBar: CGFloat = 28         // outside the content rect, but must fit on screen
         let canvasVPad: CGFloat = 56       // PageCanvasView top + bottom inset
         let canvasHPad: CGFloat = 56       // PageCanvasView left + right inset
@@ -129,6 +131,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     public override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        window?.invalidateShadow()   // recompute for the custom window shape
         editor.documentTitle = (document as? NSDocument)?.displayName ?? ""
         editor.refreshFurniture()
         editor.focusInitialResponder()
@@ -374,7 +377,7 @@ private final class EditorContainerView: NSView {
     private let statusBar: StatusBarView
     private let navigator: NavigatorView
     private var pageWidth: CGFloat
-    private let toolbarHeight: CGFloat = 44
+    private let toolbarHeight: CGFloat = ToolbarView.barHeight
     private let statusHeight: CGFloat = 22
     private let navigatorWidth: CGFloat = 210
     private(set) var navigatorVisible = false

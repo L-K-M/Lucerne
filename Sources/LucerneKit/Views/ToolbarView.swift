@@ -1,10 +1,11 @@
 import AppKit
 
-// The control strip across the top of the window (the plan's "simple toolbar at
-// the top of the page"). It talks straight to the EditorController and is kept in
-// sync with the selection via syncFromSelection(). `preferredContentWidth` lets the
-// window size its minimum width so the controls always fit. Bold/Italic/Underline
-// and alignment are segmented controls, so the selected ones take the accent color.
+// The format bar across the top of the window, drawn in the classic pre-flat Mac
+// style (think iWork '09): a polished-metal gradient strip holding hand-drawn
+// gradient-bezel controls in etched groups — see ClassicControls.swift. It talks
+// straight to the EditorController and is kept in sync with the selection via
+// syncFromSelection(). `preferredContentWidth` lets the window size its minimum
+// width so the controls always fit.
 public final class ToolbarView: NSView {
 
     public weak var editor: EditorController?
@@ -13,21 +14,33 @@ public final class ToolbarView: NSView {
     public var onHoverHelp: ((String?) -> Void)?
     private var helpItems: [(view: NSView, help: String)] = []
 
+    /// The bar's designed height; the window controller lays it out at this.
+    public static let barHeight: CGFloat = 34
+
     private let styleRoles = DefaultDocuments.styleRoleOrder
     private let styleNames: [String]
 
-    private let stylePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let fontPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let sizeCombo = NSComboBox()
-    private let formatControl = NSSegmentedControl()   // Bold / Italic / Underline
-    private let colorWell = NSColorWell()
-    private let alignControl = NSSegmentedControl()
-    private let lineSpacingPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let stylePopup = ClassicPopUp(width: 112)
+    private let fontPopup = ClassicPopUp(width: 146)
+    private let sizeField = ClassicSizeField(
+        presets: ["9", "10", "11", "12", "14", "18", "24", "36", "48", "72"], width: 46)
+    private let formatControl = ClassicSegmentedControl(
+        glyphs: [
+            .letter("B", font: .boldSystemFont(ofSize: 12)),
+            .letter("I", font: NSFontManager.shared.convert(.systemFont(ofSize: 12),
+                                                            toHaveTrait: .italicFontMask)),
+            .letter("U", font: .systemFont(ofSize: 12), underlined: true)
+        ],
+        mode: .selectAny)
+    private let colorWell = ClassicColorWell()
+    private let alignControl = ClassicSegmentedControl(
+        glyphs: [.alignment(.left), .alignment(.center), .alignment(.right), .alignment(.justified)],
+        mode: .selectOne)
+    private let lineSpacingPopup = ClassicPopUp(width: 58)
 
     private var stack = NSStackView()
 
     private let lineSpacings: [(String, CGFloat)] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)]
-    private let sizes = ["9", "10", "11", "12", "14", "18", "24", "36", "48", "72"]
 
     public override init(frame frameRect: NSRect) {
         let styles = DefaultDocuments.defaultStyles()
@@ -40,13 +53,13 @@ public final class ToolbarView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     public override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.93, alpha: 1).setFill()
-        bounds.fill()
-        NSColor(calibratedWhite: 0.62, alpha: 1).setStroke()
-        let border = NSBezierPath()       // bottom edge (origin bottom-left, y up)
-        border.move(to: CGPoint(x: 0, y: 0.5))
-        border.line(to: CGPoint(x: bounds.width, y: 0.5))
-        border.stroke()
+        ClassicChrome.gradient(top: 0.965, bottom: 0.795).draw(in: bounds, angle: 90)
+        ClassicChrome.barTopHighlight.setFill()
+        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
+        NSColor(calibratedWhite: 0.66, alpha: 1).setFill()    // soft seam above the border
+        NSRect(x: 0, y: 1, width: bounds.width, height: 1).fill()
+        ClassicChrome.barBottomBorder.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 
     /// Natural width of all the controls; the window uses it to size itself.
@@ -55,55 +68,31 @@ public final class ToolbarView: NSView {
     private func build() {
         stylePopup.addItems(withTitles: styleNames)
         stylePopup.target = self; stylePopup.action = #selector(styleChanged)
-        fixedWidth(stylePopup, 120)
 
         fontPopup.addItems(withTitles: NSFontManager.shared.availableFontFamilies)
         fontPopup.target = self; fontPopup.action = #selector(fontChanged)
-        fixedWidth(fontPopup, 150)
 
-        sizeCombo.addItems(withObjectValues: sizes)
-        sizeCombo.target = self; sizeCombo.action = #selector(sizeChanged)
-        (sizeCombo.cell as? NSTextFieldCell)?.sendsActionOnEndEditing = true
-        fixedWidth(sizeCombo, 56)
+        sizeField.onCommit = { [weak self] raw in self?.applyFontSize(raw) }
 
-        formatControl.segmentCount = 3
-        let formatSymbols = ["bold", "italic", "underline"]
-        for (i, symbol) in formatSymbols.enumerated() {
-            formatControl.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: nil), forSegment: i)
-            formatControl.setWidth(30, forSegment: i)
-        }
-        formatControl.trackingMode = .selectAny    // each toggles independently; selected → accent
         formatControl.target = self; formatControl.action = #selector(formatChanged)
-
         colorWell.target = self; colorWell.action = #selector(colorChanged)
-        fixedWidth(colorWell, 40)
-
-        alignControl.segmentCount = 4
-        let symbols = ["text.alignleft", "text.aligncenter", "text.alignright", "text.justify"]
-        for (i, symbol) in symbols.enumerated() {
-            alignControl.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: nil), forSegment: i)
-            alignControl.setWidth(28, forSegment: i)
-        }
-        alignControl.trackingMode = .selectOne
         alignControl.target = self; alignControl.action = #selector(alignChanged)
 
         lineSpacingPopup.addItems(withTitles: lineSpacings.map(\.0))
         lineSpacingPopup.target = self; lineSpacingPopup.action = #selector(lineSpacingChanged)
-        fixedWidth(lineSpacingPopup, 64)
 
         stack = NSStackView(views: [
-            stylePopup, fontPopup, sizeCombo,
-            formatControl, colorWell,
-            alignControl, lineSpacingPopup
+            stylePopup, separator(),
+            fontPopup, sizeField, separator(),
+            formatControl, separator(),
+            colorWell, separator(),
+            alignControl, separator(),
+            lineSpacingPopup
         ])
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 6
-        // Group with extra spacing instead of separator lines.
-        stack.setCustomSpacing(18, after: stylePopup)
-        stack.setCustomSpacing(18, after: sizeCombo)
-        stack.setCustomSpacing(18, after: colorWell)
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+        stack.spacing = 9
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.setContentHuggingPriority(.required, for: .horizontal)
         addSubview(stack)
@@ -116,15 +105,13 @@ public final class ToolbarView: NSView {
         registerHelp()
     }
 
-    private func fixedWidth(_ view: NSView, _ width: CGFloat) {
-        view.widthAnchor.constraint(equalToConstant: width).isActive = true
-    }
+    private func separator() -> NSView { EtchedSeparatorView(frame: .zero) }
 
     private func registerHelp() {
         let entries: [(NSView, String)] = [
             (stylePopup, "Paragraph style — apply a named style (Body, Heading 1, …) to the selected paragraphs"),
             (fontPopup, "Font family for the selected text"),
-            (sizeCombo, "Font size in points for the selected text"),
+            (sizeField, "Font size in points for the selected text"),
             (formatControl, "Bold (⌘B), Italic (⌘I), Underline (⌘U)"),
             (colorWell, "Text color for the selection"),
             (alignControl, "Paragraph alignment: left, center, right, or justified"),
@@ -172,16 +159,7 @@ public final class ToolbarView: NSView {
         if let family = fontPopup.titleOfSelectedItem { editor?.setFontFamily(family) }
         returnFocusToPage()
     }
-    @objc private func sizeChanged() {
-        // Read the selected item's value when picking from the list (stringValue
-        // can be stale at action time); fall back to the typed text.
-        let raw: String
-        let index = sizeCombo.indexOfSelectedItem
-        if index >= 0, let item = sizeCombo.itemObjectValue(at: index) as? String {
-            raw = item
-        } else {
-            raw = sizeCombo.stringValue
-        }
+    private func applyFontSize(_ raw: String) {
         if let value = Double(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
         returnFocusToPage()
     }
@@ -192,13 +170,13 @@ public final class ToolbarView: NSView {
         case 2: editor?.toggleUnderline()
         default: break
         }
-        syncFromSelection()   // reflect the true state (and accent) back on the control
+        syncFromSelection()   // reflect the true state back on the control
         returnFocusToPage()
     }
     @objc private func colorChanged() { editor?.setTextColor(colorWell.color) }
     @objc private func alignChanged() {
         let map: [NSTextAlignment] = [.left, .center, .right, .justified]
-        editor?.setAlignment(map[min(alignControl.selectedSegment, 3)])
+        editor?.setAlignment(map[min(max(alignControl.selectedSegment, 0), 3)])
         returnFocusToPage()
     }
     @objc private func lineSpacingChanged() {
@@ -225,7 +203,7 @@ public final class ToolbarView: NSView {
         let attrs = editor.currentAttributes()
         if let font = attrs[.font] as? NSFont {
             if let family = font.familyName { fontPopup.selectItem(withTitle: family) }
-            sizeCombo.stringValue = String(Int(font.pointSize.rounded()))
+            sizeField.stringValue = String(Int(font.pointSize.rounded()))
             formatControl.setSelected(FontResolver.isBold(font), forSegment: 0)
             formatControl.setSelected(FontResolver.isItalic(font), forSegment: 1)
         }
@@ -240,7 +218,7 @@ public final class ToolbarView: NSView {
             case .justified: seg = 3
             default: seg = 0
             }
-            alignControl.selectedSegment = seg
+            alignControl.setSelected(true, forSegment: seg)
             if ps.lineHeightMultiple > 0,
                let index = lineSpacings.firstIndex(where: { abs($0.1 - ps.lineHeightMultiple) < 0.01 }) {
                 lineSpacingPopup.selectItem(at: index)
