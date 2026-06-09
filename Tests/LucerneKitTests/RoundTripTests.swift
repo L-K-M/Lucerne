@@ -191,6 +191,41 @@ final class TableOfContentsLeaderTests: XCTestCase {
     }
 }
 
+final class TableRoundTripTests: XCTestCase {
+
+    private func table2x2() -> LucerneDocumentModel {
+        func cell(_ r: Int, _ c: Int, _ text: String) -> Paragraph {
+            Paragraph(id: "c\(r)\(c)", style: "body",
+                      cell: TableCellModel(table: "t1", row: r, column: c), runs: [Run(text: text)])
+        }
+        return LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [cell(0, 0, "A"), cell(0, 1, "B"), cell(1, 0, "C"), cell(1, 1, "D")],
+            objects: [])
+    }
+
+    func testTableCellsSurviveTextBridge() {
+        let model = table2x2()
+        let attributed = AttributedStringBuilder.attributedString(for: model)
+        let restored = AttributedStringReader.paragraphs(from: attributed, styles: model.styles)
+
+        let cells = restored.compactMap { $0.cell }
+        XCTAssertEqual(cells.count, 4, "all four cells should round-trip as table cells")
+        XCTAssertEqual(Set(cells.map(\.table)).count, 1, "cells of one table must share one id")
+        XCTAssertEqual(cells.map { "\($0.row)\($0.column)" }.sorted(), ["00", "01", "10", "11"])
+        XCTAssertEqual(restored.compactMap { $0.cell != nil ? $0.plainText : nil }, ["A", "B", "C", "D"])
+    }
+
+    func testTableModelRoundTripsThroughJSON() throws {
+        let model = table2x2()
+        let data = try JSONEncoder().encode(model)
+        let decoded = try JSONDecoder().decode(LucerneDocumentModel.self, from: data)
+        XCTAssertEqual(decoded, model)
+        XCTAssertEqual(decoded.body.first?.cell?.column, 0)
+        XCTAssertEqual(decoded.body.first?.cell?.rowSpan, 1)
+    }
+}
+
 final class FurnitureModelTests: XCTestCase {
 
     func testHeaderFooterAndPageNumberStartRoundTripThroughJSON() throws {

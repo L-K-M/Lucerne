@@ -11,9 +11,11 @@ public enum AttributedStringBuilder {
     public static func attributedString(for model: LucerneDocumentModel) -> NSAttributedString {
         let out = NSMutableAttributedString()
         var pageBreakStarts: [Int] = []
+        let tables = buildTables(for: model)
         for (index, paragraph) in model.body.enumerated() {
             let style = model.resolvedStyle(for: paragraph.style)
-            let paragraphStyle = makeParagraphStyle(paragraph, style: style)
+            let paragraphStyle = makeParagraphStyle(paragraph, style: style,
+                                                    tableBlock: tableBlock(for: paragraph, tables: tables))
             let start = out.length
             appendRuns(of: paragraph, style: style, paragraphStyle: paragraphStyle, into: out)
             if index < model.body.count - 1 {
@@ -86,11 +88,54 @@ public enum AttributedStringBuilder {
         return attrs
     }
 
+    // MARK: - Tables (NSTextTable)
+
+    /// One shared `NSTextTable` per distinct `cell.table` id in the body. Its column
+    /// count is derived from the cells (max column + span), so the model stays a flat
+    /// paragraph list. TextKit lays the cells out into the grid and paginates them.
+    private static func buildTables(for model: LucerneDocumentModel) -> [String: NSTextTable] {
+        var columns: [String: Int] = [:]
+        for paragraph in model.body {
+            guard let cell = paragraph.cell else { continue }
+            columns[cell.table] = max(columns[cell.table] ?? 0, cell.column + max(1, cell.columnSpan))
+        }
+        return columns.mapValues { makeTextTable(columns: $0) }
+    }
+
+    private static func tableBlock(for paragraph: Paragraph, tables: [String: NSTextTable]) -> NSTextTableBlock? {
+        guard let cell = paragraph.cell, let table = tables[cell.table] else { return nil }
+        return makeTableBlock(table: table, row: cell.row, column: cell.column,
+                              rowSpan: cell.rowSpan, columnSpan: cell.columnSpan)
+    }
+
+    /// A table with `columns` equal-width columns. Public so the editor's "Insert
+    /// Table" builds cells with the same geometry the load path produces.
+    public static func makeTextTable(columns: Int) -> NSTextTable {
+        let table = NSTextTable()
+        table.numberOfColumns = max(1, columns)
+        return table
+    }
+
+    /// A bordered, padded cell block for `table`, sized to an equal share of the width.
+    public static func makeTableBlock(table: NSTextTable, row: Int, column: Int,
+                                      rowSpan: Int, columnSpan: Int) -> NSTextTableBlock {
+        let block = NSTextTableBlock(table: table, startingRow: row, rowSpan: max(1, rowSpan),
+                                     startingColumn: column, columnSpan: max(1, columnSpan))
+        block.setValue(100.0 / CGFloat(max(1, table.numberOfColumns)),
+                       type: .percentageValueType, for: .width)
+        block.setBorderColor(NSColor(calibratedWhite: 0.6, alpha: 1))
+        block.setWidth(1, type: .absoluteValueType, for: .border)
+        block.setWidth(5, type: .absoluteValueType, for: .padding)
+        return block
+    }
+
     // MARK: - Paragraph style
 
-    static func makeParagraphStyle(_ paragraph: Paragraph, style: ParagraphStyleDef) -> NSParagraphStyle {
+    static func makeParagraphStyle(_ paragraph: Paragraph, style: ParagraphStyleDef,
+                                   tableBlock: NSTextTableBlock? = nil) -> NSParagraphStyle {
         let ps = NSMutableParagraphStyle()
         ps.alignment = alignment(from: paragraph.align ?? style.alignment)
+        if let tableBlock { ps.textBlocks = [tableBlock] }
 
         if let mult = paragraph.lineSpacing ?? style.lineSpacing { ps.lineHeightMultiple = CGFloat(mult) }
         ps.paragraphSpacing = CGFloat(paragraph.spaceAfter ?? style.spaceAfter ?? 0)

@@ -120,6 +120,10 @@ top-left, y increasing downward**.
   for example, is just ordinary paragraphs (the app tags them with a `toc` style
   role); the format has no dedicated "ToC" or "field" block. An unknown style role
   falls back to `body` on read.
+- **Tables keep the body flat too.** A table is a run of consecutive paragraphs that
+  each carry an optional `cell` object (`table` id + `row`/`column` + optional spans);
+  the column count is derived from the cells. A tool that ignores `cell` still gets
+  every cell's text as a plain paragraph. Full rules in the spec, §6.7.
 
 ## Versioning
 

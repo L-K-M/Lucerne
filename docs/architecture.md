@@ -101,6 +101,7 @@ is character *i* on?" use one shared primitive,
 | **Printed ToC** | `insertOrUpdateTableOfContents()` writes a `toc`-styled paragraph block with right-aligned page numbers | Generated, so it goes stale; inserting it shifts later pages, so it **converges over a ≤3-pass relayout loop** (same idea as page-break bands). Ordinary paragraphs in the model — no special block type. |
 | **Forced page breaks** | `pageBreakBefore` paragraph flag → a full-width exclusion *band* in `paginateAndExclude()` | Isolated, so break-free documents are byte-for-byte the plain overflow case. |
 | **Version history** | `IO/DocumentHistory.swift` appends a dated Markdown snapshot to `history/` on save; `HistoryPruner` thins with age | Recovery convenience; non-authoritative (`document.json` is the source of truth). |
+| **Tables** | `EditorController.insertTable` builds `NSTextTable` cells; the bridge stores each cell as a `Paragraph.cell` and regroups them on load | TextKit flows and paginates the table — no new layout engine. Body stays a flat paragraph list (no nested block type). |
 
 ## Module boundaries
 

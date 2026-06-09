@@ -170,6 +170,7 @@ public struct Paragraph: Codable, Equatable {
     public var spaceBefore: Double?          // points before paragraph
     public var spaceAfter: Double?           // points after paragraph
     public var pageBreakBefore: Bool?        // force this paragraph onto a new page
+    public var cell: TableCellModel?         // present when this paragraph is a table cell
     public var runs: [Run]
 
     public init(id: String,
@@ -181,6 +182,7 @@ public struct Paragraph: Codable, Equatable {
                 spaceBefore: Double? = nil,
                 spaceAfter: Double? = nil,
                 pageBreakBefore: Bool? = nil,
+                cell: TableCellModel? = nil,
                 runs: [Run]) {
         self.id = id
         self.style = style
@@ -191,11 +193,42 @@ public struct Paragraph: Codable, Equatable {
         self.spaceBefore = spaceBefore
         self.spaceAfter = spaceAfter
         self.pageBreakBefore = pageBreakBefore
+        self.cell = cell
         self.runs = runs
     }
 
     /// The plain text of the paragraph (runs concatenated).
     public var plainText: String { runs.map(\.text).joined() }
+}
+
+/// Marks a paragraph as a cell of a table. Cells sharing a `table` id form one
+/// table; the grid is laid out by each cell's `(row, column)` plus its spans. The
+/// table's column count is derived from the cells (no redundant field), so the
+/// content is still a flat ordered paragraph list (no nested block type).
+public struct TableCellModel: Codable, Equatable {
+    public var table: String                 // shared id grouping a table's cells
+    public var row: Int                      // 0-based
+    public var column: Int                   // 0-based
+    public var rowSpan: Int
+    public var columnSpan: Int
+
+    public init(table: String, row: Int, column: Int, rowSpan: Int = 1, columnSpan: Int = 1) {
+        self.table = table
+        self.row = row
+        self.column = column
+        self.rowSpan = rowSpan
+        self.columnSpan = columnSpan
+    }
+
+    // Tolerate files that omit the defaulted spans.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        table = try c.decode(String.self, forKey: .table)
+        row = try c.decode(Int.self, forKey: .row)
+        column = try c.decode(Int.self, forKey: .column)
+        rowSpan = try c.decodeIfPresent(Int.self, forKey: .rowSpan) ?? 1
+        columnSpan = try c.decodeIfPresent(Int.self, forKey: .columnSpan) ?? 1
+    }
 }
 
 public struct IndentModel: Codable, Equatable {

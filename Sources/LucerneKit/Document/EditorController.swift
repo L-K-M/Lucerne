@@ -721,6 +721,57 @@ public final class EditorController: NSObject {
         }
     }
 
+    // MARK: - Tables
+
+    /// Inserts a `rows × columns` table at the caret. Each cell is an empty paragraph
+    /// carrying its `NSTextTableBlock`; TextKit lays them into the grid and flows the
+    /// table through the page containers. The cell paragraphs round-trip to the model
+    /// as `Paragraph.cell` (see AttributedStringBuilder/Reader). Click a cell to type;
+    /// the table is bounded above/below by ordinary body paragraphs.
+    public func insertTable(rows: Int, columns: Int) {
+        guard rows > 0, columns > 0,
+              let tv = formattingTextView(), let storage = tv.textStorage else { return }
+        let table = AttributedStringBuilder.makeTextTable(columns: columns)
+        let cells = NSMutableAttributedString()
+        for r in 0 ..< rows {
+            for c in 0 ..< columns {
+                let block = AttributedStringBuilder.makeTableBlock(
+                    table: table, row: r, column: c, rowSpan: 1, columnSpan: 1)
+                cells.append(NSAttributedString(string: "\n", attributes: tableCellAttributes(block: block)))
+            }
+        }
+        withUndo("Insert Table") {
+            let ns = storage.string as NSString
+            let caret = min(tv.selectedRange().location, ns.length)
+            let atParagraphStart = caret == 0 || ns.character(at: caret - 1) == 0x0A
+            let bodyAttrs = AttributedStringBuilder.typingAttributes(
+                role: LucerneDocumentModel.defaultStyleRole, in: model, paragraphID: IDGenerator.next("p"))
+            let insert = NSMutableAttributedString()
+            // Put the table on its own paragraph boundary, and make sure a normal
+            // body paragraph follows it (so the last cell is terminated by non-cell text).
+            if !atParagraphStart { insert.append(NSAttributedString(string: "\n", attributes: bodyAttrs)) }
+            insert.append(cells)
+            if caret == ns.length { insert.append(NSAttributedString(string: "\n", attributes: bodyAttrs)) }
+            storage.insert(insert, at: caret)
+            let firstCell = caret + (atParagraphStart ? 0 : 1)
+            tv.setSelectedRange(NSRange(location: min(firstCell, (storage.string as NSString).length), length: 0))
+        }
+    }
+
+    /// Attributes for a single (empty) table cell paragraph: the Body run attributes
+    /// plus a paragraph style whose `textBlocks` is the cell's block.
+    private func tableCellAttributes(block: NSTextTableBlock) -> [NSAttributedString.Key: Any] {
+        let role = LucerneDocumentModel.defaultStyleRole
+        let style = model.resolvedStyle(for: role)
+        let font = FontResolver.font(family: style.font, size: CGFloat(style.size ?? 12),
+                                     bold: style.bold ?? false, italic: style.italic ?? false)
+        let ps = NSMutableParagraphStyle()
+        ps.textBlocks = [block]
+        let color = style.color.flatMap { NSColor(hexString: $0) } ?? .black
+        return [.font: font, .foregroundColor: color, .paragraphStyle: ps,
+                .lucerneStyleRole: role, .lucerneParagraphID: IDGenerator.next("cell")]
+    }
+
     // MARK: - Style table editing (used by the inspector / style menu)
 
     public func currentStyleRole() -> String? {

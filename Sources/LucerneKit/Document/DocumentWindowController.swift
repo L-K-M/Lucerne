@@ -226,6 +226,14 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         syncUI()
     }
 
+    @objc func lucerneInsertTable(_ sender: Any?) {
+        guard let window else { return }
+        TableInsertSheet.present(from: window) { [weak self] rows, columns in
+            self?.editor.insertTable(rows: rows, columns: columns)
+            self?.syncUI()
+        }
+    }
+
     // MARK: - Document setup (page size + margins)
 
     @objc func lucerneDocumentSetup(_ sender: Any?) {

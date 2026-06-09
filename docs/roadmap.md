@@ -43,35 +43,31 @@ The original exploration proposed five steps; the first four are done:
    **converges over a short relayout loop** (≤3 passes), like the page-break bands.
    It's persisted as a `toc` paragraph style and carries no special structure in the
    file (it's just paragraphs); re-run the command to refresh it.
+5. ✅ **Tables (v1)** — Insert ▸ Table… creates a rows×columns grid via `NSTextTable`
+   / `NSTextTableBlock`. Cells are ordinary editable text; the table flows and
+   **paginates with the body** (no new layout engine). The model stays a **flat
+   paragraph list** — each cell is a paragraph with an optional `cell` descriptor
+   (`table` id + `row`/`column` + spans) that the bridge regroups into shared
+   `NSTextTable` instances on load. See "Table polish" below for what's deferred.
 
-What remains from the original plan — **editable** headers/footers and **tables** —
-plus items learned along the way, is below, roughly in priority order.
+What remains — **editable** headers/footers and **table polish** — plus items
+learned along the way, is below, roughly in priority order.
 
 ## Next up
 
-### Tables — `NSTextTable` (the big one) · ~3–6 days
+### Table polish · ~2–4 days
 
-**TextKit 1 supports tables natively** via `NSTextTable` / `NSTextTableBlock`
-attached to paragraph styles. Cells are ranges of the same text storage, and the
-layout manager flows a table within the container and **paginates it across pages**
-for us — so tables do *not* require a new layout engine; they fit the current model.
+The v1 tables (above) cover create + edit + round-trip. Remaining:
 
-- **Model.** Tables are the first body content that isn't a flat paragraph list, so
-  the file format needs a table block type (rows/cells, each cell a paragraph list),
-  or — to stay flat — a per-paragraph "this paragraph is cell (table, row, col,
-  span)" descriptor that the reader regroups into shared `NSTextTable` instances on
-  load. The flat approach keeps `body` an ordered paragraph array and round-trips
-  through the existing bridge with one more custom attribute; it's the recommended
-  first cut. Either way this is the largest model change of the roadmap (bump
-  nothing if additive/optional; otherwise bump `formatVersion`).
-- **Editing.** Cell navigation (Tab / arrows), insert/delete row & column, and later
-  column resize (the ruler could grow column markers). This is the bulk of the work.
-- **Interaction with shipped features.** The page-number helper still works (cells
-  have character indices); the ToC scanner and heading navigator ignore table
-  content; headers/footers are unaffected.
-- **Known hard parts:** a table row straddling a page boundary, and serializing the
-  shared-table object graph faithfully. Ship rectangular, non-splitting tables
-  first; document the limits.
+- **Cell navigation** — Tab / Shift-Tab to the next/previous cell, arrows across cell
+  boundaries (override `insertTab`/`insertBacktab` in the page text view to move the
+  caret to the adjacent cell's range).
+- **Structure edits** — insert / delete row & column (renumber the cells' `row`/
+  `column` and rebuild the table), and merge cells (spans already exist in the model).
+- **Column resize** — drag column dividers (the ruler could grow column markers);
+  store per-column widths on the table.
+- **Robustness** — a tall table splitting cleanly across a page boundary, and a
+  Markdown rendering of tables in `content.md` (today each cell is its own block).
 
 ### Editable header/footer click-zones · ~3–5 days (almost all UI)
 

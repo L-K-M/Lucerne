@@ -106,7 +106,11 @@ on these views.
 - **Version history** (`IO/DocumentHistory.swift`): each save appends a dated
   Markdown snapshot under `history/` in the `.luce`, thinned with age
   (`HistoryPruner`) so accidentally-deleted prose is recoverable by unzipping.
-- All three structural features lean on the shared
+- **Tables** (`NSTextTable`): each cell is a paragraph carrying a `Paragraph.cell`
+  descriptor; `AttributedStringBuilder` regroups same-`table` cells into one shared
+  `NSTextTable` (deriving the column count) and the reader maps the blocks back. The
+  body stays a flat paragraph list — no nested block type in the model or file.
+- The structural features that need page numbers lean on the shared
   `EditorController.pageNumber(forCharacterAt:)` glyph→page primitive.
 
 ## Conventions
@@ -138,8 +142,10 @@ on these views.
   one) and goes stale as the document changes until you re-run the command.
 - **Headers/footers** are edited in a dialog; clicking into the margin to edit them
   in place is future work (the model already supports the three zones).
-- **Tables and lists** are not implemented yet (TextKit 1 supports both natively —
-  `NSTextTable` / `NSTextList`); see `docs/roadmap.md`.
+- **Tables** are v1: Insert ▸ Table… makes an editable `NSTextTable` grid that flows
+  with the text. Deferred: Tab-between-cells navigation, insert/delete row & column,
+  column resize, and clean splitting across a page boundary. **Lists** aren't
+  implemented yet (`NSTextList`). See `docs/roadmap.md`.
 
 Future direction lives in [`docs/roadmap.md`](docs/roadmap.md); the live feature
 checklist is [`PROGRESS.md`](PROGRESS.md).

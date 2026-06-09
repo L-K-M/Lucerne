@@ -164,6 +164,7 @@ enum MainMenu {
             add(menu, "Page Break", "lucerneInsertPageBreak:", key: "\r", modifiers: [.command, .shift])
             add(menu, "Page Number", "lucerneInsertPageNumber:")
             add(menu, "Header & Footer…", "lucerneHeaderFooter:")
+            add(menu, "Table…", "lucerneInsertTable:")
             add(menu, "Table of Contents", "lucerneTableOfContents:")
             menu.addItem(.separator())
             let wrap = NSMenuItem(title: "Image Text Wrap", action: nil, keyEquivalent: "")

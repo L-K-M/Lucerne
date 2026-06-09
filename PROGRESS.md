@@ -113,6 +113,10 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
 ## On-device feedback (round 8)
+- [x] **Tables** (Insert ▸ Table…) via `NSTextTable` — a rows×columns grid of
+  editable cells that flows and paginates with the text. Cells round-trip to the
+  model as `Paragraph.cell` (a flat list, no nested block type). v1: rectangular
+  cells, no Tab-between-cells navigation or column resize yet
 - [x] Formatting with **no selection** now works: a toolbar/menu command always has
   a target text view, sets the typing attributes, and returns focus to the page so
   the next typed text picks up the change

@@ -192,12 +192,13 @@ referenced by any paragraph's `style`.
 `body` is an ordered array of **paragraph** objects. The document's text is the
 concatenation of paragraphs in order, separated by paragraph breaks.
 
-> *Informative.* `body` is a flat list; the format has no nested block types in
-> version 1. Generated regions such as a printed table of contents are therefore
-> represented as **ordinary paragraphs** — a writer MAY group them under a
-> dedicated style role (the reference app uses `"toc"`), but they carry no special
-> semantics, and a reader treats an unrecognized role per §5 (fall back to `body`).
-> Tables and lists are out of scope for version 1 (see the project roadmap).
+> *Informative.* `body` is a flat list. Even **tables** keep it flat: a table is a
+> run of consecutive paragraphs that each carry a `cell` object (§6.7) rather than a
+> nested block type. Generated regions such as a printed table of contents are also
+> just **ordinary paragraphs** — a writer MAY group them under a dedicated style role
+> (the reference app uses `"toc"`), but they carry no special semantics, and a reader
+> treats an unrecognized role per §5 (fall back to `body`). Lists remain out of scope
+> for version 1 (see the project roadmap).
 
 ### 6.1 Paragraph object
 
@@ -213,6 +214,7 @@ concatenation of paragraphs in order, separated by paragraph breaks.
 | `spaceBefore` | number | optional | Override of the style's `spaceBefore` (points). |
 | `spaceAfter` | number | optional | Override of the style's `spaceAfter` (points). |
 | `pageBreakBefore` | boolean | optional | When `true`, this paragraph starts on a new page (a forced page break precedes it). Default `false`. |
+| `cell` | object | optional | Marks this paragraph as a table cell (§6.7). |
 
 `indent.firstLine` is relative to the effective left indent; the first line begins
 at `leftIndent + firstLine` from the left margin. A negative `firstLine` yields a
@@ -269,6 +271,28 @@ taking the first present:
 4. The **hard default** (§5.1 / §5 fallback).
 
 `underline` has no style-level field; absent means not underlined.
+
+### 6.7 Table cells
+
+A paragraph **MAY** be a **table cell** by carrying a `cell` object. Cells that share
+a `table` id form one table; a reader lays them out on a grid by `(row, column)` and
+their spans. The body stays a flat ordered list: a table is a run of consecutive cell
+paragraphs, bounded above and below by ordinary (non-cell) paragraphs. A cell's text
+and inline/paragraph formatting are expressed exactly as for any paragraph (§6.1–§6.6).
+
+| Member | Type | Presence | Default | Notes |
+|---|---|---|---|---|
+| `table` | string | REQUIRED | — | Groups the cells belonging to one table. |
+| `row` | integer | REQUIRED | — | 0-based row of the cell. |
+| `column` | integer | REQUIRED | — | 0-based column of the cell. |
+| `rowSpan` | integer | optional | `1` | Number of rows the cell spans. |
+| `columnSpan` | integer | optional | `1` | Number of columns the cell spans. |
+
+The table's **column count is derived** as the maximum `column + columnSpan` over its
+cells; it is not stored separately. Cells **SHOULD** appear in the body in row-major
+order. A reader that does not implement tables **MUST** still render each cell
+paragraph's text as an ordinary paragraph (losing only the grid layout), per the
+"ignore what you don't understand" rule (§3).
 
 ## 7. `objects` — placed objects (decision D2 + free placement)
 
@@ -457,7 +481,19 @@ prose in §7 is authoritative over the schema here).
         "spaceBefore": { "type": "number" },
         "spaceAfter": { "type": "number" },
         "pageBreakBefore": { "type": "boolean" },
+        "cell": { "$ref": "#/$defs/cell" },
         "runs": { "type": "array", "items": { "$ref": "#/$defs/run" } }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "required": ["table", "row", "column"],
+      "properties": {
+        "table": { "type": "string", "minLength": 1 },
+        "row": { "type": "integer", "minimum": 0 },
+        "column": { "type": "integer", "minimum": 0 },
+        "rowSpan": { "type": "integer", "minimum": 1 },
+        "columnSpan": { "type": "integer", "minimum": 1 }
       }
     },
     "indent": {

@@ -18,12 +18,15 @@ public enum AttributedStringReader {
 
         var paragraphs: [Paragraph] = []
         var location = 0
+        // Distinct NSTextTable instances → stable ids, so cells of one table group.
+        var tableIDs: [ObjectIdentifier: String] = [:]
         while location < length {
             var start = 0, end = 0, contentsEnd = 0
             ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                                  for: NSRange(location: location, length: 0))
             let contentRange = NSRange(location: start, length: contentsEnd - start)
-            paragraphs.append(buildParagraph(from: attr, contentRange: contentRange, styles: model))
+            paragraphs.append(buildParagraph(from: attr, contentRange: contentRange,
+                                             styles: model, tableIDs: &tableIDs))
             if end == location { break }              // guard against non-advancing ranges
             location = end
         }
@@ -45,7 +48,8 @@ public enum AttributedStringReader {
 
     private static func buildParagraph(from attr: NSAttributedString,
                                        contentRange: NSRange,
-                                       styles: StyleLookup) -> Paragraph {
+                                       styles: StyleLookup,
+                                       tableIDs: inout [ObjectIdentifier: String]) -> Paragraph {
         let length = (attr.string as NSString).length
         let probe = contentRange.length > 0 ? contentRange.location
                                             : min(contentRange.location, max(0, length - 1))
@@ -59,6 +63,7 @@ public enum AttributedStringReader {
 
         var paragraph = emptyParagraph(role: role, paragraphStyle: ps, styleDef: styleDef)
         paragraph.id = id
+        paragraph.cell = tableCell(from: ps, tableIDs: &tableIDs)
 
         if length > 0,
            (attr.attribute(.lucernePageBreakBefore, at: probe, effectiveRange: nil) as? Bool) == true {
@@ -69,6 +74,24 @@ public enum AttributedStringReader {
             paragraph.runs = runs(from: attr, in: contentRange, styleDef: styleDef)
         }
         return paragraph
+    }
+
+    /// Reconstructs a paragraph's table-cell membership from its `NSTextTableBlock`,
+    /// assigning a stable id per distinct `NSTextTable` instance so a table's cells
+    /// share one id in the model.
+    private static func tableCell(from ps: NSParagraphStyle?,
+                                  tableIDs: inout [ObjectIdentifier: String]) -> TableCellModel? {
+        guard let block = ps?.textBlocks.compactMap({ $0 as? NSTextTableBlock }).first else { return nil }
+        let key = ObjectIdentifier(block.table)
+        let id: String
+        if let existing = tableIDs[key] {
+            id = existing
+        } else {
+            id = "table-\(tableIDs.count + 1)"
+            tableIDs[key] = id
+        }
+        return TableCellModel(table: id, row: block.startingRow, column: block.startingColumn,
+                              rowSpan: block.rowSpan, columnSpan: block.columnSpan)
     }
 
     private static func emptyParagraph(role: String,
