@@ -111,7 +111,9 @@ is character *i* on?" use one shared primitive,
   round-trips.
 - `Layout/` — `PageMetrics` (pure math), `ExclusionPathController`.
 - `Views/` — canvas, page, text view, ruler, navigator, status bar, sheets, floating
-  image, and the format bar's hand-drawn classic control chrome (`ClassicControls.swift`).
+  image, the hand-drawn classic control chrome (`ClassicControls.swift`, used by the
+  format bar, status bar, ruler, and welcome screen, muting with window activation),
+  and the live font try-on picker (`FontPickerPopover.swift`).
 - `IO/` — `MiniZip`, `.luce` archive, version history, `NSDocument` subclass, PDF/print.
 - `Document/` — `EditorController` (conductor: pagination, exclusions, furniture,
   outline, ToC) + `DocumentWindowController` (toolbar/ruler/canvas/status/navigator).

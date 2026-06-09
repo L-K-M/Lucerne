@@ -3,10 +3,14 @@ import AppKit
 // A thin classic footer: engraved contextual info on the left (current style,
 // page count, or hover help) and a momentary − / percent / + zoom cluster on the
 // right, drawn with the same gradient-bezel chrome as the format bar. The window
-// controller supplies the message text and handles the zoom callbacks.
+// controller supplies the message text and handles the zoom callbacks. Like the
+// rest of the chrome, it mutes when the window isn't active (the engraved label
+// is re-set from the window's main/key notifications, since text color is view
+// state rather than something resolved at draw time).
 public final class StatusBarView: NSView {
 
     private let label = NSTextField(labelWithString: "")
+    private var activationObservers: [NSObjectProtocol] = []
     private let zoomControl = ClassicSegmentedControl(
         glyphs: [
             .letter("−", font: .systemFont(ofSize: 12)),
@@ -18,7 +22,7 @@ public final class StatusBarView: NSView {
         height: 17)
 
     public var message: String = "" {
-        didSet { label.attributedStringValue = StatusBarView.engraved(message) }
+        didSet { refreshLabel() }
     }
 
     public var onZoomIn: (() -> Void)?
@@ -27,23 +31,6 @@ public final class StatusBarView: NSView {
 
     public func setZoom(percent: Int) {
         zoomControl.setGlyph(.letter("\(percent)%", font: .systemFont(ofSize: 10)), forSegment: 1)
-    }
-
-    /// Classic bar lettering: dark gray with a hard 1 pt white drop below, so the
-    /// text reads as engraved into the gradient strip.
-    private static func engraved(_ string: String) -> NSAttributedString {
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor(calibratedWhite: 1.0, alpha: 0.65)
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
-        shadow.shadowBlurRadius = 0
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
-        return NSAttributedString(string: string, attributes: [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor(calibratedWhite: 0.22, alpha: 1),
-            .shadow: shadow,
-            .paragraphStyle: paragraph
-        ])
     }
 
     public override init(frame frameRect: NSRect) {
@@ -71,6 +58,33 @@ public final class StatusBarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    deinit {
+        activationObservers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        activationObservers.forEach(NotificationCenter.default.removeObserver)
+        activationObservers = []
+        guard let window else { return }
+        let names: [Notification.Name] = [
+            NSWindow.didBecomeMainNotification, NSWindow.didResignMainNotification,
+            NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification
+        ]
+        for name in names {
+            activationObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main) { [weak self] _ in
+                    self?.refreshLabel()
+                })
+        }
+        refreshLabel()
+    }
+
+    private func refreshLabel() {
+        label.attributedStringValue = ClassicText.engraved(
+            message, size: 11, active: ClassicChrome.active(for: self))
+    }
+
     @objc private func zoomClicked() {
         switch zoomControl.selectedSegment {
         case 0: onZoomOut?()
@@ -81,10 +95,12 @@ public final class StatusBarView: NSView {
     }
 
     public override func draw(_ dirtyRect: NSRect) {
-        ClassicChrome.gradient(top: 0.94, bottom: 0.78).draw(in: bounds, angle: 90)
-        ClassicChrome.barBottomBorder.setFill()      // top border, mirroring the format bar's bottom
+        let active = ClassicChrome.active(for: self)
+        ClassicChrome.gradient(top: active ? 0.94 : 0.965,
+                               bottom: active ? 0.78 : 0.885).draw(in: bounds, angle: 90)
+        ClassicChrome.barBottomBorder(active).setFill()  // top border, mirroring the format bar's bottom
         NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-        ClassicChrome.barTopHighlight.setFill()      // etched highlight just under it
+        ClassicChrome.barTopHighlight.setFill()          // etched highlight just under it
         NSRect(x: 0, y: bounds.height - 2, width: bounds.width, height: 1).fill()
     }
 }

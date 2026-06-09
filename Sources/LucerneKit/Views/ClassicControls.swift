@@ -1,27 +1,57 @@
 import AppKit
 
-// Hand-drawn "classic" chrome for the format bar, in the spirit of the iWork '09
-// era: gradient bezels, etched group separators, and glyphs drawn with paths
-// instead of symbol images. Everything is drawn at 1 pt hairline scale; the
-// document window pins itself to the light (aqua) appearance, so these colors
-// are fixed rather than semantic.
+// Hand-drawn "classic" chrome for the format bar, ruler, status bar, and welcome
+// screen, in the spirit of the iWork '09 era: gradient bezels, etched group
+// separators, and glyphs drawn with paths instead of symbol images. Everything is
+// drawn at 1 pt hairline scale and pinned to the light appearance by the windows.
+//
+// Like the classic Mac chrome it emulates, every surface mutes when its window is
+// not active: colors are resolved through functions taking an `active` flag, and
+// ClassicChromeActivation redraws a ClassicWindow's view tree when its main/key
+// state changes.
 enum ClassicChrome {
 
     static let controlHeight: CGFloat = 20
     static let cornerRadius: CGFloat = 3.5
 
     static let barTopHighlight = NSColor(calibratedWhite: 1.0, alpha: 0.6)
-    static let barBottomBorder = NSColor(calibratedWhite: 0.45, alpha: 1)
 
-    static let bezelBorder = NSColor(calibratedWhite: 0.47, alpha: 1)
-    static let glyphColor = NSColor(calibratedWhite: 0.18, alpha: 1)
-    static let titleColor = NSColor(calibratedWhite: 0.13, alpha: 1)
-    static let arrowColor = NSColor(calibratedWhite: 0.25, alpha: 1)
-    static let segmentSeparator = NSColor(calibratedWhite: 0.55, alpha: 1)
+    /// Whether a view's chrome should draw at full strength: its window is the
+    /// main or key window (popovers count as key while in use).
+    static func active(for view: NSView?) -> Bool {
+        guard let window = view?.window else { return true }
+        return window.isMainWindow || window.isKeyWindow
+    }
+
+    static func barBottomBorder(_ active: Bool) -> NSColor {
+        NSColor(calibratedWhite: active ? 0.45 : 0.60, alpha: 1)
+    }
+    static func bezelBorder(_ active: Bool) -> NSColor {
+        NSColor(calibratedWhite: active ? 0.47 : 0.65, alpha: 1)
+    }
+    static func glyphColor(_ active: Bool) -> NSColor {
+        NSColor(calibratedWhite: active ? 0.18 : 0.45, alpha: 1)
+    }
+    static func titleColor(_ active: Bool) -> NSColor {
+        NSColor(calibratedWhite: active ? 0.13 : 0.45, alpha: 1)
+    }
+    static func arrowColor(_ active: Bool) -> NSColor {
+        NSColor(calibratedWhite: active ? 0.25 : 0.50, alpha: 1)
+    }
+    static func segmentSeparator(_ active: Bool) -> NSColor {
+        NSColor(calibratedWhite: active ? 0.55 : 0.70, alpha: 1)
+    }
 
     enum BezelState { case normal, on, pressed }
 
-    static func bezelGradient(_ state: BezelState) -> NSGradient {
+    static func bezelGradient(_ state: BezelState, active: Bool) -> NSGradient {
+        guard active else {
+            switch state {
+            case .normal: return gradient(top: 0.99, bottom: 0.94)
+            case .on: return gradient(top: 0.84, bottom: 0.90)
+            case .pressed: return gradient(top: 0.60, bottom: 0.74)
+            }
+        }
         switch state {
         case .normal: return gradient(top: 1.00, bottom: 0.86)
         case .on: return gradient(top: 0.68, bottom: 0.82)
@@ -41,12 +71,60 @@ enum ClassicChrome {
 
     /// The 1 pt hint line just inside the top border: a light gloss on raised
     /// bezels, a dark seam on sunken (on/pressed) ones.
-    static func drawInnerHint(_ state: BezelState, in rect: NSRect) {
+    static func drawInnerHint(_ state: BezelState, in rect: NSRect, active: Bool) {
         switch state {
-        case .normal: NSColor(calibratedWhite: 1.0, alpha: 0.55).setFill()
-        case .on, .pressed: NSColor(calibratedWhite: 0.25, alpha: 0.22).setFill()
+        case .normal: NSColor(calibratedWhite: 1.0, alpha: active ? 0.55 : 0.35).setFill()
+        case .on, .pressed: NSColor(calibratedWhite: 0.25, alpha: active ? 0.22 : 0.12).setFill()
         }
         NSRect(x: rect.minX, y: rect.maxY - 2, width: rect.width, height: 1).fill()
+    }
+
+    /// Stacked up/down chevrons (the pop-up arrow well glyph), centered at `cx/cy`.
+    static func drawStackedChevrons(cx: CGFloat, cy: CGFloat, active: Bool) {
+        arrowColor(active).setFill()
+        let up = NSBezierPath()
+        up.move(to: NSPoint(x: cx - 3.5, y: cy + 1.5))
+        up.line(to: NSPoint(x: cx + 3.5, y: cy + 1.5))
+        up.line(to: NSPoint(x: cx, y: cy + 5.5))
+        up.close()
+        up.fill()
+        let down = NSBezierPath()
+        down.move(to: NSPoint(x: cx - 3.5, y: cy - 1.5))
+        down.line(to: NSPoint(x: cx + 3.5, y: cy - 1.5))
+        down.line(to: NSPoint(x: cx, y: cy - 5.5))
+        down.close()
+        down.fill()
+    }
+}
+
+// MARK: - Activation redraw
+
+/// Repaints a ClassicWindow's whole view tree when its main/key state changes,
+/// so chrome drawn through `ClassicChrome.active(for:)` mutes and un-mutes like
+/// the classic title bar does. Installed once, from ClassicWindow's initializer.
+enum ClassicChromeActivation {
+
+    private static var installed = false
+
+    static func install() {
+        guard !installed else { return }
+        installed = true
+        let names: [Notification.Name] = [
+            NSWindow.didBecomeMainNotification, NSWindow.didResignMainNotification,
+            NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification
+        ]
+        for name in names {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
+                guard let window = note.object as? NSWindow, window is ClassicWindow else { return }
+                invalidate(window.contentView)
+            }
+        }
+    }
+
+    private static func invalidate(_ view: NSView?) {
+        guard let view else { return }
+        view.needsDisplay = true
+        view.subviews.forEach { invalidate($0) }
     }
 }
 
@@ -54,39 +132,41 @@ enum ClassicChrome {
 
 /// What gets drawn centered inside a bezel segment: a styled letter (B/I/U) or a
 /// little stack of alignment bars, both drawn in code so they read crisply at
-/// 11–12 pt like the originals.
+/// 11–12 pt like the originals. Color is resolved at draw time so glyphs mute
+/// with their window.
 enum ClassicGlyph {
-    case text(NSAttributedString)
+    case text(String, NSFont, underlined: Bool)
     case alignment(NSTextAlignment)
 
     static func letter(_ string: String, font: NSFont, underlined: Bool = false) -> ClassicGlyph {
-        var attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: ClassicChrome.glyphColor
-        ]
-        if underlined { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-        return .text(NSAttributedString(string: string, attributes: attrs))
+        .text(string, font, underlined: underlined)
     }
 
-    func draw(centeredIn rect: NSRect) {
+    func draw(centeredIn rect: NSRect, active: Bool) {
         switch self {
-        case .text(let string):
-            let size = string.size()
-            string.draw(at: NSPoint(x: (rect.midX - size.width / 2).rounded(),
+        case .text(let string, let font, let underlined):
+            var attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: ClassicChrome.glyphColor(active)
+            ]
+            if underlined { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+            let styled = NSAttributedString(string: string, attributes: attrs)
+            let size = styled.size()
+            styled.draw(at: NSPoint(x: (rect.midX - size.width / 2).rounded(),
                                     y: (rect.midY - size.height / 2).rounded()))
         case .alignment(let alignment):
-            drawAlignmentBars(alignment, in: rect)
+            drawAlignmentBars(alignment, in: rect, active: active)
         }
     }
 
     /// Four 1 pt text-line bars; odd rows are short and hug the glyph's edge per
     /// the alignment (all full for justified).
-    private func drawAlignmentBars(_ alignment: NSTextAlignment, in rect: NSRect) {
+    private func drawAlignmentBars(_ alignment: NSTextAlignment, in rect: NSRect, active: Bool) {
         let full: CGFloat = 11
         let short: CGFloat = 7
         let left = (rect.midX - full / 2).rounded()
         var y = (rect.midY + 4).rounded()           // top row, working down in 3 pt steps
-        ClassicChrome.glyphColor.setFill()
+        ClassicChrome.glyphColor(active).setFill()
         for row in 0..<4 {
             let width = (alignment == .justified || row % 2 == 0) ? full : short
             let x: CGFloat
@@ -220,26 +300,27 @@ final class ClassicSegmentedControl: NSControl {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let active = ClassicChrome.active(for: self)
         let outline = ClassicChrome.bezelOutline(in: bounds)
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
         for index in glyphs.indices {
             let rect = segmentRect(index)
-            ClassicChrome.bezelGradient(state(for: index)).draw(in: rect, angle: 90)
-            ClassicChrome.drawInnerHint(state(for: index), in: rect)
+            ClassicChrome.bezelGradient(state(for: index), active: active).draw(in: rect, angle: 90)
+            ClassicChrome.drawInnerHint(state(for: index), in: rect, active: active)
         }
-        ClassicChrome.segmentSeparator.setFill()
+        ClassicChrome.segmentSeparator(active).setFill()
         var boundary: CGFloat = 0
         for width in widths.dropLast() {
             boundary += width
             NSRect(x: boundary - 0.5, y: 0, width: 1, height: bounds.height).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
-        ClassicChrome.bezelBorder.setStroke()
+        ClassicChrome.bezelBorder(active).setStroke()
         outline.lineWidth = 1
         outline.stroke()
         for index in glyphs.indices {
-            glyphs[index].draw(centeredIn: segmentRect(index))
+            glyphs[index].draw(centeredIn: segmentRect(index), active: active)
         }
     }
 }
@@ -248,8 +329,9 @@ final class ClassicSegmentedControl: NSControl {
 
 /// A pop-up with the classic look: gradient bezel, hairline-separated arrow well
 /// with stacked up/down chevrons, 11 pt title. The API mirrors the slice of
-/// NSPopUpButton the toolbar uses, so callers read the same.
-final class ClassicPopUp: NSControl {
+/// NSPopUpButton the toolbar uses, so callers read the same. Subclasses can
+/// override `presentChoices()` to show something other than the item menu.
+class ClassicPopUp: NSControl {
 
     private let popMenu = NSMenu()
     private let fixedWidth: CGFloat
@@ -275,6 +357,9 @@ final class ClassicPopUp: NSControl {
     var titleOfSelectedItem: String? {
         popMenu.items.indices.contains(indexOfSelectedItem) ? popMenu.items[indexOfSelectedItem].title : nil
     }
+
+    /// What the closed control shows; the menu-backed default is the selection.
+    var displayTitle: String? { titleOfSelectedItem }
 
     func addItems(withTitles titles: [String]) {
         for title in titles {
@@ -309,43 +394,51 @@ final class ClassicPopUp: NSControl {
         if send { sendAction(action, to: target) }
     }
 
+    /// Presents the control's chooser; the default pops the item menu over the
+    /// control like NSPopUpButton.
+    func presentChoices() {
+        popMenu.minimumWidth = bounds.width
+        let positioning = popMenu.items.indices.contains(indexOfSelectedItem)
+            ? popMenu.items[indexOfSelectedItem] : nil
+        popMenu.popUp(positioning: positioning, at: NSPoint(x: 0, y: bounds.height + 1), in: self)
+    }
+
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
         isPressed = true
         needsDisplay = true
         displayIfNeeded()
-        popMenu.minimumWidth = bounds.width
-        let positioning = popMenu.items.indices.contains(indexOfSelectedItem)
-            ? popMenu.items[indexOfSelectedItem] : nil
-        popMenu.popUp(positioning: positioning, at: NSPoint(x: 0, y: bounds.height + 1), in: self)
+        presentChoices()
         isPressed = false
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let active = ClassicChrome.active(for: self)
         let outline = ClassicChrome.bezelOutline(in: bounds)
         let state: ClassicChrome.BezelState = isPressed ? .pressed : .normal
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
-        ClassicChrome.bezelGradient(state).draw(in: bounds, angle: 90)
-        ClassicChrome.drawInnerHint(state, in: bounds)
-        ClassicChrome.segmentSeparator.withAlphaComponent(0.7).setFill()
+        ClassicChrome.bezelGradient(state, active: active).draw(in: bounds, angle: 90)
+        ClassicChrome.drawInnerHint(state, in: bounds, active: active)
+        ClassicChrome.segmentSeparator(active).withAlphaComponent(0.7).setFill()
         NSRect(x: bounds.width - arrowZoneWidth - 0.5, y: 2, width: 1, height: bounds.height - 4).fill()
         NSGraphicsContext.restoreGraphicsState()
-        ClassicChrome.bezelBorder.setStroke()
+        ClassicChrome.bezelBorder(active).setStroke()
         outline.lineWidth = 1
         outline.stroke()
-        drawTitle()
-        drawArrows()
+        drawTitle(active: active)
+        ClassicChrome.drawStackedChevrons(cx: bounds.width - arrowZoneWidth / 2 - 0.5,
+                                          cy: bounds.height / 2, active: active)
     }
 
-    private func drawTitle() {
-        guard let title = titleOfSelectedItem else { return }
+    private func drawTitle(active: Bool) {
+        guard let title = displayTitle else { return }
         let ps = NSMutableParagraphStyle()
         ps.lineBreakMode = .byTruncatingTail
         let string = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: ClassicChrome.titleColor,
+            .foregroundColor: ClassicChrome.titleColor(active),
             .paragraphStyle: ps
         ])
         let height = ceil(string.size().height)
@@ -353,24 +446,21 @@ final class ClassicPopUp: NSControl {
                           width: bounds.width - arrowZoneWidth - 12, height: height)
         string.draw(in: rect)
     }
+}
 
-    private func drawArrows() {
-        let cx = bounds.width - arrowZoneWidth / 2 - 0.5
-        let cy = bounds.height / 2
-        ClassicChrome.arrowColor.setFill()
-        let up = NSBezierPath()
-        up.move(to: NSPoint(x: cx - 3.5, y: cy + 1.5))
-        up.line(to: NSPoint(x: cx + 3.5, y: cy + 1.5))
-        up.line(to: NSPoint(x: cx, y: cy + 5.5))
-        up.close()
-        up.fill()
-        let down = NSBezierPath()
-        down.move(to: NSPoint(x: cx - 3.5, y: cy - 1.5))
-        down.line(to: NSPoint(x: cx + 3.5, y: cy - 1.5))
-        down.line(to: NSPoint(x: cx, y: cy - 5.5))
-        down.close()
-        down.fill()
+/// A ClassicPopUp shell whose click presents a custom chooser (the font try-on
+/// picker) instead of an item menu; the closed control shows `title`.
+final class ClassicChooserControl: ClassicPopUp {
+
+    var onPresent: (() -> Void)?
+
+    var title: String = "" {
+        didSet { needsDisplay = true }
     }
+
+    override var displayTitle: String? { title.isEmpty ? nil : title }
+
+    override func presentChoices() { onPresent?() }
 }
 
 // MARK: - Size field
@@ -446,6 +536,7 @@ final class ClassicSizeField: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let active = ClassicChrome.active(for: self)
         let outline = ClassicChrome.bezelOutline(in: bounds, radius: 3)
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
@@ -453,19 +544,19 @@ final class ClassicSizeField: NSView {
         bounds.fill()
         let arrowZone = NSRect(x: bounds.width - arrowZoneWidth, y: 0,
                                width: arrowZoneWidth, height: bounds.height)
-        ClassicChrome.bezelGradient(.normal).draw(in: arrowZone, angle: 90)
+        ClassicChrome.bezelGradient(.normal, active: active).draw(in: arrowZone, angle: 90)
         NSColor(calibratedWhite: 0, alpha: 0.07).setFill()     // inset shadow on the text area
         NSRect(x: 0, y: bounds.height - 2, width: bounds.width - arrowZoneWidth, height: 1).fill()
-        ClassicChrome.segmentSeparator.withAlphaComponent(0.7).setFill()
+        ClassicChrome.segmentSeparator(active).withAlphaComponent(0.7).setFill()
         NSRect(x: bounds.width - arrowZoneWidth - 0.5, y: 0, width: 1, height: bounds.height).fill()
         NSGraphicsContext.restoreGraphicsState()
-        ClassicChrome.bezelBorder.setStroke()
+        ClassicChrome.bezelBorder(active).setStroke()
         outline.lineWidth = 1
         outline.stroke()
 
         let cx = bounds.width - arrowZoneWidth / 2 - 0.5
         let cy = bounds.height / 2
-        ClassicChrome.arrowColor.setFill()
+        ClassicChrome.arrowColor(active).setFill()
         let down = NSBezierPath()
         down.move(to: NSPoint(x: cx - 3.5, y: cy + 2))
         down.line(to: NSPoint(x: cx + 3.5, y: cy + 2))
@@ -503,21 +594,22 @@ final class ClassicColorWell: NSColorWell {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let windowActive = ClassicChrome.active(for: self)
         let outline = ClassicChrome.bezelOutline(in: bounds, radius: 3)
         let state: ClassicChrome.BezelState = isActive ? .on : .normal
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
-        ClassicChrome.bezelGradient(state).draw(in: bounds, angle: 90)
-        ClassicChrome.drawInnerHint(state, in: bounds)
+        ClassicChrome.bezelGradient(state, active: windowActive).draw(in: bounds, angle: 90)
+        ClassicChrome.drawInnerHint(state, in: bounds, active: windowActive)
         NSGraphicsContext.restoreGraphicsState()
-        ClassicChrome.bezelBorder.setStroke()
+        ClassicChrome.bezelBorder(windowActive).setStroke()
         outline.lineWidth = 1
         outline.stroke()
 
         let swatch = bounds.insetBy(dx: 5, dy: 5)
         color.setFill()
         swatch.insetBy(dx: 1, dy: 1).fill()
-        NSColor(calibratedWhite: 0.35, alpha: 1).setStroke()
+        NSColor(calibratedWhite: windowActive ? 0.35 : 0.55, alpha: 1).setStroke()
         let frame = NSBezierPath(rect: swatch.insetBy(dx: 0.5, dy: 0.5))
         frame.lineWidth = 1
         frame.stroke()
@@ -532,10 +624,181 @@ final class EtchedSeparatorView: NSView {
     override var intrinsicContentSize: NSSize { NSSize(width: 2, height: 24) }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.58, alpha: 1).setFill()
+        let active = ClassicChrome.active(for: self)
+        NSColor(calibratedWhite: active ? 0.58 : 0.72, alpha: 1).setFill()
         NSRect(x: 0, y: 0, width: 1, height: bounds.height).fill()
         NSColor(calibratedWhite: 1.0, alpha: 0.8).setFill()
         NSRect(x: 1, y: 0, width: 1, height: bounds.height).fill()
+    }
+}
+
+// MARK: - Push button
+
+/// A standalone classic push button: one gradient bezel with a centered 11 pt
+/// title, flashing pressed while clicked. Public for the welcome screen.
+public final class ClassicButton: NSControl {
+
+    public var title: String {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+
+    private let fixedWidth: CGFloat?
+    private var isTracking = false
+    private var isPressed = false
+
+    public init(title: String, width: CGFloat? = nil) {
+        self.title = title
+        self.fixedWidth = width
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    public override var intrinsicContentSize: NSSize {
+        let titleWidth = ceil(NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 11)
+        ]).size().width)
+        return NSSize(width: fixedWidth ?? titleWidth + 28, height: ClassicChrome.controlHeight)
+    }
+
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    public override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        isTracking = true
+        isPressed = true
+        needsDisplay = true
+    }
+
+    public override func mouseDragged(with event: NSEvent) {
+        guard isTracking else { return }
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        if inside != isPressed {
+            isPressed = inside
+            needsDisplay = true
+        }
+    }
+
+    public override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        let shouldFire = isTracking && inside
+        isTracking = false
+        isPressed = false
+        needsDisplay = true
+        if shouldFire { sendAction(action, to: target) }
+    }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        let active = ClassicChrome.active(for: self)
+        let outline = ClassicChrome.bezelOutline(in: bounds)
+        let state: ClassicChrome.BezelState = isPressed ? .pressed : .normal
+        NSGraphicsContext.saveGraphicsState()
+        outline.addClip()
+        ClassicChrome.bezelGradient(state, active: active).draw(in: bounds, angle: 90)
+        ClassicChrome.drawInnerHint(state, in: bounds, active: active)
+        NSGraphicsContext.restoreGraphicsState()
+        ClassicChrome.bezelBorder(active).setStroke()
+        outline.lineWidth = 1
+        outline.stroke()
+        ClassicGlyph.letter(title, font: .systemFont(ofSize: 11))
+            .draw(centeredIn: bounds, active: active)
+    }
+}
+
+// MARK: - Engraved lettering
+
+/// Classic bar lettering: dark gray over a hard 1 pt white drop below, so text
+/// reads as engraved into the chrome. Public for the welcome screen.
+public enum ClassicText {
+
+    public static func engraved(_ string: String, size: CGFloat,
+                                weight: NSFont.Weight = .regular, italic: Bool = false,
+                                gray: CGFloat = 0.22, active: Bool = true) -> NSAttributedString {
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor(calibratedWhite: 1.0, alpha: active ? 0.65 : 0.4)
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.shadowBlurRadius = 0
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        var font = NSFont.systemFont(ofSize: size, weight: weight)
+        if italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+        return NSAttributedString(string: string, attributes: [
+            .font: font,
+            .foregroundColor: NSColor(calibratedWhite: active ? gray : min(gray + 0.26, 0.62), alpha: 1),
+            .shadow: shadow,
+            .paragraphStyle: paragraph
+        ])
+    }
+
+    public static func engravedLabel(_ string: String, size: CGFloat,
+                                     weight: NSFont.Weight = .regular, italic: Bool = false,
+                                     gray: CGFloat = 0.22) -> NSTextField {
+        let field = NSTextField(labelWithString: "")
+        field.attributedStringValue = engraved(string, size: size, weight: weight,
+                                                italic: italic, gray: gray)
+        field.alignment = .center
+        return field
+    }
+}
+
+/// A short horizontal etched rule (dark hairline over a light one) — the classic
+/// ornamental divider. Non-flipped coordinates: dark on top, light just below.
+public final class ClassicRuleView: NSView {
+
+    public override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 2) }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedWhite: 0.68, alpha: 1).setFill()
+        NSRect(x: 0, y: 1, width: bounds.width, height: 1).fill()
+        NSColor(calibratedWhite: 1.0, alpha: 0.85).setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+    }
+}
+
+// MARK: - Panels
+
+/// A classic panel backdrop: the polished gradient as a full content background
+/// (the welcome screen sits on this).
+public final class ClassicPanelView: NSView {
+
+    public override func draw(_ dirtyRect: NSRect) {
+        let active = ClassicChrome.active(for: self)
+        ClassicChrome.gradient(top: active ? 0.97 : 0.975,
+                               bottom: active ? 0.86 : 0.92).draw(in: bounds, angle: 90)
+        ClassicChrome.barTopHighlight.setFill()
+        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
+    }
+}
+
+/// A white inset surface with a hairline border and a faint top inner shadow —
+/// the classic "well" that lists sit in (the welcome screen's recents).
+public final class ClassicInsetBox: NSView {
+
+    public func embed(_ view: NSView) {
+        view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 1),
+            view.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
+            view.topAnchor.constraint(equalTo: topAnchor, constant: 1),
+            view.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1)
+        ])
+    }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        let active = ClassicChrome.active(for: self)
+        NSColor.white.setFill()
+        bounds.fill()
+        NSColor(calibratedWhite: 0, alpha: 0.06).setFill()
+        NSRect(x: 1, y: bounds.height - 2, width: bounds.width - 2, height: 1).fill()
+        NSColor(calibratedWhite: active ? 0.55 : 0.68, alpha: 1).setStroke()
+        let border = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
+        border.lineWidth = 1
+        border.stroke()
     }
 }
 
@@ -552,6 +815,16 @@ public final class ClassicWindow: NSWindow {
 
     private static let topCornerRadius: CGFloat = 10   // ≈ the system's own top radius
     private static let bottomCornerRadius: CGFloat = 5
+
+    public override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask,
+                         backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style,
+                   backing: backingStoreType, defer: flag)
+        ClassicChromeActivation.install()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @objc func _cornerMask() -> NSImage? { Self.shapeTemplate }
 

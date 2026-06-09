@@ -12,10 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var welcomeWindowController: WelcomeWindowController?
+    private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
         updateChecker.start()   // check GitHub for a newer release on launch + daily
+        observeDocumentWindowClose()
         // Let macOS restore/recover documents first; if nothing opened, show the
         // welcome screen (recent documents + New/Open/Sample). The small delay lets
         // window/draft restoration settle so we don't show it alongside a restored doc.
@@ -28,6 +30,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    // Set the guard without overriding applicationShouldTerminate, so NSDocumentController
+    // still reviews unsaved changes on quit. During quit, document windows close (and post
+    // willClose) before this fires, but the deferred welcome check runs after it — so a
+    // quit doesn't pop the welcome screen.
+    func applicationWillTerminate(_ notification: Notification) {
+        isTerminating = true
+    }
+
+    /// When the last document window closes (and we're not quitting), bring the
+    /// start screen back — the natural "home" to return to, like the welcome shown
+    /// at launch.
+    private func observeDocumentWindowClose() {
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
+                guard let self, !self.isTerminating,
+                      let window = note.object as? NSWindow,
+                      window.delegate is DocumentWindowController else { return }
+                // Defer so the document has deregistered before we check the count.
+                DispatchQueue.main.async { self.showWelcomeIfNoDocuments() }
+            }
+    }
 
     // Clicking the Dock icon with no windows open → show the welcome screen.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

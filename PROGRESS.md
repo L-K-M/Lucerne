@@ -112,6 +112,42 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## Design feedback (round 14)
+- [x] **New windows size to their screen** — `initialLayout` now scales the window
+  *and* zoom to the display: it enlarges past 100% (capped 160%) on roomy screens
+  so the page fills the space rather than opening tiny, shrinks to fit a full page
+  on small ones, and frames the page with gray margins like a real document window
+- [x] **Tear-off font picker** — drag the try-on popover off the typeface control
+  and it detaches into a floating "Typefaces" palette that stays open (via
+  `popoverShouldDetach`/`popoverDidDetach`); while torn off each pick is its own
+  committed edit, and the browsing session up to the tear-off lands as one undo
+- [x] **Start screen returns** when the last document window closes (not on quit —
+  guarded by `applicationWillTerminate`, so the save review is preserved)
+- [x] **Welcome screen flourishes** — engraved title + italic tagline, an
+  ornamental etched rule, a soft drop shadow under the icon, a version line, and a
+  proper empty-state ("No recent letters yet") in the recents well. (Recents are
+  empty under `swift run` because the unbundled binary has no recent-documents
+  list; the built `.app` populates it.)
+
+## Design feedback (round 13)
+- [x] **Inactive-window muting** — like the system title bar, the classic chrome
+  now mutes when its window resigns main/key: bar gradients flatten, bezel
+  borders/glyphs/engraved text gray out, and the ruler's accent markers go
+  classic gray (colors resolve through `ClassicChrome.active(for:)`;
+  `ClassicWindow` installs a redraw hook on the main/key notifications)
+- [x] **Welcome screen** joins the design language: classic gradient panel,
+  engraved lettering, bezel buttons, a white inset well for the recents list,
+  and the ClassicWindow silhouette
+- [x] **Font try-on picker** replacing the font dropdown: a popover anchored to
+  the typeface control lists every family *in its own face* with a filter
+  field; moving the selection (↑↓, click, or filtering) applies the face to
+  the letter live **without closing the picker**; Return/double-click keeps
+  it, Esc reverts to the starting face, click-away keeps what's showing — and
+  the whole session lands as a single "Font" undo step (`FontPickerPopover`,
+  `EditorController.beginFontPreview/endFontPreview`)
+- [x] **Tab stops** redrawn as solid 2 pt pixel-aligned pennants (stem + foot,
+  a dot for decimal) matching the chrome's hand-set weight
+
 ## Design feedback (round 12)
 - [x] **Classic format bar** — the toolbar is redrawn in the pre-flat Mac style
   (think iWork '09): a polished gradient strip with a 1 px top highlight and

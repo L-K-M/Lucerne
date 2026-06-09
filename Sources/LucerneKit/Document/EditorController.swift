@@ -490,6 +490,13 @@ public final class EditorController: NSObject {
     /// Whole-text snapshot undo for attribute edits (small letters → cheap & exact).
     private func withUndo(_ name: String, _ changes: () -> Void) {
         guard let storage = activeTextView?.textStorage else { changes(); return }
+        // During a font try-on session every preview applies for real but registers
+        // no undo; endFontPreview lands one undo step for the whole session.
+        if suppressUndoRegistration {
+            changes()
+            relayoutText(syncImages: false)
+            return
+        }
         let before = storage.copy() as! NSAttributedString
         changes()
         relayoutText(syncImages: false)
@@ -498,6 +505,51 @@ public final class EditorController: NSObject {
             undo.setActionName(name)
         }
         document?.editorDidChange()
+    }
+
+    // MARK: - Font try-on session (single-undo live preview)
+
+    private var previewSnapshot: NSAttributedString?
+    private var previewTypingAttributes: [NSAttributedString.Key: Any]?
+    private var suppressUndoRegistration = false
+
+    /// Starts a live font try-on: previews apply for real (so the page shows the
+    /// candidate face) but register no undo and don't dirty the document. End the
+    /// session with endFontPreview.
+    public func beginFontPreview() {
+        previewSnapshot = textStorage.copy() as? NSAttributedString
+        previewTypingAttributes = formattingTextView()?.typingAttributes
+        suppressUndoRegistration = true
+    }
+
+    /// Applies a candidate family during a try-on session.
+    public func previewFontFamily(_ family: String) {
+        setFontFamily(family)
+    }
+
+    /// Ends the try-on. Commit keeps what's showing and registers a single "Font"
+    /// undo back to the pre-session text; cancel restores the snapshot (and the
+    /// typing attributes, for a caret-only preview).
+    public func endFontPreview(commit: Bool) {
+        suppressUndoRegistration = false
+        guard let before = previewSnapshot else { return }
+        previewSnapshot = nil
+        let typing = previewTypingAttributes
+        previewTypingAttributes = nil
+        if commit {
+            guard !before.isEqual(to: textStorage) else { return }
+            if let undo = document?.editorUndoManager {
+                undo.registerUndo(withTarget: self) { $0.restoreText(before, name: "Font") }
+                undo.setActionName("Font")
+            }
+            document?.editorDidChange()
+        } else {
+            if !before.isEqual(to: textStorage) {
+                textStorage.setAttributedString(before)
+                relayoutText(syncImages: false)
+            }
+            if let typing { formattingTextView()?.typingAttributes = typing }
+        }
     }
 
     private func restoreText(_ snapshot: NSAttributedString, name: String) {
