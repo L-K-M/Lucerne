@@ -22,7 +22,9 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         // so a full page is visible at a comfortable scale (see initialLayout).
         let layout = DocumentWindowController.initialLayout(
             page: editor.pageMetrics.pageSize, toolbarWidth: toolbarFitWidth)
-        let window = NSWindow(
+        // ClassicWindow: rounded top corners, hard square bottom corners (the
+        // pre–Big Sur window silhouette, matching the classic chrome).
+        let window = ClassicWindow(
             contentRect: NSRect(origin: .zero, size: layout.size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
@@ -129,6 +131,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     public override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        window?.invalidateShadow()   // recompute for the square-bottom shape
         editor.documentTitle = (document as? NSDocument)?.displayName ?? ""
         editor.refreshFurniture()
         editor.focusInitialResponder()
