@@ -104,9 +104,14 @@ public enum AttributedStringBuilder {
 
     private static func tableBlock(for paragraph: Paragraph, tables: [String: NSTextTable]) -> NSTextTableBlock? {
         guard let cell = paragraph.cell, let table = tables[cell.table] else { return nil }
+        // A column-spanning cell gets no explicit width: NSTextTable derives it from
+        // the columns it covers (whose widths come from the 1×1 cells). Forcing a
+        // summed width on it misaligns the column boundaries.
+        let width: CGFloat? = cell.columnSpan > 1
+            ? nil
+            : CGFloat(cell.width ?? (100.0 / Double(max(1, table.numberOfColumns))))
         return makeTableBlock(table: table, row: cell.row, column: cell.column,
-                              rowSpan: cell.rowSpan, columnSpan: cell.columnSpan,
-                              widthPercent: cell.width.map { CGFloat($0) })
+                              rowSpan: cell.rowSpan, columnSpan: cell.columnSpan, widthPercent: width)
     }
 
     /// A table with `columns` equal-width columns. Public so the editor's "Insert
@@ -117,15 +122,17 @@ public enum AttributedStringBuilder {
         return table
     }
 
-    /// A bordered, padded cell block for `table`. The column width is `widthPercent`
-    /// (percent of the table) when given, else an equal share.
+    /// A bordered, padded cell block for `table`. `widthPercent` sets the cell's width
+    /// (percent of the table); pass nil to set no width — used for column-spanning
+    /// cells, whose width NSTextTable derives from the columns they cover.
     public static func makeTableBlock(table: NSTextTable, row: Int, column: Int,
                                       rowSpan: Int, columnSpan: Int,
                                       widthPercent: CGFloat? = nil) -> NSTextTableBlock {
         let block = NSTextTableBlock(table: table, startingRow: row, rowSpan: max(1, rowSpan),
                                      startingColumn: column, columnSpan: max(1, columnSpan))
-        let percent = widthPercent ?? (100.0 / CGFloat(max(1, table.numberOfColumns)))
-        block.setValue(percent, type: .percentageValueType, for: .width)
+        if let widthPercent {
+            block.setValue(widthPercent, type: .percentageValueType, for: .width)
+        }
         block.setBorderColor(NSColor(calibratedWhite: 0.6, alpha: 1))
         block.setWidth(1, type: .absoluteValueType, for: .border)
         block.setWidth(5, type: .absoluteValueType, for: .padding)
