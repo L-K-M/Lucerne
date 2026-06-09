@@ -55,15 +55,16 @@ learned along the way, is below, roughly in priority order.
 
 ## Next up
 
-### Table polish · ~2–4 days
+### Table polish · ~1–3 days
 
-The v1 tables (above) cover create + edit + round-trip. Remaining:
+The v1 tables (above) cover create + edit + round-trip; **row/column structure
+edits** (insert/delete row & column, rebuilding and renumbering the grid) and the
+**context menu** are now done too. Remaining:
 
 - **Cell navigation** — Tab / Shift-Tab to the next/previous cell, arrows across cell
   boundaries (override `insertTab`/`insertBacktab` in the page text view to move the
   caret to the adjacent cell's range).
-- **Structure edits** — insert / delete row & column (renumber the cells' `row`/
-  `column` and rebuild the table), and merge cells (spans already exist in the model).
+- **Merge cells** — the model already has `rowSpan`/`columnSpan`; wire up a command.
 - **Column resize** — drag column dividers (the ruler could grow column markers);
   store per-column widths on the table.
 - **Robustness** — a tall table splitting cleanly across a page boundary, and a

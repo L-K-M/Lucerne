@@ -234,6 +234,13 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         }
     }
 
+    @objc func lucerneInsertRowAbove(_ sender: Any?) { editor.insertTableRow(below: false); syncUI() }
+    @objc func lucerneInsertRowBelow(_ sender: Any?) { editor.insertTableRow(below: true); syncUI() }
+    @objc func lucerneInsertColumnBefore(_ sender: Any?) { editor.insertTableColumn(after: false); syncUI() }
+    @objc func lucerneInsertColumnAfter(_ sender: Any?) { editor.insertTableColumn(after: true); syncUI() }
+    @objc func lucerneDeleteRow(_ sender: Any?) { editor.deleteTableRow(); syncUI() }
+    @objc func lucerneDeleteColumn(_ sender: Any?) { editor.deleteTableColumn(); syncUI() }
+
     // MARK: - Document setup (page size + margins)
 
     @objc func lucerneDocumentSetup(_ sender: Any?) {
@@ -302,6 +309,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         case #selector(lucerneToggleNavigator(_:)):
             menuItem.state = (window?.contentView as? EditorContainerView)?.navigatorVisible == true ? .on : .off
             return true
+        case #selector(lucerneInsertRowAbove(_:)), #selector(lucerneInsertRowBelow(_:)),
+             #selector(lucerneInsertColumnBefore(_:)), #selector(lucerneInsertColumnAfter(_:)),
+             #selector(lucerneDeleteRow(_:)), #selector(lucerneDeleteColumn(_:)):
+            return editor.selectionIsInTableCell   // only valid with the caret in a table
         default:
             return true
         }

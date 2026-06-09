@@ -46,6 +46,8 @@ enum MainMenu {
         submenu("Lucerne") { menu in
             add(menu, "About Lucerne", "showAbout:", key: "")
             menu.addItem(.separator())
+            add(menu, "Settings…", "showSettings:", key: ",")
+            menu.addItem(.separator())
             let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
             let servicesMenu = NSMenu(title: "Services")
             services.submenu = servicesMenu
@@ -153,6 +155,18 @@ enum MainMenu {
             }
             styles.submenu = stylesMenu
             menu.addItem(styles)
+
+            let table = NSMenuItem(title: "Table", action: nil, keyEquivalent: "")
+            let tableMenu = NSMenu(title: "Table")
+            add(tableMenu, "Insert Row Above", "lucerneInsertRowAbove:")
+            add(tableMenu, "Insert Row Below", "lucerneInsertRowBelow:")
+            add(tableMenu, "Insert Column Before", "lucerneInsertColumnBefore:")
+            add(tableMenu, "Insert Column After", "lucerneInsertColumnAfter:")
+            tableMenu.addItem(.separator())
+            add(tableMenu, "Delete Row", "lucerneDeleteRow:")
+            add(tableMenu, "Delete Column", "lucerneDeleteColumn:")
+            table.submenu = tableMenu
+            menu.addItem(table)
         }
     }
 

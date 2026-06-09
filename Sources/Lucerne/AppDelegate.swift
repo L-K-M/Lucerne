@@ -65,6 +65,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         aboutWindowController?.window?.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: - Settings
+
+    private var preferencesWindowController: PreferencesWindowController?
+
+    @objc func showSettings(_ sender: Any?) {
+        if preferencesWindowController == nil { preferencesWindowController = PreferencesWindowController() }
+        NSApp.activate(ignoringOtherApps: true)
+        preferencesWindowController?.showWindow(nil)
+        preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
     private func openSampleDocument() {
         let controller = NSDocumentController.shared
         guard let document = try? controller.makeUntitledDocument(ofType: LucerneUTI.document) as? LucerneDocument else {

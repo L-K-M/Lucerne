@@ -45,7 +45,14 @@ public final class LucerneRulerView: NSView {
         toolTip = "Click in the white band to add a tab stop · double-click a tab to change its "
             + "type (left/center/right/decimal) · drag a tab to move it, or off the ruler to delete · "
             + "drag the triangles to set the paragraph indents."
+        // Redraw when the ruler unit (Settings…) changes.
+        NotificationCenter.default.addObserver(self, selector: #selector(preferencesChanged),
+                                               name: Preferences.didChange, object: nil)
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func preferencesChanged() { needsDisplay = true }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -111,20 +118,30 @@ public final class LucerneRulerView: NSView {
             .font: NSFont.systemFont(ofSize: 8),
             .foregroundColor: NSColor(calibratedWhite: 0.4, alpha: 1)
         ]
+        // Unit-aware ticks: a labelled major tick every unit (cm or inch), a medium
+        // tick at the half mark, and minor ticks at the unit's subdivisions.
+        let unit = Preferences.rulerUnit
+        let perUnit = unit.pointsPerUnit
+        let subdivisions = max(1, unit.subdivisions)
+        let minorStep = perUnit / CGFloat(subdivisions)
+        var tick = 0
         var p: CGFloat = 0
         while p <= contentWidth + 0.5 {
             let x = sx(marginLeft + p)
-            let isInch = Int(p.rounded()) % 72 == 0
-            let tickHeight: CGFloat = isInch ? 8 : (Int(p.rounded()) % 36 == 0 ? 6 : 4)
+            let isMajor = tick % subdivisions == 0
+            let isMedium = subdivisions % 2 == 0 && tick % (subdivisions / 2) == 0
+            let tickHeight: CGFloat = isMajor ? 8 : (isMedium ? 6 : 4)
             let path = NSBezierPath()
             path.move(to: CGPoint(x: x, y: h / 2 - tickHeight / 2))
             path.line(to: CGPoint(x: x, y: h / 2 + tickHeight / 2))
             path.lineWidth = 1
             path.stroke()
-            if isInch && p > 0 {
-                ("\(Int(p / 72))" as NSString).draw(at: CGPoint(x: x + 2, y: h / 2 - 4), withAttributes: labelAttrs)
+            if isMajor && p > 0 {
+                let value = Int((p / perUnit).rounded())
+                ("\(value)" as NSString).draw(at: CGPoint(x: x + 2, y: h / 2 - 4), withAttributes: labelAttrs)
             }
-            p += 9
+            tick += 1
+            p += minorStep
         }
 
         NSColor(calibratedWhite: 0.6, alpha: 1).setStroke()

@@ -143,9 +143,10 @@ on these views.
 - **Headers/footers** are edited in a dialog; clicking into the margin to edit them
   in place is future work (the model already supports the three zones).
 - **Tables** are v1: Insert ▸ Table… makes an editable `NSTextTable` grid that flows
-  with the text. Deferred: Tab-between-cells navigation, insert/delete row & column,
-  column resize, and clean splitting across a page boundary. **Lists** aren't
-  implemented yet (`NSTextList`). See `docs/roadmap.md`.
+  with the text, with insert/delete row & column (Format ▸ Table or the context
+  menu). Deferred: Tab-between-cells navigation, merging cells, column resize, and
+  clean splitting across a page boundary; structural edits also assume single-
+  paragraph cells. **Lists** aren't implemented yet (`NSTextList`). See `docs/roadmap.md`.
 
 Future direction lives in [`docs/roadmap.md`](docs/roadmap.md); the live feature
 checklist is [`PROGRESS.md`](PROGRESS.md).

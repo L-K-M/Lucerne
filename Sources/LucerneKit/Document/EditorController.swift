@@ -746,30 +746,194 @@ public final class EditorController: NSObject {
             let atParagraphStart = caret == 0 || ns.character(at: caret - 1) == 0x0A
             let bodyAttrs = AttributedStringBuilder.typingAttributes(
                 role: LucerneDocumentModel.defaultStyleRole, in: model, paragraphID: IDGenerator.next("p"))
+            // Prepend a body paragraph when the caret is mid-paragraph (to break out of
+            // it) OR at the very start of the document — otherwise a table that is the
+            // first paragraph has no line above it, and the caret can't be placed there.
+            let needsLeading = !atParagraphStart || caret == 0
             let insert = NSMutableAttributedString()
-            // Put the table on its own paragraph boundary, and make sure a normal
-            // body paragraph follows it (so the last cell is terminated by non-cell text).
-            if !atParagraphStart { insert.append(NSAttributedString(string: "\n", attributes: bodyAttrs)) }
+            if needsLeading { insert.append(NSAttributedString(string: "\n", attributes: bodyAttrs)) }
             insert.append(cells)
+            // Ensure a normal body paragraph follows the table (terminates the last
+            // cell with non-cell text) when inserting at the very end of the document.
             if caret == ns.length { insert.append(NSAttributedString(string: "\n", attributes: bodyAttrs)) }
             storage.insert(insert, at: caret)
-            let firstCell = caret + (atParagraphStart ? 0 : 1)
+            let firstCell = caret + (needsLeading ? 1 : 0)
             tv.setSelectedRange(NSRange(location: min(firstCell, (storage.string as NSString).length), length: 0))
         }
     }
 
-    /// Attributes for a single (empty) table cell paragraph: the Body run attributes
-    /// plus a paragraph style whose `textBlocks` is the cell's block.
+    /// Attributes for a single (empty) table cell paragraph: the Body typing
+    /// attributes (so the cell inherits the body font and, crucially, the *empty*
+    /// tab-stop array rather than NSParagraphStyle's default stops, which otherwise
+    /// show up as phantom tabs on the ruler) plus the cell's block.
     private func tableCellAttributes(block: NSTextTableBlock) -> [NSAttributedString.Key: Any] {
         let role = LucerneDocumentModel.defaultStyleRole
-        let style = model.resolvedStyle(for: role)
-        let font = FontResolver.font(family: style.font, size: CGFloat(style.size ?? 12),
-                                     bold: style.bold ?? false, italic: style.italic ?? false)
-        let ps = NSMutableParagraphStyle()
+        var attrs = AttributedStringBuilder.typingAttributes(
+            role: role, in: model, paragraphID: IDGenerator.next("cell"))
+        let ps = (attrs[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+            ?? NSMutableParagraphStyle()
         ps.textBlocks = [block]
-        let color = style.color.flatMap { NSColor(hexString: $0) } ?? .black
-        return [.font: font, .foregroundColor: color, .paragraphStyle: ps,
-                .lucerneStyleRole: role, .lucerneParagraphID: IDGenerator.next("cell")]
+        attrs[.paragraphStyle] = ps
+        return attrs
+    }
+
+    // MARK: - Table editing (insert / delete row & column)
+
+    /// Whether the caret is currently inside a table cell (drives menu validation
+    /// and the context menu's table commands).
+    public var selectionIsInTableCell: Bool {
+        guard let tv = activeTextView else { return false }
+        return tableBlock(atCharacterIndex: tv.selectedRange().location) != nil
+    }
+
+    public func insertTableRow(below: Bool) {
+        modifyCurrentTable { grid, caretRow, _ in
+            let columns = grid.first?.count ?? 0
+            let at = min(max(0, below ? caretRow + 1 : caretRow), grid.count)
+            grid.insert(Array(repeating: NSAttributedString(string: ""), count: columns), at: at)
+            return (min(at, grid.count - 1), 0)
+        }
+    }
+
+    public func insertTableColumn(after: Bool) {
+        modifyCurrentTable { grid, _, caretCol in
+            let at = after ? caretCol + 1 : caretCol
+            for r in grid.indices { grid[r].insert(NSAttributedString(string: ""), at: min(max(0, at), grid[r].count)) }
+            return (0, min(at, (grid.first?.count ?? 1) - 1))
+        }
+    }
+
+    public func deleteTableRow() {
+        modifyCurrentTable { grid, caretRow, caretCol in
+            guard grid.count > 1 else { return nil }   // keep at least one row
+            grid.remove(at: min(caretRow, grid.count - 1))
+            return (min(caretRow, grid.count - 1), caretCol)
+        }
+    }
+
+    public func deleteTableColumn() {
+        modifyCurrentTable { grid, caretRow, caretCol in
+            guard (grid.first?.count ?? 0) > 1 else { return nil }   // keep at least one column
+            for r in grid.indices { grid[r].remove(at: min(caretCol, grid[r].count - 1)) }
+            return (caretRow, min(caretCol, (grid.first?.count ?? 1) - 1))
+        }
+    }
+
+    /// The NSTextTableBlock of the cell a character index is in (nil if not a cell).
+    private func tableBlock(atCharacterIndex index: Int) -> NSTextTableBlock? {
+        guard textStorage.length > 0 else { return nil }
+        let probe = min(max(0, index), textStorage.length - 1)
+        let ps = textStorage.attribute(.paragraphStyle, at: probe, effectiveRange: nil) as? NSParagraphStyle
+        return ps?.textBlocks.compactMap { $0 as? NSTextTableBlock }.first
+    }
+
+    private struct ParsedTable {
+        var range: NSRange                 // the table's full character range in storage
+        var rows: Int
+        var columns: Int
+        var cells: [[NSAttributedString]]  // per-cell content (without the terminating newline)
+    }
+
+    /// Reads a table's grid out of the storage as a rectangular array of cell content
+    /// (single paragraph per cell — multi-paragraph cells collapse to their first).
+    private func parseTable(containing table: NSTextTable) -> ParsedTable? {
+        let ns = textStorage.string as NSString
+        var contentByCell: [String: NSAttributedString] = [:]
+        var maxRow = 0, maxColumn = 0
+        var rangeStart = -1, rangeEnd = -1
+        var location = 0
+        while location < ns.length {
+            var start = 0, end = 0, contentsEnd = 0
+            ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                 for: NSRange(location: location, length: 0))
+            let probe = contentsEnd > start ? start : min(start, max(0, ns.length - 1))
+            let ps = textStorage.attribute(.paragraphStyle, at: probe, effectiveRange: nil) as? NSParagraphStyle
+            if let block = ps?.textBlocks.compactMap({ $0 as? NSTextTableBlock }).first, block.table === table {
+                if rangeStart < 0 { rangeStart = start }
+                rangeEnd = end
+                let key = "\(block.startingRow),\(block.startingColumn)"
+                if contentByCell[key] == nil {
+                    contentByCell[key] = textStorage.attributedSubstring(
+                        from: NSRange(location: start, length: contentsEnd - start))
+                }
+                maxRow = max(maxRow, block.startingRow)
+                maxColumn = max(maxColumn, block.startingColumn)
+            } else if rangeStart >= 0 {
+                break   // a table's cells are contiguous; stop at the first paragraph after it
+            }
+            if end == location { break }
+            location = end
+        }
+        guard rangeStart >= 0 else { return nil }
+        let rows = maxRow + 1, columns = maxColumn + 1
+        let grid = (0 ..< rows).map { r in
+            (0 ..< columns).map { c in contentByCell["\(r),\(c)"] ?? NSAttributedString(string: "") }
+        }
+        return ParsedTable(range: NSRange(location: rangeStart, length: rangeEnd - rangeStart),
+                           rows: rows, columns: columns, cells: grid)
+    }
+
+    /// Find the caret's table, apply `transform` to a mutable grid (returning the new
+    /// caret cell, or nil to cancel — e.g. deleting the last row), then rebuild and
+    /// replace the table in one undoable edit.
+    private func modifyCurrentTable(_ transform: (inout [[NSAttributedString]], Int, Int) -> (Int, Int)?) {
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
+        let caret = min(tv.selectedRange().location, max(0, storage.length))
+        guard let block = tableBlock(atCharacterIndex: caret),
+              let parsed = parseTable(containing: block.table) else { return }
+        let caretRow = min(block.startingRow, parsed.rows - 1)
+        let caretColumn = min(block.startingColumn, parsed.columns - 1)
+        var grid = parsed.cells
+        guard let target = transform(&grid, caretRow, caretColumn) else { return }
+        let columns = grid.first?.count ?? 0
+        let rebuilt = rebuildTableAttributed(grid: grid, columns: columns)
+        withUndo("Edit Table") {
+            storage.replaceCharacters(in: parsed.range, with: rebuilt)
+            let offset = parsed.range.location + cellStartOffset(row: target.0, column: target.1, grid: grid)
+            tv.setSelectedRange(NSRange(location: min(offset, (storage.string as NSString).length), length: 0))
+        }
+    }
+
+    /// Rebuilds a table's attributed text from a grid, stamping freshly-numbered cell
+    /// blocks (so inserted/deleted rows and columns renumber correctly).
+    private func rebuildTableAttributed(grid: [[NSAttributedString]], columns: Int) -> NSAttributedString {
+        let table = AttributedStringBuilder.makeTextTable(columns: columns)
+        let result = NSMutableAttributedString()
+        for (r, row) in grid.enumerated() {
+            for (c, content) in row.enumerated() {
+                let block = AttributedStringBuilder.makeTableBlock(
+                    table: table, row: r, column: c, rowSpan: 1, columnSpan: 1)
+                result.append(buildCell(content: content, block: block))
+            }
+        }
+        return result
+    }
+
+    /// A cell = its content plus a terminating newline, with `block` stamped onto
+    /// every run's paragraph style.
+    private func buildCell(content: NSAttributedString, block: NSTextTableBlock) -> NSAttributedString {
+        let cell = NSMutableAttributedString(attributedString: content)
+        let terminatorAttrs: [NSAttributedString.Key: Any] = content.length > 0
+            ? content.attributes(at: content.length - 1, effectiveRange: nil)
+            : tableCellAttributes(block: block)
+        cell.append(NSAttributedString(string: "\n", attributes: terminatorAttrs))
+        cell.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: cell.length), options: []) { value, range, _ in
+            let ps = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+            ps.textBlocks = [block]
+            cell.addAttribute(.paragraphStyle, value: ps, range: range)
+        }
+        return cell
+    }
+
+    private func cellStartOffset(row: Int, column: Int, grid: [[NSAttributedString]]) -> Int {
+        var offset = 0
+        for r in grid.indices {
+            for c in grid[r].indices {
+                if r == row && c == column { return offset }
+                offset += grid[r][c].length + 1   // +1 for the cell's terminating newline
+            }
+        }
+        return offset
     }
 
     // MARK: - Style table editing (used by the inspector / style menu)

@@ -112,6 +112,20 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## On-device feedback (round 9)
+- [x] **Ruler units** default to **centimeters**, switchable in **Settings…** (⌘,);
+  the ruler ticks/labels are unit-aware and refresh live (`Preferences`/`RulerUnit`)
+- [x] **Context menu** on the page now carries Bold/Italic/Underline, paragraph
+  styles, Insert Image/Table, and (in a cell) the table row/column commands
+- [x] **Table row/column editing** — insert row above/below, insert column
+  before/after, delete row/column (Format ▸ Table or the context menu); rebuilds the
+  table preserving cell text
+- [x] Inserting a table no longer leaves **phantom tab stops** on the ruler (cells
+  use the Body paragraph style's empty tab array, not NSParagraphStyle's defaults)
+- [x] A table at the **very start of the document** now keeps an empty line above it
+  so you can place the caret and type above the table
+- [ ] Table column resize + clean splitting across a page boundary — next
+
 ## On-device feedback (round 8)
 - [x] **Tables** (Insert ▸ Table…) via `NSTextTable` — a rows×columns grid of
   editable cells that flows and paginates with the text. Cells round-trip to the
