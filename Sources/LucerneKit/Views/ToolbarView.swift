@@ -21,7 +21,8 @@ public final class ToolbarView: NSView {
     private let styleNames: [String]
 
     private let stylePopup = ClassicPopUp(width: 112)
-    private let fontPopup = ClassicPopUp(width: 146)
+    private let fontControl = ClassicChooserControl(width: 146)
+    private let fontPicker = FontPickerPopover()
     private let sizeField = ClassicSizeField(
         presets: ["9", "10", "11", "12", "14", "18", "24", "36", "48", "72"], width: 46)
     private let formatControl = ClassicSegmentedControl(
@@ -53,12 +54,14 @@ public final class ToolbarView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     public override func draw(_ dirtyRect: NSRect) {
-        ClassicChrome.gradient(top: 0.965, bottom: 0.795).draw(in: bounds, angle: 90)
+        let active = ClassicChrome.active(for: self)
+        ClassicChrome.gradient(top: active ? 0.965 : 0.975,
+                               bottom: active ? 0.795 : 0.90).draw(in: bounds, angle: 90)
         ClassicChrome.barTopHighlight.setFill()
         NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-        NSColor(calibratedWhite: 0.66, alpha: 1).setFill()    // soft seam above the border
+        NSColor(calibratedWhite: active ? 0.66 : 0.80, alpha: 1).setFill()    // soft seam above the border
         NSRect(x: 0, y: 1, width: bounds.width, height: 1).fill()
-        ClassicChrome.barBottomBorder.setFill()
+        ClassicChrome.barBottomBorder(active).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 
@@ -69,8 +72,7 @@ public final class ToolbarView: NSView {
         stylePopup.addItems(withTitles: styleNames)
         stylePopup.target = self; stylePopup.action = #selector(styleChanged)
 
-        fontPopup.addItems(withTitles: NSFontManager.shared.availableFontFamilies)
-        fontPopup.target = self; fontPopup.action = #selector(fontChanged)
+        fontControl.onPresent = { [weak self] in self?.presentFontPicker() }
 
         sizeField.onCommit = { [weak self] raw in self?.applyFontSize(raw) }
 
@@ -83,7 +85,7 @@ public final class ToolbarView: NSView {
 
         stack = NSStackView(views: [
             stylePopup, separator(),
-            fontPopup, sizeField, separator(),
+            fontControl, sizeField, separator(),
             formatControl, separator(),
             colorWell, separator(),
             alignControl, separator(),
@@ -110,7 +112,7 @@ public final class ToolbarView: NSView {
     private func registerHelp() {
         let entries: [(NSView, String)] = [
             (stylePopup, "Paragraph style — apply a named style (Body, Heading 1, …) to the selected paragraphs"),
-            (fontPopup, "Font family for the selected text"),
+            (fontControl, "Typeface — try faces live on your letter: ↑↓ to browse, Return to keep, Esc to revert"),
             (sizeField, "Font size in points for the selected text"),
             (formatControl, "Bold (⌘B), Italic (⌘I), Underline (⌘U)"),
             (colorWell, "Text color for the selection"),
@@ -155,9 +157,21 @@ public final class ToolbarView: NSView {
         editor?.applyStyleRole(styleRoles[index])
         returnFocusToPage()
     }
-    @objc private func fontChanged() {
-        if let family = fontPopup.titleOfSelectedItem { editor?.setFontFamily(family) }
-        returnFocusToPage()
+    /// Opens the font try-on picker: a popover that previews each highlighted
+    /// family on the document live, committing or reverting as one undo step.
+    private func presentFontPicker() {
+        guard let editor, !fontPicker.isShown else { return }
+        let current = (editor.currentAttributes()[.font] as? NSFont)?.familyName
+        editor.beginFontPreview()
+        fontPicker.present(from: fontControl, current: current) { [weak self] family in
+            self?.editor?.previewFontFamily(family)
+            self?.fontControl.title = family
+        } onFinish: { [weak self] commit in
+            guard let self else { return }
+            self.editor?.endFontPreview(commit: commit)
+            self.syncFromSelection()
+            self.returnFocusToPage()
+        }
     }
     private func applyFontSize(_ raw: String) {
         if let value = Double(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
@@ -202,7 +216,7 @@ public final class ToolbarView: NSView {
 
         let attrs = editor.currentAttributes()
         if let font = attrs[.font] as? NSFont {
-            if let family = font.familyName { fontPopup.selectItem(withTitle: family) }
+            if let family = font.familyName { fontControl.title = family }
             sizeField.stringValue = String(Int(font.pointSize.rounded()))
             formatControl.setSelected(FontResolver.isBold(font), forSegment: 0)
             formatControl.setSelected(FontResolver.isItalic(font), forSegment: 1)

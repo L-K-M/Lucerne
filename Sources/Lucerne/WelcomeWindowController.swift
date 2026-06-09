@@ -1,9 +1,12 @@
 import AppKit
+import LucerneKit
 
 // A simple start screen shown when the app launches (or is reopened) with no
 // document window — offering New / Open / sample and a list of recent documents.
 // Saved/recovered documents are restored by macOS before this appears, so it only
-// shows when there's genuinely nothing open.
+// shows when there's genuinely nothing open. Drawn in the app's classic chrome:
+// a gradient panel, engraved lettering, bezel buttons, and a white inset well
+// for the recents (see LucerneKit's ClassicControls).
 final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
 
     var onNew: (() -> Void)?
@@ -15,8 +18,8 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
     private var recents: [URL] = []
 
     convenience init() {
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 460),
+        let window = ClassicWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 470),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Welcome to Lucerne"
         window.isReleasedWhenClosed = false
@@ -32,7 +35,9 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
     }
 
     private func buildContent() {
-        guard let content = window?.contentView else { return }
+        guard let window else { return }
+        let content = ClassicPanelView()
+        window.contentView = content
 
         let icon = NSImageView()
         icon.image = AppIcon.image
@@ -41,36 +46,40 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
         icon.widthAnchor.constraint(equalToConstant: 84).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 84).isActive = true
 
-        let title = label("Lucerne", font: .systemFont(ofSize: 24, weight: .bold), color: .labelColor)
-        let subtitle = label("Create a new letter or open a recent one",
-                             font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+        let title = ClassicText.engravedLabel("Lucerne", size: 24, weight: .bold, gray: 0.25)
+        let subtitle = ClassicText.engravedLabel("Create a new letter or open a recent one",
+                                                 size: 12, gray: 0.42)
 
-        let newButton = button("New Document", #selector(newDocument))
-        let openButton = button("Open…", #selector(openDocument))
-        let sampleButton = button("New Sample Letter", #selector(newSample))
+        let newButton = classicButton("New Document", #selector(newDocument))
+        let openButton = classicButton("Open…", #selector(openDocument))
+        let sampleButton = classicButton("New Sample Letter", #selector(newSample))
 
-        let recentLabel = label("Recent Documents", font: .systemFont(ofSize: 11, weight: .semibold),
-                                color: .secondaryLabelColor)
+        let recentLabel = ClassicText.engravedLabel("Recent Documents", size: 11,
+                                                    weight: .semibold, gray: 0.40)
         recentLabel.alignment = .left
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("recent"))
         column.resizingMask = .autoresizingMask
         tableView.addTableColumn(column)
         tableView.headerView = nil
-        tableView.rowHeight = 22
+        tableView.rowHeight = 20
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
         tableView.doubleAction = #selector(openSelectedRecent)
+        tableView.backgroundColor = .white
         let recentScroll = NSScrollView()
         recentScroll.documentView = tableView
         recentScroll.hasVerticalScroller = true
-        recentScroll.borderType = .bezelBorder
-        recentScroll.translatesAutoresizingMaskIntoConstraints = false
-        recentScroll.heightAnchor.constraint(equalToConstant: 150).isActive = true
+        recentScroll.borderType = .noBorder
+        recentScroll.drawsBackground = false
+        let recentBox = ClassicInsetBox()
+        recentBox.embed(recentScroll)
+        recentBox.translatesAutoresizingMaskIntoConstraints = false
+        recentBox.heightAnchor.constraint(equalToConstant: 150).isActive = true
 
         let stack = NSStackView(views: [icon, title, subtitle, newButton, openButton, sampleButton,
-                                        recentLabel, recentScroll])
+                                        recentLabel, recentBox])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 8
@@ -86,28 +95,21 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
             stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -24),
             stack.centerXAnchor.constraint(equalTo: content.centerXAnchor),
             stack.widthAnchor.constraint(equalToConstant: 300),
-            newButton.widthAnchor.constraint(equalToConstant: 240),
-            openButton.widthAnchor.constraint(equalToConstant: 240),
-            sampleButton.widthAnchor.constraint(equalToConstant: 240),
+            newButton.widthAnchor.constraint(equalToConstant: 220),
+            openButton.widthAnchor.constraint(equalToConstant: 220),
+            sampleButton.widthAnchor.constraint(equalToConstant: 220),
             recentLabel.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-            recentScroll.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            recentBox.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
         refreshRecents()
     }
 
-    private func label(_ text: String, font: NSFont, color: NSColor) -> NSTextField {
-        let field = NSTextField(labelWithString: text)
-        field.font = font
-        field.textColor = color
-        field.alignment = .center
-        return field
-    }
-
-    private func button(_ title: String, _ action: Selector) -> NSButton {
-        let b = NSButton(title: title, target: self, action: action)
-        b.bezelStyle = .rounded
-        b.translatesAutoresizingMaskIntoConstraints = false
-        return b
+    private func classicButton(_ title: String, _ action: Selector) -> ClassicButton {
+        let button = ClassicButton(title: title, width: 220)
+        button.target = self
+        button.action = action
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
     }
 
     @objc private func newDocument() { close(); onNew?() }
@@ -128,6 +130,7 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
         let field = (tableView.makeView(withIdentifier: id, owner: self) as? NSTextField) ?? {
             let f = NSTextField(labelWithString: "")
             f.identifier = id
+            f.font = NSFont.systemFont(ofSize: 11)
             f.lineBreakMode = .byTruncatingMiddle
             return f
         }()

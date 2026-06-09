@@ -118,23 +118,25 @@ public final class LucerneRulerView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         let h = bounds.height
+        let active = ClassicChrome.active(for: self)
         // Chrome strip outside the writable band, continuing the format bar's
         // classic look; the etched highlight under the bar's border seams them.
-        ClassicChrome.gradient(top: 0.93, bottom: 0.84).draw(in: bounds, angle: 90)
+        ClassicChrome.gradient(top: active ? 0.93 : 0.955,
+                               bottom: active ? 0.84 : 0.90).draw(in: bounds, angle: 90)
         NSColor(calibratedWhite: 1.0, alpha: 0.5).setFill()
         NSRect(x: 0, y: h - 1, width: bounds.width, height: 1).fill()
 
         let band = NSRect(x: sx(marginLeft), y: 0, width: contentWidth * scale, height: h)
         NSColor.white.setFill()
         band.fill()
-        NSColor(calibratedWhite: 0.72, alpha: 1).setFill()    // hairline band edges
+        NSColor(calibratedWhite: active ? 0.72 : 0.80, alpha: 1).setFill()    // hairline band edges
         NSRect(x: band.minX - 1, y: 0, width: 1, height: h).fill()
         NSRect(x: band.maxX, y: 0, width: 1, height: h).fill()
 
-        NSColor(calibratedWhite: 0.55, alpha: 1).setStroke()
+        NSColor(calibratedWhite: active ? 0.55 : 0.68, alpha: 1).setStroke()
         let labelAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 8),
-            .foregroundColor: NSColor(calibratedWhite: 0.4, alpha: 1)
+            .foregroundColor: NSColor(calibratedWhite: active ? 0.4 : 0.58, alpha: 1)
         ]
         // Unit-aware ticks: a labelled major tick every unit (cm or inch), a medium
         // tick at the half mark, and minor ticks at the unit's subdivisions.
@@ -166,24 +168,29 @@ public final class LucerneRulerView: NSView {
             p += minorStep
         }
 
-        NSColor(calibratedWhite: 0.55, alpha: 1).setStroke()
+        NSColor(calibratedWhite: active ? 0.55 : 0.68, alpha: 1).setStroke()
         let border = NSBezierPath()
         border.move(to: CGPoint(x: 0, y: 0.5))
         border.line(to: CGPoint(x: bounds.width, y: 0.5))
         border.stroke()
 
         if columnFractions != nil {
-            drawColumnDividers(height: h)   // table mode: column dividers only
+            drawColumnDividers(height: h, active: active)   // table mode: column dividers only
         } else {
-            drawIndentMarkers(height: h)
-            drawTabMarkers(height: h)
+            drawIndentMarkers(height: h, active: active)
+            drawTabMarkers(active: active)
         }
     }
 
-    private func drawColumnDividers(height h: CGFloat) {
+    /// Marker tint: the accent color on the active window, classic gray when muted.
+    private func markerColor(active: Bool) -> NSColor {
+        active ? .controlAccentColor : NSColor(calibratedWhite: 0.62, alpha: 1)
+    }
+
+    private func drawColumnDividers(height h: CGFloat, active: Bool) {
         guard let fractions = columnFractions, fractions.count >= 2 else { return }
-        NSColor.controlAccentColor.setStroke()
-        NSColor.controlAccentColor.setFill()
+        markerColor(active: active).setStroke()
+        markerColor(active: active).setFill()
         var cumulative: CGFloat = 0
         for k in 0 ..< (fractions.count - 1) {
             cumulative += fractions[k]
@@ -204,8 +211,8 @@ public final class LucerneRulerView: NSView {
         }
     }
 
-    private func drawIndentMarkers(height h: CGFloat) {
-        NSColor.controlAccentColor.setFill()
+    private func drawIndentMarkers(height h: CGFloat, active: Bool) {
+        markerColor(active: active).setFill()
         fillTriangle(centerX: sx(marginLeft + leftIndent + firstLineExtra), baseY: h, pointingDown: true)
         fillTriangle(centerX: sx(marginLeft + leftIndent), baseY: 0, pointingDown: false)
         fillTriangle(centerX: sx(contentRightX - rightIndent), baseY: 0, pointingDown: false)
@@ -221,30 +228,26 @@ public final class LucerneRulerView: NSView {
         path.fill()
     }
 
-    private func drawTabMarkers(height h: CGFloat) {
-        NSColor(calibratedWhite: 0.25, alpha: 1).setStroke()
-        NSColor(calibratedWhite: 0.25, alpha: 1).setFill()
+    /// Tab stops drawn as solid 2 pt pennants (pixel-aligned stem + foot, with a
+    /// dot for decimal) — the filled, hand-set weight of the rest of the chrome,
+    /// replacing the earlier thin stroked glyphs.
+    private func drawTabMarkers(active: Bool) {
+        NSColor(calibratedWhite: active ? 0.28 : 0.52, alpha: 1).setFill()
         for tab in tabs {
-            let x = sx(marginLeft + tab.loc)
-            let y: CGFloat = 4
-            let glyph = NSBezierPath()
-            glyph.lineWidth = 1.5
+            let x = sx(marginLeft + tab.loc).rounded()
+            let y: CGFloat = 3
+            NSRect(x: x - 1, y: y, width: 2, height: 9).fill()              // stem
             switch tab.kind {
             case .left:
-                glyph.move(to: CGPoint(x: x, y: y)); glyph.line(to: CGPoint(x: x, y: y + 8))
-                glyph.move(to: CGPoint(x: x, y: y)); glyph.line(to: CGPoint(x: x + 6, y: y))
+                NSRect(x: x - 1, y: y, width: 7, height: 2).fill()          // foot → right
             case .right:
-                glyph.move(to: CGPoint(x: x, y: y)); glyph.line(to: CGPoint(x: x, y: y + 8))
-                glyph.move(to: CGPoint(x: x, y: y)); glyph.line(to: CGPoint(x: x - 6, y: y))
+                NSRect(x: x - 6, y: y, width: 7, height: 2).fill()          // foot → left
             case .center:
-                glyph.move(to: CGPoint(x: x, y: y)); glyph.line(to: CGPoint(x: x, y: y + 8))
-                glyph.move(to: CGPoint(x: x - 5, y: y)); glyph.line(to: CGPoint(x: x + 5, y: y))
+                NSRect(x: x - 5, y: y, width: 10, height: 2).fill()         // centered foot
             case .decimal:
-                glyph.move(to: CGPoint(x: x, y: y)); glyph.line(to: CGPoint(x: x, y: y + 8))
-                glyph.move(to: CGPoint(x: x - 5, y: y)); glyph.line(to: CGPoint(x: x + 5, y: y))
-                NSBezierPath(ovalIn: CGRect(x: x + 2, y: y - 1, width: 2, height: 2)).fill()
+                NSRect(x: x - 5, y: y, width: 10, height: 2).fill()
+                NSBezierPath(ovalIn: NSRect(x: x + 3, y: y + 4, width: 3, height: 3)).fill()
             }
-            glyph.stroke()
         }
     }
 

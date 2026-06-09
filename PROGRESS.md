@@ -112,6 +112,25 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## Design feedback (round 13)
+- [x] **Inactive-window muting** — like the system title bar, the classic chrome
+  now mutes when its window resigns main/key: bar gradients flatten, bezel
+  borders/glyphs/engraved text gray out, and the ruler's accent markers go
+  classic gray (colors resolve through `ClassicChrome.active(for:)`;
+  `ClassicWindow` installs a redraw hook on the main/key notifications)
+- [x] **Welcome screen** joins the design language: classic gradient panel,
+  engraved lettering, bezel buttons, a white inset well for the recents list,
+  and the ClassicWindow silhouette
+- [x] **Font try-on picker** replacing the font dropdown: a popover anchored to
+  the typeface control lists every family *in its own face* with a filter
+  field; moving the selection (↑↓, click, or filtering) applies the face to
+  the letter live **without closing the picker**; Return/double-click keeps
+  it, Esc reverts to the starting face, click-away keeps what's showing — and
+  the whole session lands as a single "Font" undo step (`FontPickerPopover`,
+  `EditorController.beginFontPreview/endFontPreview`)
+- [x] **Tab stops** redrawn as solid 2 pt pixel-aligned pennants (stem + foot,
+  a dot for decimal) matching the chrome's hand-set weight
+
 ## Design feedback (round 12)
 - [x] **Classic format bar** — the toolbar is redrawn in the pre-flat Mac style
   (think iWork '09): a polished gradient strip with a 1 px top highlight and
