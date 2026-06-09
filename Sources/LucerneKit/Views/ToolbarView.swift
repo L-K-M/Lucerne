@@ -158,14 +158,21 @@ public final class ToolbarView: NSView {
         returnFocusToPage()
     }
     /// Opens the font try-on picker: a popover that previews each highlighted
-    /// family on the document live, committing or reverting as one undo step.
+    /// family on the document live, committing or reverting as one undo step. Drag
+    /// it off the control to tear it into a floating palette that stays open; in
+    /// that mode each pick is its own committed edit.
     private func presentFontPicker() {
-        guard let editor, !fontPicker.isShown else { return }
+        guard let editor, !fontPicker.isActive else { return }
         let current = (editor.currentAttributes()[.font] as? NSFont)?.familyName
         editor.beginFontPreview()
         fontPicker.present(from: fontControl, current: current) { [weak self] family in
             self?.editor?.previewFontFamily(family)
             self?.fontControl.title = family
+        } onApply: { [weak self] family in
+            self?.editor?.setFontFamily(family)
+            self?.fontControl.title = family
+        } onDetach: { [weak self] in
+            self?.editor?.endFontPreview(commit: true)
         } onFinish: { [weak self] commit in
             guard let self else { return }
             self.editor?.endFontPreview(commit: commit)

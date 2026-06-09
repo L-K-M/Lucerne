@@ -14,10 +14,14 @@ final class FontPickerPopover: NSObject, NSPopoverDelegate,
     private let families: [String]
     private var filtered: [String]
     private var popover: NSPopover?
-    private var onPreview: ((String) -> Void)?
-    private var onFinish: ((Bool) -> Void)?
+    private var onPreview: ((String) -> Void)?      // live, single-undo (attached)
+    private var onApply: ((String) -> Void)?        // committed apply (torn off), one undo each
+    private var onDetach: (() -> Void)?             // bank the attached preview as one undo
+    private var onFinish: ((Bool) -> Void)?         // end the attached session (commit?) + refocus
     private var finished = false
     private var suppressPreview = false
+    private var detached = false                    // torn off into its own floating window
+    private var detachObserver: NSObjectProtocol?
 
     private let searchField = NSSearchField()
     private let tableView = KeyCommandTableView()
@@ -29,20 +33,28 @@ final class FontPickerPopover: NSObject, NSPopoverDelegate,
         super.init()
     }
 
-    var isShown: Bool { popover?.isShown ?? false }
+    /// True while a picker exists — attached as a popover *or* torn off into a
+    /// floating window. The toolbar guards on this so it never starts a second
+    /// preview session over a torn-off one.
+    var isActive: Bool { popover != nil }
 
     func present(from anchor: NSView, current: String?,
                  onPreview: @escaping (String) -> Void,
+                 onApply: @escaping (String) -> Void,
+                 onDetach: @escaping () -> Void,
                  onFinish: @escaping (Bool) -> Void) {
         guard popover == nil else { return }
         self.onPreview = onPreview
+        self.onApply = onApply
+        self.onDetach = onDetach
         self.onFinish = onFinish
         finished = false
+        detached = false
         filtered = families
         searchField.stringValue = ""
 
         let pop = NSPopover()
-        pop.behavior = .transient
+        pop.behavior = .transient    // .transient + popoverShouldDetach → draggable tear-off
         pop.appearance = NSAppearance(named: .aqua)
         let controller = NSViewController()
         controller.view = buildContent()
@@ -86,7 +98,7 @@ final class FontPickerPopover: NSObject, NSPopoverDelegate,
         scroll.hasVerticalScroller = true
         scroll.borderType = .noBorder
 
-        let hint = NSTextField(labelWithString: "↑↓ try on your letter  ·  Return keep  ·  Esc revert")
+        let hint = NSTextField(labelWithString: "↑↓ try on your letter  ·  Return keep  ·  Esc revert  ·  drag off to keep open")
         hint.font = NSFont.systemFont(ofSize: 10)
         hint.textColor = NSColor(calibratedWhite: 0.45, alpha: 1)
         hint.alignment = .center
@@ -131,25 +143,60 @@ final class FontPickerPopover: NSObject, NSPopoverDelegate,
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard !suppressPreview, filtered.indices.contains(tableView.selectedRow) else { return }
-        onPreview?(filtered[tableView.selectedRow])
+        let family = filtered[tableView.selectedRow]
+        // Torn off, the picker is a persistent palette: each pick is a real edit
+        // (its own undo). Attached, picks are live previews in one undo session.
+        if detached { onApply?(family) } else { onPreview?(family) }
     }
 
-    @objc private func rowDoubleClicked() { finish(commit: true) }
+    @objc private func rowDoubleClicked() {
+        if detached { return }   // a torn-off palette stays open; double-click just re-applies
+        finish(commit: true)
+    }
 
     private func finish(commit: Bool) {
         guard !finished else { return }
         finished = true
         onFinish?(commit)
         popover?.close()
+        teardown(refocus: false)
+    }
+
+    // MARK: - Tear-off
+
+    func popoverShouldDetach(_ popover: NSPopover) -> Bool { true }
+
+    func popoverDidDetach(_ popover: NSPopover) {
+        detached = true
+        onDetach?()                          // bank the browsing session as one undo step
+        guard let window = popover.contentViewController?.view.window else { return }
+        window.title = "Typefaces"
+        detachObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                self?.teardown(refocus: true)
+            }
     }
 
     func popoverDidClose(_ notification: Notification) {
-        if !finished {
-            finished = true
-            onFinish?(true)   // click-away keeps the current try-on
+        // Detaching also posts this on some macOS versions; defer so popoverDidDetach
+        // (if it's coming) can claim the close. A genuine click-away keeps the try-on.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.detached, !self.finished else { return }
+            self.finished = true
+            self.onFinish?(true)
+            self.teardown(refocus: false)
         }
+    }
+
+    private func teardown(refocus: Bool) {
+        if let detachObserver { NotificationCenter.default.removeObserver(detachObserver) }
+        detachObserver = nil
+        if refocus { onFinish?(true) }   // closing a torn-off palette returns focus to the page
         popover = nil
+        detached = false
         onPreview = nil
+        onApply = nil
+        onDetach = nil
         onFinish = nil
     }
 

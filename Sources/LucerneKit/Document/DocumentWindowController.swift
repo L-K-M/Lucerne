@@ -61,10 +61,14 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     private struct InitialLayout { let size: NSSize; let zoom: CGFloat }
 
-    /// Picks a window size and starting zoom from the screen and the page format:
-    /// zoom so a whole page fits within ~90% of the screen (capped at 100%, so we
-    /// never start enlarged), then a window just big enough to show that page plus
-    /// the toolbar/ruler/status chrome — capped to the screen.
+    /// Picks a window size and starting zoom from the screen and the page format,
+    /// so a new window feels right for the display it opens on. Zoom fits a whole
+    /// page into a comfortable share of the screen — enlarging past 100% on roomy
+    /// displays (so the page fills the space instead of floating tiny), shrinking
+    /// on small ones so a full page is always visible. The window is then sized to
+    /// hold that page framed by gray margins, like a real document window, but
+    /// never a sea of gray, never narrower than the toolbar, never bigger than the
+    /// screen.
     private static func initialLayout(page: CGSize, toolbarWidth: CGFloat) -> InitialLayout {
         let chromeHeight: CGFloat = 86     // toolbar (34) + ruler (30) + status (22)
         let titleBar: CGFloat = 28         // outside the content rect, but must fit on screen
@@ -72,12 +76,24 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         let canvasHPad: CGFloat = 56       // PageCanvasView left + right inset
         let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
 
-        let zoomToFitHeight = (screen.height * 0.90 - titleBar - chromeHeight) / (page.height + canvasVPad)
-        let zoomToFitWidth = (screen.width * 0.92) / (page.width + canvasHPad)
-        let zoom = min(1.0, max(0.3, min(zoomToFitHeight, zoomToFitWidth)))
+        // The largest window we'd open on this screen (a comfortable share of it).
+        let maxContentHeight = screen.height * 0.92 - titleBar
+        let maxWindowWidth = screen.width * 0.92
 
-        let height = min(screen.height * 0.95 - titleBar, (page.height + canvasVPad) * zoom + chromeHeight)
-        let width = min(screen.width * 0.95, max(toolbarWidth, (page.width + canvasHPad) * zoom))
+        // Zoom so a whole page fits the height of that window (and never wider than
+        // it), capped at 160% so text stays sane on very large displays and floored
+        // at 40% so it stays usable on small ones.
+        let zoomFitHeight = (maxContentHeight - chromeHeight - canvasVPad) / page.height
+        let zoomFitWidth = (maxWindowWidth - canvasHPad) / page.width
+        let zoom = max(0.4, min(zoomFitHeight, zoomFitWidth, 1.6))
+
+        // Frame the page with gray margins, but cap them at a third of the page's
+        // width on each side so the window tracks the page rather than the screen.
+        let pageW = page.width * zoom
+        let pageH = page.height * zoom
+        let sideMargin = min(max(canvasHPad / 2, (maxWindowWidth - pageW) / 2), pageW * 0.33)
+        let width = min(maxWindowWidth, max(toolbarWidth, pageW + 2 * sideMargin))
+        let height = min(maxContentHeight, pageH + canvasVPad + chromeHeight)
         return InitialLayout(size: NSSize(width: width.rounded(), height: height.rounded()), zoom: zoom)
     }
 

@@ -716,7 +716,7 @@ public final class ClassicButton: NSControl {
 public enum ClassicText {
 
     public static func engraved(_ string: String, size: CGFloat,
-                                weight: NSFont.Weight = .regular,
+                                weight: NSFont.Weight = .regular, italic: Bool = false,
                                 gray: CGFloat = 0.22, active: Bool = true) -> NSAttributedString {
         let shadow = NSShadow()
         shadow.shadowColor = NSColor(calibratedWhite: 1.0, alpha: active ? 0.65 : 0.4)
@@ -724,8 +724,10 @@ public enum ClassicText {
         shadow.shadowBlurRadius = 0
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
+        var font = NSFont.systemFont(ofSize: size, weight: weight)
+        if italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
         return NSAttributedString(string: string, attributes: [
-            .font: NSFont.systemFont(ofSize: size, weight: weight),
+            .font: font,
             .foregroundColor: NSColor(calibratedWhite: active ? gray : min(gray + 0.26, 0.62), alpha: 1),
             .shadow: shadow,
             .paragraphStyle: paragraph
@@ -733,12 +735,27 @@ public enum ClassicText {
     }
 
     public static func engravedLabel(_ string: String, size: CGFloat,
-                                     weight: NSFont.Weight = .regular,
+                                     weight: NSFont.Weight = .regular, italic: Bool = false,
                                      gray: CGFloat = 0.22) -> NSTextField {
         let field = NSTextField(labelWithString: "")
-        field.attributedStringValue = engraved(string, size: size, weight: weight, gray: gray)
+        field.attributedStringValue = engraved(string, size: size, weight: weight,
+                                                italic: italic, gray: gray)
         field.alignment = .center
         return field
+    }
+}
+
+/// A short horizontal etched rule (dark hairline over a light one) — the classic
+/// ornamental divider. Non-flipped coordinates: dark on top, light just below.
+public final class ClassicRuleView: NSView {
+
+    public override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 2) }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedWhite: 0.68, alpha: 1).setFill()
+        NSRect(x: 0, y: 1, width: bounds.width, height: 1).fill()
+        NSColor(calibratedWhite: 1.0, alpha: 0.85).setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 }
 

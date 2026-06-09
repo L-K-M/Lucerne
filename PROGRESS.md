@@ -112,6 +112,23 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## Design feedback (round 14)
+- [x] **New windows size to their screen** — `initialLayout` now scales the window
+  *and* zoom to the display: it enlarges past 100% (capped 160%) on roomy screens
+  so the page fills the space rather than opening tiny, shrinks to fit a full page
+  on small ones, and frames the page with gray margins like a real document window
+- [x] **Tear-off font picker** — drag the try-on popover off the typeface control
+  and it detaches into a floating "Typefaces" palette that stays open (via
+  `popoverShouldDetach`/`popoverDidDetach`); while torn off each pick is its own
+  committed edit, and the browsing session up to the tear-off lands as one undo
+- [x] **Start screen returns** when the last document window closes (not on quit —
+  guarded by `applicationWillTerminate`, so the save review is preserved)
+- [x] **Welcome screen flourishes** — engraved title + italic tagline, an
+  ornamental etched rule, a soft drop shadow under the icon, a version line, and a
+  proper empty-state ("No recent letters yet") in the recents well. (Recents are
+  empty under `swift run` because the unbundled binary has no recent-documents
+  list; the built `.app` populates it.)
+
 ## Design feedback (round 13)
 - [x] **Inactive-window muting** — like the system title bar, the classic chrome
   now mutes when its window resigns main/key: bar gradients flatten, bezel
