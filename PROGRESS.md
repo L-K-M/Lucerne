@@ -84,8 +84,13 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] Ruler hover help + tooltip (add a tab, change tab type, move/delete, indents)
 - [x] **Markdown version history** in the `.luce` (`history/`, staggered retention)
   so accidentally-deleted text can be recovered from the package
-- [ ] Page numbers / headers-footers, table of contents, tables — design note in
-  `docs/roadmap.md` (not yet built)
+- [x] **Page-number footer / headers & footers** — `header`/`footer` with
+  left/center/right zones and `{page} {pages} {date} {title}` tokens, drawn in the
+  margins per page; Insert ▸ Page Number and Insert ▸ Header & Footer…
+- [x] **Heading navigator** sidebar (View ▸ Show Navigator) listing headings;
+  click to scroll to one. Built on `pageNumber(forCharacterAt:)` + `headingOutline()`.
+- [ ] Printed table of contents, editable header/footer click-zones, tables —
+  see `docs/roadmap.md`
 
 ## On-device feedback (round 5)
 - [x] Icons: artwork is edge-to-edge (clipped to the squircle/page; no white inset)

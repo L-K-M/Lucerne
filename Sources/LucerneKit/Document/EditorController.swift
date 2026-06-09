@@ -134,6 +134,10 @@ public final class EditorController: NSObject {
         layoutManager.addTextContainer(container)        // appended → container index == page index
         let textView = makeTextView(container: container)
         let pageView = PageContainerView(pageIndex: index, frame: CGRect(origin: .zero, size: metrics.pageSize))
+        pageView.marginTop = metrics.marginTop
+        pageView.marginLeft = metrics.marginLeft
+        pageView.marginBottom = metrics.marginBottom
+        pageView.marginRight = metrics.marginRight
         pageView.addSubview(textView)
         let info = PageInfo(container: container, textView: textView, pageView: pageView)
         pages.append(info)
@@ -273,7 +277,9 @@ public final class EditorController: NSObject {
         paginateAndExclude()
         if syncImages { syncImageViews() }
         canvasView.layoutPages()
+        updateFurniture()
         isUpdatingLayout = false
+        outlineObserver?()
     }
 
     private func relayoutAfterObjectChange(page: Int?) {
@@ -763,6 +769,12 @@ public final class EditorController: NSObject {
     /// the default status". Driven by image hover (and could be extended).
     public var onStatusHint: ((String?) -> Void)?
 
+    /// Called when the heading outline may have changed (drives the navigator).
+    public var outlineObserver: (() -> Void)?
+
+    /// Used to resolve the {title} token in headers/footers.
+    public var documentTitle: String = ""
+
     /// Number of laid-out pages (for the status bar).
     public var pageCount: Int { pages.count }
 
@@ -791,6 +803,118 @@ public final class EditorController: NSObject {
     }
 
     public var pageMetrics: PageMetrics { metrics }
+
+    // MARK: - Page numbers (shared primitive) and headers/footers
+
+    /// The 1-based page number a character is laid out on.
+    public func pageNumber(forCharacterAt index: Int) -> Int {
+        guard index >= 0, index < textStorage.length else { return 1 }
+        let glyph = layoutManager.glyphIndexForCharacter(at: index)
+        guard let container = layoutManager.textContainer(forGlyphAt: glyph, effectiveRange: nil),
+              let page = pages.firstIndex(where: { $0.container === container }) else { return 1 }
+        return page + 1
+    }
+
+    /// Sets the running header/footer and redraws (no reflow — they live in the margins).
+    public func updatePageFurniture(header: PageFurniture?, footer: PageFurniture?) {
+        model.header = header
+        model.footer = footer
+        updateFurniture()
+        document?.editorDidChange()
+    }
+
+    /// Re-resolve and redraw headers/footers without marking the document dirty
+    /// (e.g. after the document title becomes known).
+    public func refreshFurniture() { updateFurniture() }
+
+    private func updateFurniture() {
+        let count = pages.count
+        let date = EditorController.dateFormatter.string(from: Date())
+        let header = model.header ?? PageFurniture()
+        let footer = model.footer ?? PageFurniture()
+        for (index, page) in pages.enumerated() {
+            let view = page.pageView
+            view.headerLeft = resolve(header.left, page: index + 1, of: count, date: date)
+            view.headerCenter = resolve(header.center, page: index + 1, of: count, date: date)
+            view.headerRight = resolve(header.right, page: index + 1, of: count, date: date)
+            view.footerLeft = resolve(footer.left, page: index + 1, of: count, date: date)
+            view.footerCenter = resolve(footer.center, page: index + 1, of: count, date: date)
+            view.footerRight = resolve(footer.right, page: index + 1, of: count, date: date)
+        }
+    }
+
+    private func resolve(_ template: String, page: Int, of count: Int, date: String) -> String {
+        guard !template.isEmpty else { return "" }
+        return template
+            .replacingOccurrences(of: "{page}", with: "\(page)")
+            .replacingOccurrences(of: "{pages}", with: "\(count)")
+            .replacingOccurrences(of: "{date}", with: date)
+            .replacingOccurrences(of: "{title}", with: documentTitle)
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        f.timeStyle = .none
+        return f
+    }()
+
+    // MARK: - Heading outline (navigator)
+
+    public struct HeadingItem: Equatable {
+        public let title: String
+        public let characterIndex: Int
+        public let level: Int
+    }
+
+    /// The document's headings (paragraphs whose style maps to markdown h1/h2/h3),
+    /// in order, for the navigator.
+    public func headingOutline() -> [HeadingItem] {
+        guard textStorage.length > 0 else { return [] }
+        var items: [HeadingItem] = []
+        let ns = textStorage.string as NSString
+        var location = 0
+        while location < ns.length {
+            var start = 0, end = 0, contentsEnd = 0
+            ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                 for: NSRange(location: location, length: 0))
+            if let role = textStorage.attribute(.lucerneStyleRole, at: start, effectiveRange: nil) as? String,
+               let level = headingLevel(for: role) {
+                let title = ns.substring(with: NSRange(location: start, length: contentsEnd - start))
+                    .trimmingCharacters(in: .whitespaces)
+                if !title.isEmpty {
+                    items.append(HeadingItem(title: title, characterIndex: start, level: level))
+                }
+            }
+            if end == location { break }
+            location = end
+        }
+        return items
+    }
+
+    private func headingLevel(for role: String) -> Int? {
+        switch model.styles[role]?.markdown {
+        case "h1": return 1
+        case "h2": return 2
+        case "h3": return 3
+        default: return nil
+        }
+    }
+
+    /// Scrolls the given character into view and places the caret there.
+    public func revealHeading(atCharacterIndex index: Int) {
+        guard index >= 0, index < textStorage.length else { return }
+        let glyph = layoutManager.glyphIndexForCharacter(at: index)
+        guard let container = layoutManager.textContainer(forGlyphAt: glyph, effectiveRange: nil),
+              let page = pages.first(where: { $0.container === container }) else { return }
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        // container coords → text view → page view → canvas
+        let inTextView = lineRect.offsetBy(dx: page.textView.frame.minX, dy: page.textView.frame.minY)
+        let inCanvas = page.pageView.convert(inTextView, to: canvasView)
+        canvasView.scrollToVisible(inCanvas.insetBy(dx: 0, dy: -40))
+        window?.makeFirstResponder(page.textView)
+        page.textView.setSelectedRange(NSRange(location: index, length: 0))
+    }
 
     // MARK: - PDF / print rendering
 

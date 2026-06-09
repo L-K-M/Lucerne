@@ -92,8 +92,28 @@ unzipping the file. This is purely additive and does not change `formatVersion`.
 | `styles` | object | REQUIRED | Map of style role → style definition (§5). |
 | `body` | array | REQUIRED | Ordered list of paragraphs (§6). MAY be empty. |
 | `objects` | array | REQUIRED | List of placed objects (§7). MAY be empty. |
+| `header` | object | optional | Running header (§3.2). |
+| `footer` | object | optional | Running footer (§3.2). |
 
 A reader **MUST** reject a file whose `format` is not `"lucerne-document"`.
+
+### 3.2 Header and footer (page furniture)
+
+`header` and `footer`, when present, are objects with three string zones —
+`left`, `center`, `right` (each optional, default `""`) — drawn in the top/bottom
+page margins of every page. A zone may contain these tokens, substituted at render
+time:
+
+| Token | Replaced with |
+|---|---|
+| `{page}` | the page number (1-based) |
+| `{pages}` | the total page count |
+| `{date}` | the current date (reader-formatted) |
+| `{title}` | the document's display name |
+
+Example: a `footer` of `{ "center": "Page {page} of {pages}" }`. These are
+**presentational** and additive — they are not represented in `content.md`, and
+adding them does not change `formatVersion`.
 
 ## 4. Coordinates, units, and page geometry
 
@@ -357,9 +377,19 @@ prose in §7 is authoritative over the schema here).
       "additionalProperties": { "$ref": "#/$defs/style" }
     },
     "body": { "type": "array", "items": { "$ref": "#/$defs/paragraph" } },
-    "objects": { "type": "array", "items": { "$ref": "#/$defs/object" } }
+    "objects": { "type": "array", "items": { "$ref": "#/$defs/object" } },
+    "header": { "$ref": "#/$defs/furniture" },
+    "footer": { "$ref": "#/$defs/furniture" }
   },
   "$defs": {
+    "furniture": {
+      "type": "object",
+      "properties": {
+        "left": { "type": "string" },
+        "center": { "type": "string" },
+        "right": { "type": "string" }
+      }
+    },
     "page": {
       "type": "object",
       "required": ["size", "width", "height", "margins"],

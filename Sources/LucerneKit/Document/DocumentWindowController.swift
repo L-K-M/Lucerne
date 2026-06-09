@@ -12,6 +12,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     private let ruler = LucerneRulerView()
     private let scrollView = NSScrollView()
     private let statusBar = StatusBarView(frame: .zero)
+    private let navigator = NavigatorView(frame: .zero)
 
     public init(editor: EditorController) {
         self.editor = editor
@@ -70,7 +71,8 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         scrollView.contentView.postsBoundsChangedNotifications = true
 
         let container = EditorContainerView(toolbar: toolbar, ruler: ruler, scroll: scrollView,
-                                            statusBar: statusBar, pageWidth: editor.pageMetrics.pageSize.width)
+                                            statusBar: statusBar, navigator: navigator,
+                                            pageWidth: editor.pageMetrics.pageSize.width)
         window?.contentView = container
         container.layoutContents()
     }
@@ -85,6 +87,11 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
                              pageWidth: metrics.pageSize.width)
         editor.selectionObserver = { [weak self] _ in self?.syncUI() }
         editor.onStatusHint = { [weak self] hint in self?.showStatus(hint) }
+        editor.outlineObserver = { [weak self] in
+            guard let self else { return }
+            self.navigator.setItems(self.editor.headingOutline())
+        }
+        navigator.onSelect = { [weak self] index in self?.editor.revealHeading(atCharacterIndex: index) }
         statusBar.onZoomIn = { [weak self] in self?.lucerneZoomIn(nil) }
         statusBar.onZoomOut = { [weak self] in self?.lucerneZoomOut(nil) }
         statusBar.onZoomReset = { [weak self] in self?.lucerneActualSize(nil) }
@@ -93,7 +100,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     public override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        editor.documentTitle = (document as? NSDocument)?.displayName ?? ""
+        editor.refreshFurniture()
         editor.focusInitialResponder()
+        navigator.setItems(editor.headingOutline())
         syncUI()
     }
 
@@ -186,6 +196,26 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         (window?.contentView as? EditorContainerView)?.layoutContents()
     }
 
+    // MARK: - Headers/footers & navigator
+
+    @objc func lucerneInsertPageNumber(_ sender: Any?) {
+        var footer = editor.model.footer ?? PageFurniture()
+        footer.center = "Page {page} of {pages}"
+        editor.updatePageFurniture(header: editor.model.header, footer: footer)
+    }
+
+    @objc func lucerneHeaderFooter(_ sender: Any?) {
+        guard let window else { return }
+        HeaderFooterSheet.present(from: window, header: editor.model.header, footer: editor.model.footer) {
+            [weak self] header, footer in
+            self?.editor.updatePageFurniture(header: header, footer: footer)
+        }
+    }
+
+    @objc func lucerneToggleNavigator(_ sender: Any?) {
+        (window?.contentView as? EditorContainerView)?.toggleNavigator()
+    }
+
     // MARK: - Document setup (page size + margins)
 
     @objc func lucerneDocumentSetup(_ sender: Any?) {
@@ -251,6 +281,9 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         case #selector(lucerneToggleBold(_:)), #selector(lucerneToggleItalic(_:)),
              #selector(lucerneToggleUnderline(_:)):
             return true
+        case #selector(lucerneToggleNavigator(_:)):
+            menuItem.state = (window?.contentView as? EditorContainerView)?.navigatorVisible == true ? .on : .off
+            return true
         default:
             return true
         }
@@ -275,27 +308,39 @@ private final class EditorContainerView: NSView {
     private let ruler: LucerneRulerView
     private let scroll: NSScrollView
     private let statusBar: StatusBarView
+    private let navigator: NavigatorView
     private var pageWidth: CGFloat
     private let toolbarHeight: CGFloat = 44
     private let statusHeight: CGFloat = 22
+    private let navigatorWidth: CGFloat = 210
+    private(set) var navigatorVisible = false
 
     func setPageWidth(_ width: CGFloat) {
         pageWidth = width
         layoutContents()
     }
 
+    func toggleNavigator() {
+        navigatorVisible.toggle()
+        navigator.isHidden = !navigatorVisible
+        layoutContents()
+    }
+
     init(toolbar: ToolbarView, ruler: LucerneRulerView, scroll: NSScrollView,
-         statusBar: StatusBarView, pageWidth: CGFloat) {
+         statusBar: StatusBarView, navigator: NavigatorView, pageWidth: CGFloat) {
         self.toolbar = toolbar
         self.ruler = ruler
         self.scroll = scroll
         self.statusBar = statusBar
+        self.navigator = navigator
         self.pageWidth = pageWidth
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 800))
         addSubview(scroll)
         addSubview(ruler)
+        addSubview(navigator)
         addSubview(toolbar)
         addSubview(statusBar)
+        navigator.isHidden = true
     }
 
     @available(*, unavailable)
@@ -320,28 +365,36 @@ private final class EditorContainerView: NSView {
         defer { isLayingOut = false }
 
         toolbar.frame = NSRect(x: 0, y: h - toolbarHeight, width: w, height: toolbarHeight)
-
-        let rulerHeight = ruler.rulerHeight
-        let scrollTop = h - toolbarHeight - rulerHeight
         statusBar.frame = NSRect(x: 0, y: 0, width: w, height: statusHeight)
-        scroll.frame = NSRect(x: 0, y: statusHeight, width: w, height: max(0, scrollTop - statusHeight))
+
+        let midTop = h - toolbarHeight
+        let midHeight = max(0, midTop - statusHeight)
+        var leftX: CGFloat = 0
+        if navigatorVisible {
+            navigator.frame = NSRect(x: 0, y: statusHeight, width: navigatorWidth, height: midHeight)
+            leftX = navigatorWidth
+        }
+        let rightW = w - leftX
+
+        // The ruler + canvas occupy the region to the right of the navigator. The
+        // ruler's background/border are continuous across that region; its scale is
+        // aligned to the page's on-screen rectangle (so it tracks scroll + zoom).
+        let rulerHeight = ruler.rulerHeight
+        ruler.frame = NSRect(x: leftX, y: midTop - rulerHeight, width: rightW, height: rulerHeight)
+        scroll.frame = NSRect(x: leftX, y: statusHeight, width: rightW, height: max(0, midHeight - rulerHeight))
         (scroll.documentView as? PageCanvasView)?.layoutPages()
 
-        // The ruler spans the full width (continuous background/border); its scale
-        // is aligned to the page's on-screen rectangle so it tracks scroll + zoom.
-        let rulerY = h - toolbarHeight - rulerHeight
-        ruler.frame = NSRect(x: 0, y: rulerY, width: w, height: rulerHeight)
         if let pageRect = currentPageOnScreenRect() {
             ruler.setPageGeometry(originX: pageRect.minX, onScreenWidth: pageRect.width)
         } else {
-            let pw = min(pageWidth, w)
-            ruler.setPageGeometry(originX: max(0, ((w - pw) / 2).rounded()), onScreenWidth: pw)
+            let pw = min(pageWidth, rightW)
+            ruler.setPageGeometry(originX: max(0, ((rightW - pw) / 2).rounded()), onScreenWidth: pw)
         }
     }
 
     private func currentPageOnScreenRect() -> CGRect? {
         guard let canvas = scroll.documentView as? PageCanvasView,
               let page = canvas.pageViews.first else { return nil }
-        return page.convert(page.bounds, to: self)
+        return page.convert(page.bounds, to: ruler)
     }
 }

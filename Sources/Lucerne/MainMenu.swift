@@ -162,6 +162,8 @@ enum MainMenu {
         submenu("Insert") { menu in
             add(menu, "Image…", "lucerneInsertImage:", key: "i", modifiers: [.command, .shift])
             add(menu, "Page Break", "lucerneInsertPageBreak:", key: "\r", modifiers: [.command, .shift])
+            add(menu, "Page Number", "lucerneInsertPageNumber:")
+            add(menu, "Header & Footer…", "lucerneHeaderFooter:")
             menu.addItem(.separator())
             let wrap = NSMenuItem(title: "Image Text Wrap", action: nil, keyEquivalent: "")
             let wrapMenu = NSMenu(title: "Image Text Wrap")
@@ -180,6 +182,8 @@ enum MainMenu {
 
     private static func makeViewMenu() -> NSMenuItem {
         submenu("View") { menu in
+            add(menu, "Show Navigator", "lucerneToggleNavigator:", key: "0", modifiers: [.command, .option])
+            menu.addItem(.separator())
             add(menu, "Zoom In", "lucerneZoomIn:", key: "+")
             add(menu, "Zoom Out", "lucerneZoomOut:", key: "-")
             add(menu, "Actual Size", "lucerneActualSize:", key: "0")

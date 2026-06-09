@@ -16,6 +16,8 @@ public struct LucerneDocumentModel: Codable, Equatable {
     public var styles: [String: ParagraphStyleDef]
     public var body: [Paragraph]
     public var objects: [PlacedObject]
+    public var header: PageFurniture?
+    public var footer: PageFurniture?
 
     public static let canonicalFormat = "lucerne-document"
     public static let currentFormatVersion = 1
@@ -25,13 +27,17 @@ public struct LucerneDocumentModel: Codable, Equatable {
                 page: PageConfig,
                 styles: [String: ParagraphStyleDef],
                 body: [Paragraph],
-                objects: [PlacedObject]) {
+                objects: [PlacedObject],
+                header: PageFurniture? = nil,
+                footer: PageFurniture? = nil) {
         self.format = format
         self.formatVersion = formatVersion
         self.page = page
         self.styles = styles
         self.body = body
         self.objects = objects
+        self.header = header
+        self.footer = footer
     }
 
     /// The default style role applied to a paragraph that names a role we do not
@@ -45,6 +51,24 @@ public struct LucerneDocumentModel: Codable, Equatable {
             ?? styles[LucerneDocumentModel.defaultStyleRole]
             ?? ParagraphStyleDef.fallbackBody
     }
+}
+
+// MARK: - Header / footer (page furniture)
+
+/// A running header or footer: three zones (left/center/right). Each zone is a
+/// template that may contain the tokens {page}, {pages}, {date}, {title}.
+public struct PageFurniture: Codable, Equatable {
+    public var left: String
+    public var center: String
+    public var right: String
+
+    public init(left: String = "", center: String = "", right: String = "") {
+        self.left = left
+        self.center = center
+        self.right = right
+    }
+
+    public var isEmpty: Bool { left.isEmpty && center.isEmpty && right.isEmpty }
 }
 
 // MARK: - Page (D1: one fixed size for the whole document)
