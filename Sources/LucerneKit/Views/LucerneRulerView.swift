@@ -1,25 +1,30 @@
 import AppKit
 
-// A horizontal ruler with draggable indent markers and tab stops, drawn to line up
-// with the page below it. It reads the active paragraph's indents/tabs from the
-// EditorController and writes changes back (one undo step per gesture).
+// A horizontal ruler with draggable indent markers and tab stops. It spans the
+// full window width (so its background and bottom border are continuous), and
+// draws the measured scale aligned to the page below it: the page's on-screen
+// origin and width are supplied via setPageGeometry(), so the scale tracks
+// horizontal scroll and zoom. Document points map to x as:
+//     x = pageOriginX + documentX * (pageOnScreenWidth / pageWidth)
 //
-// The ruler maps document points across its *frame width*: `scale = bounds.width /
-// pageWidth`. The window sets the ruler's frame to the page's on-screen rectangle,
-// so the ruler tracks the page through horizontal scrolling and zoom (magnify).
 // Tab stops are document-global (see EditorController.setTabStops); indents apply
-// to the selected paragraphs.
+// to the selected paragraphs. Hovering reports contextual help via onHoverHelp.
 public final class LucerneRulerView: NSView {
 
     public weak var editor: EditorController?
-
     public var rulerHeight: CGFloat = 26
+    public var onHoverHelp: ((String?) -> Void)?
 
+    // Document geometry (points).
     private var marginLeft: CGFloat = 72
     private var marginRight: CGFloat = 72
     private var pageWidth: CGFloat = 595.28
 
-    // Current paragraph values, in document points from the left margin.
+    // The page's on-screen placement within this view (tracks scroll/zoom).
+    private var pageOriginX: CGFloat = 0
+    private var pageOnScreenWidth: CGFloat = 595.28
+
+    // Active paragraph values, in document points from the left margin.
     private var leftIndent: CGFloat = 0
     private var firstLineExtra: CGFloat = 0
     private var rightIndent: CGFloat = 0
@@ -35,10 +40,21 @@ public final class LucerneRulerView: NSView {
     public override var isFlipped: Bool { false }
     public override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: rulerHeight) }
 
-    /// Document points → ruler x. The ruler fills its frame with the page width, so
-    /// this scale also encodes the current zoom magnification.
-    private var scale: CGFloat { pageWidth > 0 ? bounds.width / pageWidth : 1 }
-    private func sx(_ documentX: CGFloat) -> CGFloat { documentX * scale }
+    public override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        toolTip = "Click in the white band to add a tab stop · double-click a tab to change its "
+            + "type (left/center/right/decimal) · drag a tab to move it, or off the ruler to delete · "
+            + "drag the triangles to set the paragraph indents."
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private var scale: CGFloat {
+        (pageWidth > 0 && pageOnScreenWidth > 0) ? pageOnScreenWidth / pageWidth : 1
+    }
+    private func sx(_ documentX: CGFloat) -> CGFloat { pageOriginX + documentX * scale }
+    private func documentX(_ x: CGFloat) -> CGFloat { (x - pageOriginX) / scale }
 
     private var contentWidth: CGFloat { max(0, pageWidth - marginLeft - marginRight) }
     private var contentRightX: CGFloat { pageWidth - marginRight }
@@ -49,6 +65,13 @@ public final class LucerneRulerView: NSView {
         self.marginLeft = marginLeft
         self.marginRight = marginRight
         self.pageWidth = pageWidth
+        needsDisplay = true
+    }
+
+    /// The page's left edge x and on-screen width within this (full-width) view.
+    public func setPageGeometry(originX: CGFloat, onScreenWidth: CGFloat) {
+        pageOriginX = originX
+        pageOnScreenWidth = onScreenWidth
         needsDisplay = true
     }
 
@@ -172,7 +195,7 @@ public final class LucerneRulerView: NSView {
 
         dragging = marker(at: p)
         if dragging == .none, p.x >= sx(marginLeft), p.x <= sx(contentRightX) {
-            let loc = clampTabLocation(p.x / scale - marginLeft)
+            let loc = clampTabLocation(documentX(p.x) - marginLeft)
             tabs.append((loc: loc, kind: .left))
             tabs.sort { $0.loc < $1.loc }
             dragging = .tab(tabIndex(near: sx(marginLeft + loc)) ?? tabs.count - 1)
@@ -182,7 +205,7 @@ public final class LucerneRulerView: NSView {
 
     public override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        let docPoint = p.x / scale - marginLeft
+        let docPoint = documentX(p.x) - marginLeft
 
         switch dragging {
         case .none:
@@ -213,6 +236,40 @@ public final class LucerneRulerView: NSView {
             commitTabs()
         }
         dragging = .none
+    }
+
+    // MARK: - Hover help
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil))
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        onHoverHelp?(help(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        onHoverHelp?(nil)
+    }
+
+    private func help(at p: CGPoint) -> String? {
+        switch marker(at: p) {
+        case .tab:
+            return "Tab stop — double-click to change type (left/center/right/decimal), "
+                + "drag to move, or drag off the ruler to delete"
+        case .left, .firstLine, .right:
+            return "Indent marker — drag to set the paragraph's indent"
+        case .none:
+            if p.x >= sx(marginLeft), p.x <= sx(contentRightX) {
+                return "Click to add a tab stop"
+            }
+            return nil
+        }
     }
 
     // MARK: - Hit testing (screen space)

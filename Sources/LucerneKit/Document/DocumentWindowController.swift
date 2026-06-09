@@ -79,6 +79,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         toolbar.editor = editor
         toolbar.onHoverHelp = { [weak self] hint in self?.showStatus(hint) }
         ruler.editor = editor
+        ruler.onHoverHelp = { [weak self] hint in self?.showStatus(hint) }
         let metrics = editor.pageMetrics
         ruler.updateGeometry(marginLeft: metrics.marginLeft, marginRight: metrics.marginRight,
                              pageWidth: metrics.pageSize.width)
@@ -326,16 +327,16 @@ private final class EditorContainerView: NSView {
         scroll.frame = NSRect(x: 0, y: statusHeight, width: w, height: max(0, scrollTop - statusHeight))
         (scroll.documentView as? PageCanvasView)?.layoutPages()
 
-        // Align the ruler with the page's actual on-screen rectangle so it tracks
-        // horizontal scroll and zoom; fall back to centered before pages exist.
+        // The ruler spans the full width (continuous background/border); its scale
+        // is aligned to the page's on-screen rectangle so it tracks scroll + zoom.
         let rulerY = h - toolbarHeight - rulerHeight
+        ruler.frame = NSRect(x: 0, y: rulerY, width: w, height: rulerHeight)
         if let pageRect = currentPageOnScreenRect() {
-            ruler.frame = NSRect(x: pageRect.minX, y: rulerY, width: pageRect.width, height: rulerHeight)
+            ruler.setPageGeometry(originX: pageRect.minX, onScreenWidth: pageRect.width)
         } else {
-            let rulerX = max(0, ((w - pageWidth) / 2).rounded())
-            ruler.frame = NSRect(x: rulerX, y: rulerY, width: min(pageWidth, w), height: rulerHeight)
+            let pw = min(pageWidth, w)
+            ruler.setPageGeometry(originX: max(0, ((w - pw) / 2).rounded()), onScreenWidth: pw)
         }
-        ruler.needsDisplay = true
     }
 
     private func currentPageOnScreenRect() -> CGRect? {
