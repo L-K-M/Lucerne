@@ -91,15 +91,15 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     // MARK: - PDF export
 
     @objc public func exportPDF(_ sender: Any?) {
-        export(data: { $0.makePDFData() }, contentType: .pdf, extension: "pdf")
+        export(data: { $0.makePDFData() }, contentType: .pdf, fileExtension: "pdf")
     }
 
     @objc public func exportRTF(_ sender: Any?) {
-        export(data: { $0.makeRTFData() }, contentType: .rtf, extension: "rtf")
+        export(data: { $0.makeRTFData() }, contentType: .rtf, fileExtension: "rtf")
     }
 
     private func export(data make: @escaping (EditorController) -> Data,
-                        contentType: UTType, extension ext: String) {
+                        contentType: UTType, fileExtension ext: String) {
         guard let editor, let window = windowControllers.first?.window else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [contentType]
