@@ -17,14 +17,19 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         self.editor = editor
 
         let metrics = editor.pageMetrics
-        let initialWidth = min(metrics.pageSize.width + 2 * 28 + 16, 1100)
+        // Wide enough for the page (plus canvas insets) AND the whole toolbar.
+        let pageFitWidth = metrics.pageSize.width + 2 * 28 + 16
+        let toolbarFitWidth = toolbar.preferredContentWidth + 24
+        let initialWidth = max(pageFitWidth, toolbarFitWidth, 720)
         let initialHeight: CGFloat = 880
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: max(initialWidth, 680), height: initialHeight),
+            contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "Lucerne"
         window.tabbingMode = .disallowed
+        // The toolbar scrolls if narrower than its content, so the floor can be modest.
+        window.minSize = NSSize(width: 480, height: 420)
         // Lucerne is a white-paper document editor: render the whole window in the
         // light (aqua) appearance so the toolbar controls, ruler labels, and the
         // text caret stay visible on the white page even when macOS is in Dark Mode.
@@ -35,7 +40,15 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         buildContentView()
         wireEditor()
         window.center()
+
+        // Reposition the ruler when the user scrolls or zooms (the clip view's
+        // bounds change covers both), so it keeps tracking the page.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(viewportChanged),
+            name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -50,6 +63,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         scrollView.drawsBackground = true
         scrollView.backgroundColor = NSColor(calibratedWhite: 0.80, alpha: 1)
         scrollView.documentView = editor.canvasView
+        scrollView.allowsMagnification = true
+        scrollView.minMagnification = 0.25
+        scrollView.maxMagnification = 4
+        scrollView.contentView.postsBoundsChangedNotifications = true
 
         let container = EditorContainerView(toolbar: toolbar, ruler: ruler, scroll: scrollView,
                                             statusBar: statusBar, pageWidth: editor.pageMetrics.pageSize.width)
@@ -59,7 +76,6 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     private func wireEditor() {
         toolbar.editor = editor
-        toolbar.onInsertImage = { [weak self] in self?.presentInsertImagePanel() }
         toolbar.onHoverHelp = { [weak self] hint in self?.showStatus(hint) }
         ruler.editor = editor
         let metrics = editor.pageMetrics
@@ -94,7 +110,8 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             return "Image selected — drag to move · drag a corner to resize (⇧ for free aspect) · ⌫ to delete"
         }
         let styleName = editor.currentStyleRole().flatMap { editor.model.styles[$0]?.name } ?? "Body"
-        return "\(styleName)  ·  \(pageText)"
+        let zoom = Int((scrollView.magnification * 100).rounded())
+        return "\(styleName)  ·  \(pageText)  ·  \(zoom)%"
     }
 
     public func windowDidResize(_ notification: Notification) {
@@ -147,6 +164,37 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     @objc func lucerneStandoffIncrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: 4) }
     @objc func lucerneStandoffDecrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: -4) }
 
+    // MARK: - Zoom
+
+    @objc func lucerneZoomIn(_ sender: Any?) { setMagnification(scrollView.magnification * 1.25) }
+    @objc func lucerneZoomOut(_ sender: Any?) { setMagnification(scrollView.magnification / 1.25) }
+    @objc func lucerneActualSize(_ sender: Any?) { setMagnification(1) }
+
+    private func setMagnification(_ value: CGFloat) {
+        scrollView.magnification = min(max(value, scrollView.minMagnification), scrollView.maxMagnification)
+        (window?.contentView as? EditorContainerView)?.layoutContents()
+        showStatus(nil)
+    }
+
+    @objc func viewportChanged() {
+        (window?.contentView as? EditorContainerView)?.layoutContents()
+    }
+
+    // MARK: - Document setup (page size + margins)
+
+    @objc func lucerneDocumentSetup(_ sender: Any?) {
+        guard let window else { return }
+        DocumentSetupSheet.present(from: window, config: editor.model.page) { [weak self] newConfig in
+            guard let self else { return }
+            self.editor.updatePageConfig(newConfig)
+            let metrics = self.editor.pageMetrics
+            self.ruler.updateGeometry(marginLeft: metrics.marginLeft, marginRight: metrics.marginRight,
+                                      pageWidth: metrics.pageSize.width)
+            (self.window?.contentView as? EditorContainerView)?.setPageWidth(metrics.pageSize.width)
+            self.syncUI()
+        }
+    }
+
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(lucerneDeleteImage(_:)),
@@ -195,9 +243,14 @@ private final class EditorContainerView: NSView {
     private let ruler: LucerneRulerView
     private let scroll: NSScrollView
     private let statusBar: StatusBarView
-    private let pageWidth: CGFloat
+    private var pageWidth: CGFloat
     private let toolbarHeight: CGFloat = 44
     private let statusHeight: CGFloat = 22
+
+    func setPageWidth(_ width: CGFloat) {
+        pageWidth = width
+        layoutContents()
+    }
 
     init(toolbar: ToolbarView, ruler: LucerneRulerView, scroll: NSScrollView,
          statusBar: StatusBarView, pageWidth: CGFloat) {
@@ -226,21 +279,37 @@ private final class EditorContainerView: NSView {
         layoutContents()
     }
 
+    private var isLayingOut = false
+
     func layoutContents() {
         let w = bounds.width, h = bounds.height
-        guard w > 0, h > 0 else { return }
+        guard w > 0, h > 0, !isLayingOut else { return }
+        isLayingOut = true
+        defer { isLayingOut = false }
 
         toolbar.frame = NSRect(x: 0, y: h - toolbarHeight, width: w, height: toolbarHeight)
 
         let rulerHeight = ruler.rulerHeight
-        let rulerX = max(0, ((w - pageWidth) / 2).rounded())
-        ruler.frame = NSRect(x: rulerX, y: h - toolbarHeight - rulerHeight,
-                             width: min(pageWidth, w), height: rulerHeight)
-
-        statusBar.frame = NSRect(x: 0, y: 0, width: w, height: statusHeight)
-
         let scrollTop = h - toolbarHeight - rulerHeight
+        statusBar.frame = NSRect(x: 0, y: 0, width: w, height: statusHeight)
         scroll.frame = NSRect(x: 0, y: statusHeight, width: w, height: max(0, scrollTop - statusHeight))
         (scroll.documentView as? PageCanvasView)?.layoutPages()
+
+        // Align the ruler with the page's actual on-screen rectangle so it tracks
+        // horizontal scroll and zoom; fall back to centered before pages exist.
+        let rulerY = h - toolbarHeight - rulerHeight
+        if let pageRect = currentPageOnScreenRect() {
+            ruler.frame = NSRect(x: pageRect.minX, y: rulerY, width: pageRect.width, height: rulerHeight)
+        } else {
+            let rulerX = max(0, ((w - pageWidth) / 2).rounded())
+            ruler.frame = NSRect(x: rulerX, y: rulerY, width: min(pageWidth, w), height: rulerHeight)
+        }
+        ruler.needsDisplay = true
+    }
+
+    private func currentPageOnScreenRect() -> CGRect? {
+        guard let canvas = scroll.documentView as? PageCanvasView,
+              let page = canvas.pageViews.first else { return nil }
+        return page.convert(page.bounds, to: self)
     }
 }

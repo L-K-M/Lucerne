@@ -14,6 +14,7 @@ enum MainMenu {
         mainMenu.addItem(makeEditMenu())
         mainMenu.addItem(makeFormatMenu())
         mainMenu.addItem(makeInsertMenu())
+        mainMenu.addItem(makeViewMenu())
         mainMenu.addItem(makeWindowMenu())
         return mainMenu
     }
@@ -67,7 +68,7 @@ enum MainMenu {
             let open = add(menu, "Open…", "openDocument:", key: "o")
             let openRecent = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
             let recentMenu = NSMenu(title: "Open Recent")
-            recentMenu.addItem(withTitle: "Clear Menu", action: Selector("clearRecentDocuments:"), keyEquivalent: "")
+            recentMenu.addItem(withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
             openRecent.submenu = recentMenu
             menu.addItem(openRecent)
             _ = open
@@ -80,6 +81,7 @@ enum MainMenu {
             add(menu, "Export as PDF…", "exportPDF:")
             add(menu, "Export as RTF…  (lossy)", "exportRTF:")
             menu.addItem(.separator())
+            add(menu, "Document Setup…", "lucerneDocumentSetup:")
             add(menu, "Page Setup…", "runPageLayout:", key: "p", modifiers: [.command, .shift])
             add(menu, "Print…", "printDocument:", key: "p")
         }
@@ -100,16 +102,17 @@ enum MainMenu {
             menu.addItem(.separator())
             let find = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
             let findMenu = NSMenu(title: "Find")
-            let findItem = findMenu.addItem(withTitle: "Find…", action: Selector("performFindPanelAction:"), keyEquivalent: "f")
+            let findAction = #selector(NSTextView.performFindPanelAction(_:))
+            let findItem = findMenu.addItem(withTitle: "Find…", action: findAction, keyEquivalent: "f")
             findItem.tag = 1   // NSFindPanelActionShowFindPanel
-            findMenu.addItem(withTitle: "Find Next", action: Selector("performFindPanelAction:"), keyEquivalent: "g").tag = 2
-            findMenu.addItem(withTitle: "Find Previous", action: Selector("performFindPanelAction:"), keyEquivalent: "G").tag = 3
+            findMenu.addItem(withTitle: "Find Next", action: findAction, keyEquivalent: "g").tag = 2
+            findMenu.addItem(withTitle: "Find Previous", action: findAction, keyEquivalent: "G").tag = 3
             find.submenu = findMenu
             menu.addItem(find)
             let spelling = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")
             let spellingMenu = NSMenu(title: "Spelling and Grammar")
-            spellingMenu.addItem(withTitle: "Show Spelling and Grammar", action: Selector("showGuessPanel:"), keyEquivalent: ":")
-            spellingMenu.addItem(withTitle: "Check Document Now", action: Selector("checkSpelling:"), keyEquivalent: ";")
+            spellingMenu.addItem(withTitle: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
+            spellingMenu.addItem(withTitle: "Check Document Now", action: #selector(NSText.checkSpelling(_:)), keyEquivalent: ";")
             spelling.submenu = spellingMenu
             menu.addItem(spelling)
         }
@@ -169,6 +172,16 @@ enum MainMenu {
             add(menu, "Decrease Standoff", "lucerneStandoffDecrease:", key: "[", modifiers: [.command, .option])
             menu.addItem(.separator())
             add(menu, "Delete Image", "lucerneDeleteImage:")
+        }
+    }
+
+    // MARK: - View
+
+    private static func makeViewMenu() -> NSMenuItem {
+        submenu("View") { menu in
+            add(menu, "Zoom In", "lucerneZoomIn:", key: "+")
+            add(menu, "Zoom Out", "lucerneZoomOut:", key: "-")
+            add(menu, "Actual Size", "lucerneActualSize:", key: "0")
         }
     }
 

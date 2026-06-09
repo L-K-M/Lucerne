@@ -303,8 +303,16 @@ public final class EditorController: NSObject {
         insertImageCore(image: image, data: image.pngData() ?? Data(), suggestedName: suggestedName)
     }
 
-    private func insertImageCore(image: NSImage?, data: Data, suggestedName: String) {
-        let pageIndex = activePageIndex ?? 0
+    /// Insert at a specific page-relative point (used by drag-and-drop), centering
+    /// the image on the drop location.
+    public func insertImage(data: Data, suggestedName: String, onPage pageIndex: Int, centeredAt center: CGPoint) {
+        insertImageCore(image: NSImage(data: data), data: data, suggestedName: suggestedName,
+                        page: pageIndex, center: center)
+    }
+
+    private func insertImageCore(image: NSImage?, data: Data, suggestedName: String,
+                                 page: Int? = nil, center: CGPoint? = nil) {
+        let pageIndex = page ?? activePageIndex ?? 0
         let src = uniqueImageSrc(forSuggestedName: suggestedName)
         if !data.isEmpty { imageData[src] = data }
         if let image { images[src] = image }
@@ -313,12 +321,12 @@ public final class EditorController: NSObject {
         let nativeW = image?.size.width ?? 0
         let w = min(nativeW > 0 ? nativeW : maxW, maxW)
         let h = nativeW > 0 ? (image!.size.height) * (w / nativeW) : w * 0.75
-        let frame = RectModel(x: Double(metrics.marginLeft + 24),
-                              y: Double(metrics.marginTop + 24),
-                              width: Double(w), height: Double(h))
+        let origin: CGPoint = center.map { CGPoint(x: $0.x - w / 2, y: $0.y - h / 2) }
+            ?? CGPoint(x: metrics.marginLeft + 24, y: metrics.marginTop + 24)
+        let clamped = metrics.clampObjectFrame(CGRect(x: origin.x, y: origin.y, width: w, height: h))
         let nextZ = (model.objects.map(\.z).max() ?? 0) + 1
         let object = PlacedObject(id: IDGenerator.next("img"), type: "image", src: src,
-                                  anchor: "page", page: pageIndex, frame: frame,
+                                  anchor: "page", page: pageIndex, frame: RectModel(clamped),
                                   wrap: "rectangular", standoff: 12, z: nextZ)
         addObject(object, undoName: "Insert Image")
     }

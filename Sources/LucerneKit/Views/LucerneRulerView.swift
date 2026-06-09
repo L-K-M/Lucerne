@@ -2,10 +2,13 @@ import AppKit
 
 // A horizontal ruler with draggable indent markers and tab stops, drawn to line up
 // with the page below it. It reads the active paragraph's indents/tabs from the
-// EditorController and writes changes back through it (one undo step per gesture).
+// EditorController and writes changes back (one undo step per gesture).
 //
-// Conventions: not flipped (origin bottom-left). The ruler's own x-axis spans
-// [0, pageWidth]; document point p (from the left margin) maps to x = marginLeft+p.
+// The ruler maps document points across its *frame width*: `scale = bounds.width /
+// pageWidth`. The window sets the ruler's frame to the page's on-screen rectangle,
+// so the ruler tracks the page through horizontal scrolling and zoom (magnify).
+// Tab stops are document-global (see EditorController.setTabStops); indents apply
+// to the selected paragraphs.
 public final class LucerneRulerView: NSView {
 
     public weak var editor: EditorController?
@@ -31,6 +34,11 @@ public final class LucerneRulerView: NSView {
 
     public override var isFlipped: Bool { false }
     public override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: rulerHeight) }
+
+    /// Document points → ruler x. The ruler fills its frame with the page width, so
+    /// this scale also encodes the current zoom magnification.
+    private var scale: CGFloat { pageWidth > 0 ? bounds.width / pageWidth : 1 }
+    private func sx(_ documentX: CGFloat) -> CGFloat { documentX * scale }
 
     private var contentWidth: CGFloat { max(0, pageWidth - marginLeft - marginRight) }
     private var contentRightX: CGFloat { pageWidth - marginRight }
@@ -71,12 +79,10 @@ public final class LucerneRulerView: NSView {
         NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
         bounds.fill()
 
-        // Content band (between margins)
-        let band = NSRect(x: marginLeft, y: 0, width: contentWidth, height: h)
+        let band = NSRect(x: sx(marginLeft), y: 0, width: contentWidth * scale, height: h)
         NSColor.white.setFill()
         band.fill()
 
-        // Ticks every 1/8 inch (9pt), labels every inch (72pt)
         NSColor(calibratedWhite: 0.55, alpha: 1).setStroke()
         let labelAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 8),
@@ -84,7 +90,7 @@ public final class LucerneRulerView: NSView {
         ]
         var p: CGFloat = 0
         while p <= contentWidth + 0.5 {
-            let x = marginLeft + p
+            let x = sx(marginLeft + p)
             let isInch = Int(p.rounded()) % 72 == 0
             let tickHeight: CGFloat = isInch ? 8 : (Int(p.rounded()) % 36 == 0 ? 6 : 4)
             let path = NSBezierPath()
@@ -93,13 +99,11 @@ public final class LucerneRulerView: NSView {
             path.lineWidth = 1
             path.stroke()
             if isInch && p > 0 {
-                let label = "\(Int(p / 72))" as NSString
-                label.draw(at: CGPoint(x: x + 2, y: h / 2 - 4), withAttributes: labelAttrs)
+                ("\(Int(p / 72))" as NSString).draw(at: CGPoint(x: x + 2, y: h / 2 - 4), withAttributes: labelAttrs)
             }
             p += 9
         }
 
-        // Bottom border
         NSColor(calibratedWhite: 0.7, alpha: 1).setStroke()
         let border = NSBezierPath()
         border.move(to: CGPoint(x: 0, y: 0.5))
@@ -112,15 +116,9 @@ public final class LucerneRulerView: NSView {
 
     private func drawIndentMarkers(height h: CGFloat) {
         NSColor.controlAccentColor.setFill()
-        // First-line indent: downward triangle at the top.
-        let firstX = marginLeft + leftIndent + firstLineExtra
-        fillTriangle(centerX: firstX, baseY: h, pointingDown: true)
-        // Left indent: upward triangle at the bottom.
-        let leftX = marginLeft + leftIndent
-        fillTriangle(centerX: leftX, baseY: 0, pointingDown: false)
-        // Right indent: upward triangle at the bottom, on the right.
-        let rightX = contentRightX - rightIndent
-        fillTriangle(centerX: rightX, baseY: 0, pointingDown: false)
+        fillTriangle(centerX: sx(marginLeft + leftIndent + firstLineExtra), baseY: h, pointingDown: true)
+        fillTriangle(centerX: sx(marginLeft + leftIndent), baseY: 0, pointingDown: false)
+        fillTriangle(centerX: sx(contentRightX - rightIndent), baseY: 0, pointingDown: false)
     }
 
     private func fillTriangle(centerX: CGFloat, baseY: CGFloat, pointingDown: Bool) {
@@ -137,7 +135,7 @@ public final class LucerneRulerView: NSView {
         NSColor(calibratedWhite: 0.25, alpha: 1).setStroke()
         NSColor(calibratedWhite: 0.25, alpha: 1).setFill()
         for tab in tabs {
-            let x = marginLeft + tab.loc
+            let x = sx(marginLeft + tab.loc)
             let y: CGFloat = 4
             let glyph = NSBezierPath()
             glyph.lineWidth = 1.5
@@ -173,36 +171,30 @@ public final class LucerneRulerView: NSView {
         }
 
         dragging = marker(at: p)
-        if dragging == .none, p.x >= marginLeft, p.x <= contentRightX {
-            // Click in an empty part of the band → add a left tab there.
-            let loc = clampTabLocation(p.x - marginLeft)
+        if dragging == .none, p.x >= sx(marginLeft), p.x <= sx(contentRightX) {
+            let loc = clampTabLocation(p.x / scale - marginLeft)
             tabs.append((loc: loc, kind: .left))
             tabs.sort { $0.loc < $1.loc }
-            dragging = .tab(tabIndex(near: marginLeft + loc) ?? tabs.count - 1)
+            dragging = .tab(tabIndex(near: sx(marginLeft + loc)) ?? tabs.count - 1)
             needsDisplay = true
         }
     }
 
     public override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        let docPoint = p.x - marginLeft
+        let docPoint = p.x / scale - marginLeft
 
         switch dragging {
         case .none:
             return
         case .left:
-            let newLeft = clamp(docPoint, 0, contentWidth)
-            // Move the first-line marker with the left marker (preserve the offset).
-            leftIndent = newLeft
+            leftIndent = clamp(docPoint, 0, contentWidth)
         case .firstLine:
-            let absFirst = clamp(docPoint, 0, contentWidth)
-            firstLineExtra = absFirst - leftIndent
+            firstLineExtra = clamp(docPoint, 0, contentWidth) - leftIndent
         case .right:
-            let fromRight = clamp(contentWidth - docPoint, 0, contentWidth - leftIndent)
-            rightIndent = fromRight
+            rightIndent = clamp(contentWidth - docPoint, 0, contentWidth - leftIndent)
         case .tab(let i):
             guard tabs.indices.contains(i) else { return }
-            // Dragging far above/below the ruler removes the tab on mouse-up.
             dragRemovedTab = p.y < -hitTolerance || p.y > bounds.height + hitTolerance
             tabs[i].loc = clampTabLocation(docPoint)
         }
@@ -223,22 +215,21 @@ public final class LucerneRulerView: NSView {
         dragging = .none
     }
 
-    // MARK: - Hit testing
+    // MARK: - Hit testing (screen space)
 
     private func marker(at p: CGPoint) -> Marker {
-        let topZone = p.y > bounds.height / 2
-        if topZone {
-            if abs(p.x - (marginLeft + leftIndent + firstLineExtra)) <= hitTolerance { return .firstLine }
+        if p.y > bounds.height / 2 {
+            if abs(p.x - sx(marginLeft + leftIndent + firstLineExtra)) <= hitTolerance { return .firstLine }
         } else {
-            if abs(p.x - (marginLeft + leftIndent)) <= hitTolerance { return .left }
-            if abs(p.x - (contentRightX - rightIndent)) <= hitTolerance { return .right }
+            if abs(p.x - sx(marginLeft + leftIndent)) <= hitTolerance { return .left }
+            if abs(p.x - sx(contentRightX - rightIndent)) <= hitTolerance { return .right }
             if let i = tabIndex(near: p.x) { return .tab(i) }
         }
         return .none
     }
 
     private func tabIndex(near x: CGFloat) -> Int? {
-        for (i, tab) in tabs.enumerated() where abs(marginLeft + tab.loc - x) <= hitTolerance {
+        for (i, tab) in tabs.enumerated() where abs(sx(marginLeft + tab.loc) - x) <= hitTolerance {
             return i
         }
         return nil

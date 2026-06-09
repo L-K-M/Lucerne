@@ -1,12 +1,15 @@
 import AppKit
 
-// The simple control strip across the top of the window (the plan's "simple
-// toolbar at the top of the page"). It talks straight to the EditorController and
-// is kept in sync with the selection via syncFromSelection().
+// The control strip across the top of the window (the plan's "simple toolbar at
+// the top of the page"). It talks straight to the EditorController and is kept in
+// sync with the selection via syncFromSelection().
+//
+// The controls live inside a horizontal scroll view so that if the window is
+// narrower than the toolbar, it scrolls (an overlay scroller appears) instead of
+// clipping. `preferredContentWidth` lets the window size itself to fit.
 public final class ToolbarView: NSView {
 
     public weak var editor: EditorController?
-    public var onInsertImage: (() -> Void)?
     /// Reports a one-line description of the control under the cursor (or nil when
     /// the cursor leaves the toolbar) so the window can show it in the status bar.
     public var onHoverHelp: ((String?) -> Void)?
@@ -24,7 +27,9 @@ public final class ToolbarView: NSView {
     private let colorWell = NSColorWell()
     private let alignControl = NSSegmentedControl()
     private let lineSpacingPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let insertImageButton = NSButton()
+
+    private let scroller = NSScrollView()
+    private var stack = NSStackView()
 
     private let lineSpacings: [(String, CGFloat)] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)]
     private let sizes = ["9", "10", "11", "12", "14", "18", "24", "36", "48", "72"]
@@ -41,17 +46,22 @@ public final class ToolbarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    /// Natural width of all the controls; the window uses it to size itself.
+    public var preferredContentWidth: CGFloat { stack.fittingSize.width }
+
     private func build() {
         stylePopup.addItems(withTitles: styleNames)
         stylePopup.target = self; stylePopup.action = #selector(styleChanged)
+        fixedWidth(stylePopup, 120)
 
         fontPopup.addItems(withTitles: NSFontManager.shared.availableFontFamilies)
         fontPopup.target = self; fontPopup.action = #selector(fontChanged)
+        fixedWidth(fontPopup, 150)
 
         sizeCombo.addItems(withObjectValues: sizes)
         sizeCombo.target = self; sizeCombo.action = #selector(sizeChanged)
         (sizeCombo.cell as? NSTextFieldCell)?.sendsActionOnEndEditing = true
-        sizeCombo.widthAnchor.constraint(equalToConstant: 56).isActive = true
+        fixedWidth(sizeCombo, 56)
 
         configureToggle(boldButton, title: "B", selector: #selector(boldClicked))
         boldButton.font = NSFont.boldSystemFont(ofSize: 13)
@@ -59,7 +69,7 @@ public final class ToolbarView: NSView {
         configureToggle(underlineButton, title: "U", selector: #selector(underlineClicked))
 
         colorWell.target = self; colorWell.action = #selector(colorChanged)
-        colorWell.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        fixedWidth(colorWell, 40)
 
         alignControl.segmentCount = 4
         let symbols = ["text.alignleft", "text.aligncenter", "text.alignright", "text.justify"]
@@ -72,29 +82,64 @@ public final class ToolbarView: NSView {
 
         lineSpacingPopup.addItems(withTitles: lineSpacings.map(\.0))
         lineSpacingPopup.target = self; lineSpacingPopup.action = #selector(lineSpacingChanged)
+        fixedWidth(lineSpacingPopup, 64)
 
-        insertImageButton.title = "Insert Image"
-        insertImageButton.bezelStyle = .rounded
-        insertImageButton.target = self; insertImageButton.action = #selector(insertImageClicked)
-
-        let stack = NSStackView(views: [
+        stack = NSStackView(views: [
             stylePopup, separator(), fontPopup, sizeCombo, separator(),
             boldButton, italicButton, underlineButton, colorWell, separator(),
-            alignControl, lineSpacingPopup, separator(), insertImageButton
+            alignControl, lineSpacingPopup
         ])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = true
+        stack.setContentHuggingPriority(.required, for: .horizontal)
+
+        scroller.drawsBackground = false
+        scroller.hasVerticalScroller = false
+        scroller.hasHorizontalScroller = true
+        scroller.autohidesScrollers = true
+        scroller.scrollerStyle = .overlay
+        scroller.verticalScrollElasticity = .none
+        scroller.documentView = stack
+        scroller.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scroller)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+            scroller.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroller.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroller.topAnchor.constraint(equalTo: topAnchor),
+            scroller.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
         registerHelp()
+    }
+
+    public override func layout() {
+        super.layout()
+        // Size the (frame-based) stack to its natural width and the toolbar height.
+        stack.frame = NSRect(x: 0, y: 0, width: max(stack.fittingSize.width, bounds.width), height: bounds.height)
+    }
+
+    private func fixedWidth(_ view: NSView, _ width: CGFloat) {
+        view.widthAnchor.constraint(equalToConstant: width).isActive = true
+    }
+
+    private func configureToggle(_ button: NSButton, title: String, selector: Selector) {
+        button.title = title
+        button.bezelStyle = .texturedRounded
+        button.setButtonType(.pushOnPushOff)
+        button.target = self
+        button.action = selector
+        fixedWidth(button, 30)
+    }
+
+    private func separator() -> NSView {
+        let box = NSBox()
+        box.boxType = .separator
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        return box
     }
 
     private func registerHelp() {
@@ -107,8 +152,7 @@ public final class ToolbarView: NSView {
             (underlineButton, "Underline (⌘U)"),
             (colorWell, "Text color for the selection"),
             (alignControl, "Paragraph alignment: left, center, right, or justified"),
-            (lineSpacingPopup, "Line spacing for the selected paragraphs"),
-            (insertImageButton, "Insert an image you can place anywhere; text wraps around it (⇧⌘I)")
+            (lineSpacingPopup, "Line spacing for the selected paragraphs")
         ]
         helpItems = entries
         for (view, help) in entries { view.toolTip = help }
@@ -138,23 +182,6 @@ public final class ToolbarView: NSView {
             return item.help
         }
         return nil
-    }
-
-    private func configureToggle(_ button: NSButton, title: String, selector: Selector) {
-        button.title = title
-        button.bezelStyle = .texturedRounded
-        button.setButtonType(.pushOnPushOff)
-        button.target = self
-        button.action = selector
-        button.widthAnchor.constraint(equalToConstant: 30).isActive = true
-    }
-
-    private func separator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.heightAnchor.constraint(equalToConstant: 22).isActive = true
-        return box
     }
 
     // MARK: - Actions
@@ -192,7 +219,6 @@ public final class ToolbarView: NSView {
         guard lineSpacings.indices.contains(index) else { return }
         editor?.setLineHeightMultiple(lineSpacings[index].1)
     }
-    @objc private func insertImageClicked() { onInsertImage?() }
 
     // MARK: - Sync
 
