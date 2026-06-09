@@ -46,7 +46,9 @@ format is described in [`docs/file-format.md`](docs/file-format.md).
 Other formats:
 
 - **PDF** — share / print (perfect visual fidelity, read-only).
-- **RTF / DOCX** — explicitly lossy export only (free placement flattens). *Planned.*
+- **RTF** — explicitly lossy export (text & formatting survive; free-placed images
+  flatten out — they remain in the `.luce` and PDF).
+- **DOCX** — lossy export, *planned*.
 
 ## Building & running
 
