@@ -60,7 +60,8 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] `.luce` package read/write (`document.json` + `images/` + `content.md`)
 - [x] `content.md` derivation (write-only escape hatch)
 - [x] PDF export
-- [ ] RTF / DOCX lossy export
+- [x] RTF lossy export (text/formatting survive; free-placed images flatten out)
+- [ ] DOCX lossy export
 
 ## Milestone 3 — polish (later)
 - [ ] Cross-page text selection

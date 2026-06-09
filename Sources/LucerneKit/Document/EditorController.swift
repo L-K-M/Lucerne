@@ -697,6 +697,14 @@ public final class EditorController: NSObject {
         return pages.map { $0.pageView.dataWithPDF(inside: $0.pageView.bounds) }
     }
 
+    /// Lossy interchange export. Text, fonts, color, and paragraph formatting
+    /// survive; free-placed images are dropped (RTF can't express page-anchored
+    /// frames — plan §4). The pictures live on in the .luce package and the PDF.
+    public func makeRTFData() -> Data {
+        let range = NSRange(location: 0, length: textStorage.length)
+        return textStorage.rtf(from: range, documentAttributes: [:]) ?? Data()
+    }
+
     /// The whole document as a single multi-page PDF (share / print / export).
     public func makePDFData() -> Data {
         let document = PDFDocument()

@@ -78,6 +78,7 @@ enum MainMenu {
             add(menu, "Revert to Saved", "revertDocumentToSaved:")
             menu.addItem(.separator())
             add(menu, "Export as PDF…", "exportPDF:")
+            add(menu, "Export as RTF…  (lossy)", "exportRTF:")
             menu.addItem(.separator())
             add(menu, "Page Setup…", "runPageLayout:", key: "p", modifiers: [.command, .shift])
             add(menu, "Print…", "printDocument:", key: "p")
