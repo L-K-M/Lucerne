@@ -1,0 +1,18 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Build artifacts / distribution
+dist/
+*.app
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Editor noise (the .idea/ project metadata is kept intentionally)
+*.swp
+*~

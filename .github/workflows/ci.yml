@@ -1,0 +1,28 @@
+name: CI
+
+# This is the ONLY place Lucerne is actually compiled: the project is authored on
+# Linux (no AppKit), so a macOS runner is the source of truth for "does it build".
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: Build & test (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select a recent Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app || true
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build -v
+
+      - name: Test
+        run: swift test -v
