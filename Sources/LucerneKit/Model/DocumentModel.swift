@@ -139,6 +139,7 @@ public struct Paragraph: Codable, Equatable {
     public var lineSpacing: Double?          // line-height multiple
     public var spaceBefore: Double?          // points before paragraph
     public var spaceAfter: Double?           // points after paragraph
+    public var pageBreakBefore: Bool?        // force this paragraph onto a new page
     public var runs: [Run]
 
     public init(id: String,
@@ -149,6 +150,7 @@ public struct Paragraph: Codable, Equatable {
                 lineSpacing: Double? = nil,
                 spaceBefore: Double? = nil,
                 spaceAfter: Double? = nil,
+                pageBreakBefore: Bool? = nil,
                 runs: [Run]) {
         self.id = id
         self.style = style
@@ -158,6 +160,7 @@ public struct Paragraph: Codable, Equatable {
         self.lineSpacing = lineSpacing
         self.spaceBefore = spaceBefore
         self.spaceAfter = spaceAfter
+        self.pageBreakBefore = pageBreakBefore
         self.runs = runs
     }
 

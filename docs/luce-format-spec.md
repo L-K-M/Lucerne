@@ -159,6 +159,7 @@ concatenation of paragraphs in order, separated by paragraph breaks.
 | `lineSpacing` | number | optional | Override of the style's `lineSpacing` (line-height multiple). |
 | `spaceBefore` | number | optional | Override of the style's `spaceBefore` (points). |
 | `spaceAfter` | number | optional | Override of the style's `spaceAfter` (points). |
+| `pageBreakBefore` | boolean | optional | When `true`, this paragraph starts on a new page (a forced page break precedes it). Default `false`. |
 
 `indent.firstLine` is relative to the effective left indent; the first line begins
 at `leftIndent + firstLine` from the left margin. A negative `firstLine` yields a
@@ -279,8 +280,9 @@ derivation so tools can produce comparable output.
    `*word* `, not `*word *`); a run whose trimmed text is empty is emitted
    verbatim.
 4. The characters `\` `*` `_` `` ` `` `[` `]` are backslash-escaped in run text.
-5. Underline, color, font, and exact size are **not** represented (by design —
-   that fidelity lives in `document.json` and any PDF rendering).
+5. Underline, color, font, exact size, and page breaks (`pageBreakBefore`) are
+   **not** represented (by design — that presentational fidelity lives in
+   `document.json` and any PDF rendering).
 6. After all paragraphs, each image object with a `src` is appended as
    `![alt](src)`, ordered by `(page ascending, then z ascending)`; page-anchored
    objects with no page sort last. `alt` is the `src` filename without its
@@ -390,6 +392,7 @@ prose in §7 is authoritative over the schema here).
         "lineSpacing": { "type": "number", "exclusiveMinimum": 0 },
         "spaceBefore": { "type": "number" },
         "spaceAfter": { "type": "number" },
+        "pageBreakBefore": { "type": "boolean" },
         "runs": { "type": "array", "items": { "$ref": "#/$defs/run" } }
       }
     },
@@ -551,6 +554,7 @@ absent from the Markdown — they live in `document.json`.)
 | object `standoff` | `12` |
 | object `z` | `0` |
 | run/style `bold`, `italic`, `underline` | `false` |
+| paragraph `pageBreakBefore` | `false` (absent) |
 | effective `font` | `"Helvetica"` |
 | effective `size` | `12` |
 | effective `color` | `"#000000"` |

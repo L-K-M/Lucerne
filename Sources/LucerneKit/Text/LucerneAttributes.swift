@@ -8,4 +8,6 @@ import AppKit
 public extension NSAttributedString.Key {
     static let lucerneStyleRole = NSAttributedString.Key("ch.lkmc.lucerne.styleRole")
     static let lucerneParagraphID = NSAttributedString.Key("ch.lkmc.lucerne.paragraphID")
+    /// Marks the first character of a paragraph that must start on a new page.
+    static let lucernePageBreakBefore = NSAttributedString.Key("ch.lkmc.lucerne.pageBreakBefore")
 }

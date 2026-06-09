@@ -157,19 +157,82 @@ public final class EditorController: NSObject {
         pages.removeLast()
     }
 
-    private func ensurePageCount() {
+    /// Grows/trims pages to fit the text and assigns each container's exclusion
+    /// paths (image wrap + forced page-break bands). When the document has no page
+    /// breaks this behaves exactly like simple overflow pagination.
+    private func paginateAndExclude() {
         guard metrics.contentSize.height > 1 else { return }
         if pages.isEmpty { addPage() }
 
-        // Grow: add pages while text overflows the last container.
-        while overflowsLastContainer() && pages.count < maxPages {
-            addPage()
+        let breaks = pageBreakCharIndices()
+        var bandedPages = Set<Int>()
+        for index in pages.indices { pages[index].container.exclusionPaths = imageExclusions(index) }
+
+        var guardCount = 0
+        let limit = maxPages + breaks.count + 4
+        while guardCount < limit {
+            guardCount += 1
+            _ = layoutManager.glyphRange(for: pages[pages.count - 1].container)  // force layout
+
+            if overflowsLastContainer(), pages.count < maxPages {
+                addPage()
+                continue
+            }
+            if !breaks.isEmpty, let page = firstPageNeedingBreakBand(breaks: breaks, banded: bandedPages) {
+                pages[page].container.exclusionPaths = imageExclusions(page) + breakBands(forPage: page, breaks: breaks)
+                bandedPages.insert(page)
+                continue
+            }
+            break
         }
-        // Shrink: trim trailing pages that are truly empty (and image-free, and not
-        // the page the caret is on).
-        while pages.count > 1 && lastPageIsTrulyEmpty() {
-            removeLastPage()
+
+        while pages.count > 1 && lastPageIsTrulyEmpty() { removeLastPage() }
+    }
+
+    private func imageExclusions(_ index: Int) -> [NSBezierPath] {
+        ExclusionPathController.exclusionPaths(forPage: index, objects: model.objects, metrics: metrics)
+    }
+
+    private func pageBreakCharIndices() -> [Int] {
+        guard textStorage.length > 0 else { return [] }
+        var result: [Int] = []
+        textStorage.enumerateAttribute(.lucernePageBreakBefore,
+                                       in: NSRange(location: 0, length: textStorage.length),
+                                       options: []) { value, range, _ in
+            if (value as? Bool) == true { result.append(range.location) }
         }
+        return result
+    }
+
+    private func breakPageAndLineTop(forCharAt charIndex: Int) -> (page: Int, top: CGFloat)? {
+        guard charIndex < textStorage.length else { return nil }
+        let glyph = layoutManager.glyphIndexForCharacter(at: charIndex)
+        guard let container = layoutManager.textContainer(forGlyphAt: glyph, effectiveRange: nil),
+              let page = pages.firstIndex(where: { $0.container === container }) else { return nil }
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return (page, line.minY)
+    }
+
+    private func firstPageNeedingBreakBand(breaks: [Int], banded: Set<Int>) -> Int? {
+        for charIndex in breaks {
+            guard let (page, top) = breakPageAndLineTop(forCharAt: charIndex) else { continue }
+            if top > 0.5, !banded.contains(page) { return page }
+        }
+        return nil
+    }
+
+    private func breakBands(forPage page: Int, breaks: [Int]) -> [NSBezierPath] {
+        // Exclude from the topmost break's line down to the page bottom, so that
+        // line (and everything after it) flows to the next page.
+        var topmost: CGFloat?
+        for charIndex in breaks {
+            guard let (p, top) = breakPageAndLineTop(forCharAt: charIndex), p == page, top > 0.5 else { continue }
+            topmost = min(topmost ?? top, top)
+        }
+        guard let top = topmost else { return [] }
+        let band = NSRect(x: 0, y: top, width: metrics.contentSize.width,
+                          height: max(0, metrics.contentSize.height - top))
+        return [NSBezierPath(rect: band)]
     }
 
     private func overflowsLastContainer() -> Bool {
@@ -197,14 +260,7 @@ public final class EditorController: NSObject {
 
     private func applyExclusionPaths(toPage index: Int) {
         guard index < pages.count else { return }
-        let paths = ExclusionPathController.exclusionPaths(forPage: index, objects: model.objects, metrics: metrics)
-        // Setting exclusionPaths invalidates and re-lays-out that container, which
-        // is exactly the reflow we want.
-        pages[index].container.exclusionPaths = paths
-    }
-
-    private func applyAllExclusionPaths() {
-        for index in pages.indices { applyExclusionPaths(toPage: index) }
+        pages[index].container.exclusionPaths = imageExclusions(index)
     }
 
     // MARK: - Relayout orchestration
@@ -212,14 +268,13 @@ public final class EditorController: NSObject {
     private func relayoutText(syncImages: Bool) {
         guard !isUpdatingLayout else { return }
         isUpdatingLayout = true
-        ensurePageCount()
+        paginateAndExclude()
         if syncImages { syncImageViews() }
         canvasView.layoutPages()
         isUpdatingLayout = false
     }
 
     private func relayoutAfterObjectChange(page: Int?) {
-        if let page { applyExclusionPaths(toPage: page) } else { applyAllExclusionPaths() }
         relayoutText(syncImages: true)
     }
 
@@ -627,6 +682,32 @@ public final class EditorController: NSObject {
         }
     }
 
+    /// Inserts a forced page break at the caret: the text from here on starts on a
+    /// new page. Implemented by flagging the paragraph that begins at the caret
+    /// (splitting the current paragraph first if the caret is mid-paragraph).
+    public func insertPageBreak() {
+        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        withUndo("Insert Page Break") {
+            let ns = storage.string as NSString
+            let loc = min(tv.selectedRange().location, ns.length)
+            let atParagraphStart = loc == 0 || ns.character(at: loc - 1) == 0x0A || ns.character(at: loc - 1) == 0x0D
+            var markLoc = loc
+            if !atParagraphStart {
+                storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: loc)
+                markLoc = loc + 1
+            }
+            if markLoc >= storage.length {
+                // Page break at the very end: add an empty paragraph to carry it.
+                storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: storage.length)
+            }
+            if markLoc < storage.length {
+                storage.addAttribute(.lucernePageBreakBefore, value: true,
+                                     range: NSRange(location: markLoc, length: 1))
+            }
+            tv.setSelectedRange(NSRange(location: min(markLoc, (storage.string as NSString).length), length: 0))
+        }
+    }
+
     // MARK: - Style table editing (used by the inspector / style menu)
 
     public func currentStyleRole() -> String? {
@@ -794,8 +875,7 @@ extension EditorController: FloatingImageViewDelegate {
         let clamped = metrics.clampObjectFrame(frame)
         if clamped != frame { view.frame = clamped }
         model.objects[index].frame = RectModel(clamped)
-        applyExclusionPaths(toPage: model.objects[index].page ?? 0)
-        relayoutText(syncImages: false)
+        relayoutText(syncImages: false)   // paginateAndExclude recomputes wrap from the model
     }
 
     public func floatingImageView(_ view: FloatingImageView, didCommitFrom oldFrame: CGRect, to newFrame: CGRect) {

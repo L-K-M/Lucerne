@@ -158,6 +158,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     }
 
     @objc func lucerneInsertImage(_ sender: Any?) { presentInsertImagePanel() }
+    @objc func lucerneInsertPageBreak(_ sender: Any?) { editor.insertPageBreak(); syncUI() }
     @objc func lucerneDeleteImage(_ sender: Any?) { editor.deleteSelectedImage() }
     @objc func lucerneWrapNone(_ sender: Any?) { editor.setWrapMode(.none) }
     @objc func lucerneWrapRectangular(_ sender: Any?) { editor.setWrapMode(.rectangular) }

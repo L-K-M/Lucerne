@@ -161,6 +161,7 @@ enum MainMenu {
     private static func makeInsertMenu() -> NSMenuItem {
         submenu("Insert") { menu in
             add(menu, "Image…", "lucerneInsertImage:", key: "i", modifiers: [.command, .shift])
+            add(menu, "Page Break", "lucerneInsertPageBreak:", key: "\r", modifiers: [.command, .shift])
             menu.addItem(.separator())
             let wrap = NSMenuItem(title: "Image Text Wrap", action: nil, keyEquivalent: "")
             let wrapMenu = NSMenu(title: "Image Text Wrap")

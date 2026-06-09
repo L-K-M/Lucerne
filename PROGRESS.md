@@ -78,6 +78,19 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] `.luce` package round-trip (model + image bytes + content.md present)
 - [x] `PageMetrics` exclusion-rect + clamp geometry
 
+## On-device feedback (round 3)
+- [x] Insert Image removed from the toolbar (menu item kept)
+- [x] Dragging an image file/data onto a page makes a floating image at the drop
+  point (no longer inserts the path as text)
+- [x] **Document Setup** sheet to change page size + margins
+- [x] **Page zoom** (View ▸ Zoom In/Out/Actual Size + pinch); ruler tracks the
+  page under zoom and horizontal scroll; status bar shows zoom %
+- [x] Default window sized to fit the toolbar; toolbar scrolls if narrower (overflow)
+- [x] **Insert Page Break** (Insert ▸ Page Break) — `pageBreakBefore` paragraph
+  flag enforced with a full-width exclusion band; isolated so break-free docs are
+  unaffected
+- [x] Replaced string `Selector("…")` literals with `#selector` (warnings)
+
 ## On-device feedback fixes (round 2)
 - [x] Image resize keeps aspect ratio by default; hold **⇧** to resize freely
 - [x] **Status-bar footer** showing contextual info (current style + page count)

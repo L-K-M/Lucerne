@@ -60,6 +60,11 @@ public enum AttributedStringReader {
         var paragraph = emptyParagraph(role: role, paragraphStyle: ps, styleDef: styleDef)
         paragraph.id = id
 
+        if length > 0,
+           (attr.attribute(.lucernePageBreakBefore, at: probe, effectiveRange: nil) as? Bool) == true {
+            paragraph.pageBreakBefore = true
+        }
+
         if contentRange.length > 0 {
             paragraph.runs = runs(from: attr, in: contentRange, styleDef: styleDef)
         }

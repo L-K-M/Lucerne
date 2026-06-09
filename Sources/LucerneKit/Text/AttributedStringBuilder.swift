@@ -10,9 +10,11 @@ public enum AttributedStringBuilder {
 
     public static func attributedString(for model: LucerneDocumentModel) -> NSAttributedString {
         let out = NSMutableAttributedString()
+        var pageBreakStarts: [Int] = []
         for (index, paragraph) in model.body.enumerated() {
             let style = model.resolvedStyle(for: paragraph.style)
             let paragraphStyle = makeParagraphStyle(paragraph, style: style)
+            let start = out.length
             appendRuns(of: paragraph, style: style, paragraphStyle: paragraphStyle, into: out)
             if index < model.body.count - 1 {
                 let sep = runAttributes(Run(text: "\n"), style: style,
@@ -20,6 +22,13 @@ public enum AttributedStringBuilder {
                                         role: paragraph.style, paragraphID: paragraph.id)
                 out.append(NSAttributedString(string: "\n", attributes: sep))
             }
+            if paragraph.pageBreakBefore == true, start < out.length { pageBreakStarts.append(start) }
+        }
+        // Flag the first character of each page-break paragraph (a one-char run
+        // split that AttributedStringReader.mergeAdjacent re-coalesces on read).
+        for location in pageBreakStarts where location < out.length {
+            out.addAttribute(.lucernePageBreakBefore, value: true,
+                             range: NSRange(location: location, length: 1))
         }
         return out
     }
