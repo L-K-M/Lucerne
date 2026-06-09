@@ -4,6 +4,11 @@ import AppKit
 // note about the format. Nicer than the stock panel and shows the real icon.
 final class AboutWindowController: NSWindowController {
 
+    /// Version shown when the bundle's Info.plist can't be read — chiefly an unbundled
+    /// `swift run`. The bundled app prefers `CFBundleShortVersionString` (stamped from
+    /// the release tag); this constant is kept in step by `Scripts/release.sh`.
+    static let fallbackVersion = "0.0.1"
+
     convenience init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 360),
@@ -19,7 +24,7 @@ final class AboutWindowController: NSWindowController {
     private func buildContent() {
         guard let content = window?.contentView else { return }
         let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+        let version = info?["CFBundleShortVersionString"] as? String ?? Self.fallbackVersion
         let build = info?["CFBundleVersion"] as? String ?? "1"
 
         let icon = NSImageView()

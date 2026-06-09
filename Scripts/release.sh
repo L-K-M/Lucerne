@@ -86,11 +86,21 @@ if [[ -n "$NEW_VERSION" ]]; then
     fi
   fi
 
-  # Commit whatever the version change touched (plist and/or README).
+  # Keep the About box's unbundled-fallback version in step (used when Info.plist
+  # can't be read, e.g. an unbundled `swift run`).
+  ABOUT="Sources/Lucerne/AboutWindowController.swift"
+  if [[ -f "$ABOUT" ]]; then
+    sed -i '' -E "s/(static let fallbackVersion = \")[^\"]*(\")/\1${NEW_VERSION}\2/" "$ABOUT"
+    if ! grep -qF "fallbackVersion = \"${NEW_VERSION}\"" "$ABOUT"; then
+      echo "note: could not update the About box version in ${ABOUT}." >&2
+    fi
+  fi
+
+  # Commit whatever the version change touched (plist, About box, and/or README).
   if [[ -n "$(git status --porcelain)" ]]; then
     git commit -am "Bump version to ${NEW_VERSION}" >/dev/null
     DID_COMMIT=true
-    echo "Committed version bump (${PLIST} + README)."
+    echo "Committed version bump (${PLIST} + About box + README)."
   else
     echo "Version is already ${NEW_VERSION}; nothing to bump."
   fi
