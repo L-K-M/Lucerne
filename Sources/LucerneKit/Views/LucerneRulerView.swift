@@ -12,7 +12,7 @@ import AppKit
 public final class LucerneRulerView: NSView {
 
     public weak var editor: EditorController?
-    public var rulerHeight: CGFloat = 26
+    public var rulerHeight: CGFloat = 30
     public var onHoverHelp: ((String?) -> Void)?
 
     // Document geometry (points).
@@ -136,21 +136,25 @@ public final class LucerneRulerView: NSView {
         let perUnit = unit.pointsPerUnit
         let subdivisions = max(1, unit.subdivisions)
         let minorStep = perUnit / CGFloat(subdivisions)
+        let tickBottom: CGFloat = 3            // ticks rise from the bottom; numbers sit on top
         var tick = 0
         var p: CGFloat = 0
         while p <= contentWidth + 0.5 {
             let x = sx(marginLeft + p)
             let isMajor = tick % subdivisions == 0
             let isMedium = subdivisions % 2 == 0 && tick % (subdivisions / 2) == 0
-            let tickHeight: CGFloat = isMajor ? 8 : (isMedium ? 6 : 4)
+            let tickHeight: CGFloat = isMajor ? 9 : (isMedium ? 6 : 4)
             let path = NSBezierPath()
-            path.move(to: CGPoint(x: x, y: h / 2 - tickHeight / 2))
-            path.line(to: CGPoint(x: x, y: h / 2 + tickHeight / 2))
+            path.move(to: CGPoint(x: x, y: tickBottom))
+            path.line(to: CGPoint(x: x, y: tickBottom + tickHeight))
             path.lineWidth = 1
             path.stroke()
             if isMajor && p > 0 {
-                let value = Int((p / perUnit).rounded())
-                ("\(value)" as NSString).draw(at: CGPoint(x: x + 2, y: h / 2 - 4), withAttributes: labelAttrs)
+                // Centered above the ticks: cm marks are close together and labels can
+                // be two digits, so drawing beside a tick made the number overlap it.
+                let label = "\(Int((p / perUnit).rounded()))" as NSString
+                let size = label.size(withAttributes: labelAttrs)
+                label.draw(at: CGPoint(x: x - size.width / 2, y: h - size.height - 1), withAttributes: labelAttrs)
             }
             tick += 1
             p += minorStep

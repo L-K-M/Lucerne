@@ -112,6 +112,15 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## On-device feedback (round 10)
+- [x] Ruler numbers no longer overlap the tick marks — taller ruler, with numbers
+  centered above the ticks (the ticks rise from the bottom edge)
+- [x] In a table, **↑/↓ arrows** move to the cell above/below in the same column
+  (overrides `moveUp`/`moveDown`); at the table edge they step out normally
+- [x] **Select Table** (Format ▸ Table or the context menu) selects the whole table
+  so it can be deleted/cut/copied as a unit
+- [ ] Cell merging — next
+
 ## On-device feedback (round 9)
 - [x] **Ruler units** default to **centimeters**, switchable in **Settings…** (⌘,);
   the ruler ticks/labels are unit-aware and refresh live (`Preferences`/`RulerUnit`)

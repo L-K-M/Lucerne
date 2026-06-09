@@ -158,6 +158,8 @@ enum MainMenu {
 
             let table = NSMenuItem(title: "Table", action: nil, keyEquivalent: "")
             let tableMenu = NSMenu(title: "Table")
+            add(tableMenu, "Select Table", "lucerneSelectTable:")
+            tableMenu.addItem(.separator())
             add(tableMenu, "Insert Row Above", "lucerneInsertRowAbove:")
             add(tableMenu, "Insert Row Below", "lucerneInsertRowBelow:")
             add(tableMenu, "Insert Column Before", "lucerneInsertColumnBefore:")

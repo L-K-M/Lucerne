@@ -956,6 +956,37 @@ public final class EditorController: NSObject {
         setCurrentTableColumnWidths(Array(repeating: 100.0 / Double(parsed.columns), count: parsed.columns))
     }
 
+    // MARK: - Table navigation & selection
+
+    /// Moves the caret `rowDelta` rows within the current table (used for ↑/↓ arrow
+    /// keys, which otherwise move by visual line and skip to the wrong cell). Returns
+    /// false when not in a table or at the table's top/bottom edge, so the caller
+    /// falls back to normal movement (and steps out of the table).
+    public func moveCaretInTable(rowDelta: Int) -> Bool {
+        guard let tv = activeTextView,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table) else { return false }
+        let targetRow = block.startingRow + rowDelta
+        guard targetRow >= 0, targetRow < parsed.rows else { return false }
+        let column = min(block.startingColumn, parsed.columns - 1)
+        let offset = parsed.range.location + cellStartOffset(row: targetRow, column: column, grid: parsed.cells)
+        revealHeading(atCharacterIndex: offset)   // places the caret (handles a table that spans pages)
+        return true
+    }
+
+    /// Selects the whole table the caret is in (so it can be deleted/cut/copied like
+    /// a single object). Returns false if the caret isn't in a table.
+    @discardableResult
+    public func selectCurrentTable() -> Bool {
+        guard let tv = activeTextView,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table) else { return false }
+        revealHeading(atCharacterIndex: parsed.range.location)   // focus the table's page
+        activeTextView?.setSelectedRange(parsed.range)
+        selectionObserver?(self)
+        return true
+    }
+
     /// A cell = its content plus a terminating newline, with `block` stamped onto
     /// every run's paragraph style.
     private func buildCell(content: NSAttributedString, block: NSTextTableBlock) -> NSAttributedString {
