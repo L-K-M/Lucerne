@@ -125,12 +125,12 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   a momentary − / % / + bezel cluster replacing the borderless zoom buttons; the
   ruler gets the chrome gradient outside its writable band, hairline band edges,
   and an etched seam where it meets the format bar's border.
-- [~] **Square bottom window corners** — the document window keeps rounded top
-  corners but hard square bottom corners (the pre–Big Sur silhouette) via
+- [~] **Classic window silhouette** — the document window keeps the standard
+  rounded top corners but only slightly rounded (5 pt) bottom corners, via
   `ClassicWindow`, which answers the private `_cornerMask` shape hook with a
-  top-rounded/bottom-square template. Degrades to stock rounded corners if a
-  future macOS drops the hook; the hook is private API, so this one *needs
-  on-device confirmation*.
+  two-radius template. Degrades to stock rounded corners if a future macOS
+  drops the hook; the hook is private API, so this one *needs on-device
+  confirmation*.
 
 ## On-device feedback (round 11)
 - [x] The default window now sizes itself to the **screen and the page format**: it

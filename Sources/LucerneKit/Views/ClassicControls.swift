@@ -541,37 +541,45 @@ final class EtchedSeparatorView: NSView {
 
 // MARK: - Classic window shape
 
-/// A window with the classic pre–Big Sur silhouette: rounded top corners, hard
-/// square bottom corners. Modern macOS rounds all four corners and has no public
-/// API to change that, so this answers the private `_cornerMask` hook AppKit
-/// consults for the window's shape (and shadow) with a 9-sliced template that is
-/// top-rounded and bottom-square. If a future macOS stops consulting the hook,
-/// the window simply keeps the stock rounded corners — nothing else depends on it.
+/// A window with the classic pre–Big Sur silhouette: standard rounded top
+/// corners over gently rounded bottom corners. Modern macOS rounds all four
+/// corners equally and has no public API to change that, so this answers the
+/// private `_cornerMask` hook AppKit consults for the window's shape (and
+/// shadow) with a 9-sliced template rounded `topCornerRadius` on top and
+/// `bottomCornerRadius` on the bottom. If a future macOS stops consulting the
+/// hook, the window simply keeps the stock corners — nothing else depends on it.
 public final class ClassicWindow: NSWindow {
 
     private static let topCornerRadius: CGFloat = 10   // ≈ the system's own top radius
+    private static let bottomCornerRadius: CGFloat = 5
 
     @objc func _cornerMask() -> NSImage? { Self.shapeTemplate }
 
     private static let shapeTemplate: NSImage = {
-        let radius = topCornerRadius
-        let size = NSSize(width: radius * 2 + 2, height: radius * 2 + 2)
+        let top = topCornerRadius
+        let bottom = bottomCornerRadius
+        let size = NSSize(width: top * 2 + 2, height: top + bottom + 2)
         let image = NSImage(size: size, flipped: false) { rect in
             let path = NSBezierPath()
-            path.move(to: NSPoint(x: rect.minX, y: rect.minY))
-            path.line(to: NSPoint(x: rect.maxX, y: rect.minY))
-            path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - radius))
-            path.appendArc(withCenter: NSPoint(x: rect.maxX - radius, y: rect.maxY - radius),
-                           radius: radius, startAngle: 0, endAngle: 90)
-            path.line(to: NSPoint(x: rect.minX + radius, y: rect.maxY))
-            path.appendArc(withCenter: NSPoint(x: rect.minX + radius, y: rect.maxY - radius),
-                           radius: radius, startAngle: 90, endAngle: 180)
+            path.move(to: NSPoint(x: rect.minX + bottom, y: rect.minY))
+            path.line(to: NSPoint(x: rect.maxX - bottom, y: rect.minY))
+            path.appendArc(withCenter: NSPoint(x: rect.maxX - bottom, y: rect.minY + bottom),
+                           radius: bottom, startAngle: 270, endAngle: 360)
+            path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - top))
+            path.appendArc(withCenter: NSPoint(x: rect.maxX - top, y: rect.maxY - top),
+                           radius: top, startAngle: 0, endAngle: 90)
+            path.line(to: NSPoint(x: rect.minX + top, y: rect.maxY))
+            path.appendArc(withCenter: NSPoint(x: rect.minX + top, y: rect.maxY - top),
+                           radius: top, startAngle: 90, endAngle: 180)
+            path.line(to: NSPoint(x: rect.minX, y: rect.minY + bottom))
+            path.appendArc(withCenter: NSPoint(x: rect.minX + bottom, y: rect.minY + bottom),
+                           radius: bottom, startAngle: 180, endAngle: 270)
             path.close()
             NSColor.black.setFill()
             path.fill()
             return true
         }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.capInsets = NSEdgeInsets(top: top, left: top, bottom: bottom, right: top)
         image.resizingMode = .stretch
         return image
     }()
