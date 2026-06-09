@@ -67,6 +67,23 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
         [LucerneUTI.document]
     }
 
+    // Force the .luce extension in the Save panel. When the app runs unbundled the
+    // UTI isn't OS-registered, so NSDocument can't infer the extension on its own;
+    // we set it here (and pin the allowed type to the "luce" extension) so saved
+    // files are always named "…​.luce".
+    public override func prepareSavePanel(_ savePanel: NSSavePanel) -> Bool {
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+        if let type = UTType(filenameExtension: LucerneUTI.fileExtension) {
+            savePanel.allowedContentTypes = [type]
+        }
+        let current = savePanel.nameFieldStringValue
+        let base = current.isEmpty ? (displayName ?? "Untitled") : current
+        let stem = (base as NSString).deletingPathExtension
+        savePanel.nameFieldStringValue = stem + "." + LucerneUTI.fileExtension
+        return true
+    }
+
     // MARK: - EditorControllerDocument
 
     public var editorUndoManager: UndoManager? { undoManager }

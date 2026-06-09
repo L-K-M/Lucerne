@@ -503,8 +503,30 @@ public final class EditorController: NSObject {
             $0.tailIndent = right > 0 ? -right : 0
         }
     }
+    /// Tab stops are document-global: setting them on the ruler applies the same
+    /// stops to every paragraph (and to typing attributes, so new paragraphs
+    /// inherit them too). Indents remain per-paragraph.
     public func setTabStops(_ tabs: [NSTextTab]) {
-        modifyParagraphStyle(name: "Tab Stops") { $0.tabStops = tabs }
+        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+
+        if storage.length > 0 {
+            withUndo("Tab Stops") {
+                let whole = NSRange(location: 0, length: storage.length)
+                storage.beginEditing()
+                storage.enumerateAttribute(.paragraphStyle, in: whole, options: []) { value, sub, _ in
+                    let ps = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                        ?? NSMutableParagraphStyle()
+                    ps.tabStops = tabs
+                    storage.addAttribute(.paragraphStyle, value: ps, range: sub)
+                }
+                storage.endEditing()
+            }
+        }
+
+        let typingPS = (tv.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy()
+            as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+        typingPS.tabStops = tabs
+        tv.typingAttributes[.paragraphStyle] = typingPS
     }
 
     private func modifyParagraphStyle(name: String, _ transform: @escaping (NSMutableParagraphStyle) -> Void) {
@@ -659,6 +681,13 @@ public final class EditorController: NSObject {
     /// Called when the selection or active formatting changes (for toolbar/ruler sync).
     public var selectionObserver: ((EditorController) -> Void)?
 
+    /// Contextual help text for the status bar; nil means "no transient hint, show
+    /// the default status". Driven by image hover (and could be extended).
+    public var onStatusHint: ((String?) -> Void)?
+
+    /// Number of laid-out pages (for the status bar).
+    public var pageCount: Int { pages.count }
+
     func deselectAllImages() {
         selectedImageView?.isSelected = false
         selectedImageView = nil
@@ -771,5 +800,11 @@ extension EditorController: FloatingImageViewDelegate {
 
     public func floatingImageViewRequestsDelete(_ view: FloatingImageView) {
         removeObject(id: view.objectID, undoName: "Delete Image")
+    }
+
+    public func floatingImageView(_ view: FloatingImageView, didHover entered: Bool) {
+        onStatusHint?(entered
+            ? "Image — drag to move · drag a corner to resize (hold ⇧ for free aspect) · ⌫ to delete"
+            : nil)
     }
 }

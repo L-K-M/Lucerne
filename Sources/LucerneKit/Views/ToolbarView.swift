@@ -7,6 +7,10 @@ public final class ToolbarView: NSView {
 
     public weak var editor: EditorController?
     public var onInsertImage: (() -> Void)?
+    /// Reports a one-line description of the control under the cursor (or nil when
+    /// the cursor leaves the toolbar) so the window can show it in the status bar.
+    public var onHoverHelp: ((String?) -> Void)?
+    private var helpItems: [(view: NSView, help: String)] = []
 
     private let styleRoles = DefaultDocuments.styleRoleOrder
     private let styleNames: [String]
@@ -46,6 +50,7 @@ public final class ToolbarView: NSView {
 
         sizeCombo.addItems(withObjectValues: sizes)
         sizeCombo.target = self; sizeCombo.action = #selector(sizeChanged)
+        (sizeCombo.cell as? NSTextFieldCell)?.sendsActionOnEndEditing = true
         sizeCombo.widthAnchor.constraint(equalToConstant: 56).isActive = true
 
         configureToggle(boldButton, title: "B", selector: #selector(boldClicked))
@@ -88,6 +93,51 @@ public final class ToolbarView: NSView {
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+
+        registerHelp()
+    }
+
+    private func registerHelp() {
+        let entries: [(NSView, String)] = [
+            (stylePopup, "Paragraph style — apply a named style (Body, Heading 1, …) to the selected paragraphs"),
+            (fontPopup, "Font family for the selected text"),
+            (sizeCombo, "Font size in points for the selected text"),
+            (boldButton, "Bold (⌘B)"),
+            (italicButton, "Italic (⌘I)"),
+            (underlineButton, "Underline (⌘U)"),
+            (colorWell, "Text color for the selection"),
+            (alignControl, "Paragraph alignment: left, center, right, or justified"),
+            (lineSpacingPopup, "Line spacing for the selected paragraphs"),
+            (insertImageButton, "Insert an image you can place anywhere; text wraps around it (⇧⌘I)")
+        ]
+        helpItems = entries
+        for (view, help) in entries { view.toolTip = help }
+    }
+
+    // MARK: - Hover help
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil))
+    }
+
+    public override func mouseMoved(with event: NSEvent) {
+        onHoverHelp?(help(at: convert(event.locationInWindow, from: nil)))
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        onHoverHelp?(nil)
+    }
+
+    private func help(at point: CGPoint) -> String? {
+        for item in helpItems where item.view.convert(item.view.bounds, to: self).contains(point) {
+            return item.help
+        }
+        return nil
     }
 
     private func configureToggle(_ button: NSButton, title: String, selector: Selector) {
@@ -118,8 +168,16 @@ public final class ToolbarView: NSView {
         if let family = fontPopup.titleOfSelectedItem { editor?.setFontFamily(family) }
     }
     @objc private func sizeChanged() {
-        let value = sizeCombo.doubleValue
-        if value > 0 { editor?.setFontSize(CGFloat(value)) }
+        // Read the selected item's value when picking from the list (stringValue
+        // can be stale at action time); fall back to the typed text.
+        let raw: String
+        let index = sizeCombo.indexOfSelectedItem
+        if index >= 0, let item = sizeCombo.itemObjectValue(at: index) as? String {
+            raw = item
+        } else {
+            raw = sizeCombo.stringValue
+        }
+        if let value = Double(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
     }
     @objc private func boldClicked() { editor?.toggleBold(); syncFromSelection() }
     @objc private func italicClicked() { editor?.toggleItalic(); syncFromSelection() }

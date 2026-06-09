@@ -11,6 +11,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     private let toolbar = ToolbarView(frame: .zero)
     private let ruler = LucerneRulerView()
     private let scrollView = NSScrollView()
+    private let statusBar = StatusBarView(frame: .zero)
 
     public init(editor: EditorController) {
         self.editor = editor
@@ -50,8 +51,8 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         scrollView.backgroundColor = NSColor(calibratedWhite: 0.80, alpha: 1)
         scrollView.documentView = editor.canvasView
 
-        let container = EditorContainerView(toolbar: toolbar, ruler: ruler,
-                                            scroll: scrollView, pageWidth: editor.pageMetrics.pageSize.width)
+        let container = EditorContainerView(toolbar: toolbar, ruler: ruler, scroll: scrollView,
+                                            statusBar: statusBar, pageWidth: editor.pageMetrics.pageSize.width)
         window?.contentView = container
         container.layoutContents()
     }
@@ -59,11 +60,13 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     private func wireEditor() {
         toolbar.editor = editor
         toolbar.onInsertImage = { [weak self] in self?.presentInsertImagePanel() }
+        toolbar.onHoverHelp = { [weak self] hint in self?.showStatus(hint) }
         ruler.editor = editor
         let metrics = editor.pageMetrics
         ruler.updateGeometry(marginLeft: metrics.marginLeft, marginRight: metrics.marginRight,
                              pageWidth: metrics.pageSize.width)
         editor.selectionObserver = { [weak self] _ in self?.syncUI() }
+        editor.onStatusHint = { [weak self] hint in self?.showStatus(hint) }
     }
 
     public override func showWindow(_ sender: Any?) {
@@ -75,6 +78,23 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     private func syncUI() {
         toolbar.syncFromSelection()
         ruler.refresh()
+        showStatus(nil)
+    }
+
+    /// Show a transient hint, or (when `hint` is nil) the default "what you're
+    /// doing" status: current paragraph style and page count.
+    private func showStatus(_ hint: String?) {
+        statusBar.message = hint ?? defaultStatus()
+    }
+
+    private func defaultStatus() -> String {
+        let pages = editor.pageCount
+        let pageText = pages == 1 ? "1 page" : "\(pages) pages"
+        if editor.hasSelectedImage {
+            return "Image selected — drag to move · drag a corner to resize (⇧ for free aspect) · ⌫ to delete"
+        }
+        let styleName = editor.currentStyleRole().flatMap { editor.model.styles[$0]?.name } ?? "Body"
+        return "\(styleName)  ·  \(pageText)"
     }
 
     public func windowDidResize(_ notification: Notification) {
@@ -174,18 +194,23 @@ private final class EditorContainerView: NSView {
     private let toolbar: ToolbarView
     private let ruler: LucerneRulerView
     private let scroll: NSScrollView
+    private let statusBar: StatusBarView
     private let pageWidth: CGFloat
     private let toolbarHeight: CGFloat = 44
+    private let statusHeight: CGFloat = 22
 
-    init(toolbar: ToolbarView, ruler: LucerneRulerView, scroll: NSScrollView, pageWidth: CGFloat) {
+    init(toolbar: ToolbarView, ruler: LucerneRulerView, scroll: NSScrollView,
+         statusBar: StatusBarView, pageWidth: CGFloat) {
         self.toolbar = toolbar
         self.ruler = ruler
         self.scroll = scroll
+        self.statusBar = statusBar
         self.pageWidth = pageWidth
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 800))
         addSubview(scroll)
         addSubview(ruler)
         addSubview(toolbar)
+        addSubview(statusBar)
     }
 
     @available(*, unavailable)
@@ -212,7 +237,10 @@ private final class EditorContainerView: NSView {
         ruler.frame = NSRect(x: rulerX, y: h - toolbarHeight - rulerHeight,
                              width: min(pageWidth, w), height: rulerHeight)
 
-        scroll.frame = NSRect(x: 0, y: 0, width: w, height: max(0, h - toolbarHeight - rulerHeight))
+        statusBar.frame = NSRect(x: 0, y: 0, width: w, height: statusHeight)
+
+        let scrollTop = h - toolbarHeight - rulerHeight
+        scroll.frame = NSRect(x: 0, y: statusHeight, width: w, height: max(0, scrollTop - statusHeight))
         (scroll.documentView as? PageCanvasView)?.layoutPages()
     }
 }

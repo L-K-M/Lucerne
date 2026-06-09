@@ -7,6 +7,9 @@ public protocol FloatingImageViewDelegate: AnyObject {
     /// Gesture finished — register a single undo step for the whole move/resize.
     func floatingImageView(_ view: FloatingImageView, didCommitFrom oldFrame: CGRect, to newFrame: CGRect)
     func floatingImageViewRequestsDelete(_ view: FloatingImageView)
+    /// Mouse entered (true) or left (false) the image — used to show contextual
+    /// help in the status bar.
+    func floatingImageView(_ view: FloatingImageView, didHover entered: Bool)
 }
 
 // A free-placed image: a draggable, resizable view sitting above the page text.
@@ -118,6 +121,7 @@ public final class FloatingImageView: NSView {
         let dx = cur.x - dragOrigin.x
         let dy = cur.y - dragOrigin.y       // flipped: +dy is downward
         var f = frameAtDragStart
+        let isResize = dragMode != .move && dragMode != .none
 
         switch dragMode {
         case .none, .move:
@@ -139,6 +143,26 @@ public final class FloatingImageView: NSView {
             f.size.width -= dx
             f.origin.y += dy
             f.size.height -= dy
+        }
+
+        // Resizing keeps the original aspect ratio by default; hold Shift to resize
+        // freely. The corner opposite the dragged handle stays anchored.
+        if isResize, !event.modifierFlags.contains(.shift), frameAtDragStart.height > 0 {
+            let aspect = frameAtDragStart.width / frameAtDragStart.height
+            var w = f.size.width
+            var h = f.size.height
+            if abs(w - frameAtDragStart.width) >= abs(h - frameAtDragStart.height) {
+                h = w / aspect
+            } else {
+                w = h * aspect
+            }
+            switch dragMode {
+            case .resizeBR: f = CGRect(x: frameAtDragStart.minX, y: frameAtDragStart.minY, width: w, height: h)
+            case .resizeTR: f = CGRect(x: frameAtDragStart.minX, y: frameAtDragStart.maxY - h, width: w, height: h)
+            case .resizeBL: f = CGRect(x: frameAtDragStart.maxX - w, y: frameAtDragStart.minY, width: w, height: h)
+            case .resizeTL: f = CGRect(x: frameAtDragStart.maxX - w, y: frameAtDragStart.maxY - h, width: w, height: h)
+            default: break
+            }
         }
 
         if f.size.width < minSize {
@@ -179,5 +203,24 @@ public final class FloatingImageView: NSView {
                 addCursorRect(handle, cursor: .crosshair)
             }
         }
+    }
+
+    // MARK: - Hover (drives the status-bar help text)
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil))
+    }
+
+    public override func mouseEntered(with event: NSEvent) {
+        delegate?.floatingImageView(self, didHover: true)
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        delegate?.floatingImageView(self, didHover: false)
     }
 }

@@ -78,6 +78,17 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] `.luce` package round-trip (model + image bytes + content.md present)
 - [x] `PageMetrics` exclusion-rect + clamp geometry
 
+## On-device feedback fixes (round 2)
+- [x] Image resize keeps aspect ratio by default; hold **⇧** to resize freely
+- [x] **Status-bar footer** showing contextual info (current style + page count)
+  and hover help for toolbar controls and placed images
+- [x] Ruler **tab stops are document-global** now (apply to every paragraph +
+  typing attributes), not just the selection — indents stay per-paragraph
+- [x] Font-size control now applies to the selection (was reading a stale combo
+  value at action time)
+- [x] Saving forces the **`.luce`** extension via `prepareSavePanel` (needed when
+  run unbundled, where the UTI isn't OS-registered)
+
 ## Notes / decisions taken during implementation
 - **Dark Mode:** the document window is pinned to the light (aqua) appearance
   (`window.appearance`) — it's a white-paper editor, so this keeps toolbar
