@@ -44,6 +44,7 @@ public final class EditorController: NSObject {
     private var movingImageID: String?
 
     private var isUpdatingLayout = false
+    private var relayoutScheduled = false
     private let maxPages = 2000     // safety cap against pathological geometry
 
     // MARK: - Init
@@ -119,6 +120,10 @@ public final class EditorController: NSObject {
         tv.textContainerInset = .zero
         tv.usesFontPanel = true
         tv.usesRuler = false
+        // Red squiggles on, silent rewriting off — a letters tool should flag typos
+        // but never change what you typed behind your back.
+        tv.isContinuousSpellCheckingEnabled = true
+        tv.isAutomaticSpellingCorrectionEnabled = false
         tv.minSize = metrics.contentSize
         tv.maxSize = metrics.contentSize
         tv.autoresizingMask = []
@@ -381,9 +386,9 @@ public final class EditorController: NSObject {
         if let image { images[src] = image }
 
         let maxW = metrics.contentSize.width * 0.5
-        let nativeW = image?.size.width ?? 0
-        let w = min(nativeW > 0 ? nativeW : maxW, maxW)
-        let h = nativeW > 0 ? (image!.size.height) * (w / nativeW) : w * 0.75
+        let nativeSize = image?.size ?? .zero
+        let w = min(nativeSize.width > 0 ? nativeSize.width : maxW, maxW)
+        let h = nativeSize.width > 0 ? nativeSize.height * (w / nativeSize.width) : w * 0.75
         let origin: CGPoint = center.map { CGPoint(x: $0.x - w / 2, y: $0.y - h / 2) }
             ?? CGPoint(x: metrics.marginLeft + 24, y: metrics.marginTop + 24)
         let clamped = metrics.clampObjectFrame(CGRect(x: origin.x, y: origin.y, width: w, height: h))
@@ -567,12 +572,19 @@ public final class EditorController: NSObject {
     public func toggleBold() { toggleTrait(.boldFontMask, name: "Bold") }
     public func toggleItalic() { toggleTrait(.italicFontMask, name: "Italic") }
 
+    /// The selection's non-empty ranges. NSTextView supports discontiguous
+    /// selection (⌘-drag), so formatting commands must act on all of them, not
+    /// just `selectedRange()` (the first).
+    private func selectedTextRanges(of tv: PageTextView) -> [NSRange] {
+        tv.selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+    }
+
     private func toggleTrait(_ trait: NSFontTraitMask, name: String) {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
-        let range = tv.selectedRange()
+        let ranges = selectedTextRanges(of: tv)
         let fm = NSFontManager.shared
 
-        if range.length == 0 {
+        if ranges.isEmpty {
             let current = (tv.typingAttributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 12)
             let has = fm.traits(of: current).contains(trait)
             tv.typingAttributes[.font] = has ? fm.convert(current, toNotHaveTrait: trait)
@@ -581,17 +593,21 @@ public final class EditorController: NSObject {
         }
 
         var allHaveTrait = true
-        storage.enumerateAttribute(.font, in: range, options: []) { value, _, _ in
-            let font = (value as? NSFont) ?? NSFont.systemFont(ofSize: 12)
-            if !fm.traits(of: font).contains(trait) { allHaveTrait = false }
+        for range in ranges {
+            storage.enumerateAttribute(.font, in: range, options: []) { value, _, _ in
+                let font = (value as? NSFont) ?? NSFont.systemFont(ofSize: 12)
+                if !fm.traits(of: font).contains(trait) { allHaveTrait = false }
+            }
         }
         withUndo(name) {
             storage.beginEditing()
-            storage.enumerateAttribute(.font, in: range, options: []) { value, sub, _ in
-                let font = (value as? NSFont) ?? NSFont.systemFont(ofSize: 12)
-                let converted = allHaveTrait ? fm.convert(font, toNotHaveTrait: trait)
-                                             : fm.convert(font, toHaveTrait: trait)
-                storage.addAttribute(.font, value: converted, range: sub)
+            for range in ranges {
+                storage.enumerateAttribute(.font, in: range, options: []) { value, sub, _ in
+                    let font = (value as? NSFont) ?? NSFont.systemFont(ofSize: 12)
+                    let converted = allHaveTrait ? fm.convert(font, toNotHaveTrait: trait)
+                                                 : fm.convert(font, toHaveTrait: trait)
+                    storage.addAttribute(.font, value: converted, range: sub)
+                }
             }
             storage.endEditing()
         }
@@ -599,19 +615,25 @@ public final class EditorController: NSObject {
 
     public func toggleUnderline() {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
-        let range = tv.selectedRange()
-        if range.length == 0 {
+        let ranges = selectedTextRanges(of: tv)
+        if ranges.isEmpty {
             let on = (tv.typingAttributes[.underlineStyle] as? Int ?? 0) != 0
             tv.typingAttributes[.underlineStyle] = on ? 0 : NSUnderlineStyle.single.rawValue
             return
         }
         var allUnderlined = true
-        storage.enumerateAttribute(.underlineStyle, in: range, options: []) { value, _, _ in
-            if (value as? Int ?? 0) == 0 { allUnderlined = false }
+        for range in ranges {
+            storage.enumerateAttribute(.underlineStyle, in: range, options: []) { value, _, _ in
+                if (value as? Int ?? 0) == 0 { allUnderlined = false }
+            }
         }
         withUndo("Underline") {
             let newValue = allUnderlined ? 0 : NSUnderlineStyle.single.rawValue
-            storage.addAttribute(.underlineStyle, value: newValue, range: range)
+            storage.beginEditing()
+            for range in ranges {
+                storage.addAttribute(.underlineStyle, value: newValue, range: range)
+            }
+            storage.endEditing()
         }
     }
 
@@ -691,17 +713,19 @@ public final class EditorController: NSObject {
 
     private func applyFontTransform(name: String, _ transform: @escaping (NSFont) -> NSFont) {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
-        let range = tv.selectedRange()
-        if range.length == 0 {
+        let ranges = selectedTextRanges(of: tv)
+        if ranges.isEmpty {
             let current = (tv.typingAttributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 12)
             tv.typingAttributes[.font] = transform(current)
             return
         }
         withUndo(name) {
             storage.beginEditing()
-            storage.enumerateAttribute(.font, in: range, options: []) { value, sub, _ in
-                let font = (value as? NSFont) ?? NSFont.systemFont(ofSize: 12)
-                storage.addAttribute(.font, value: transform(font), range: sub)
+            for range in ranges {
+                storage.enumerateAttribute(.font, in: range, options: []) { value, sub, _ in
+                    let font = (value as? NSFont) ?? NSFont.systemFont(ofSize: 12)
+                    storage.addAttribute(.font, value: transform(font), range: sub)
+                }
             }
             storage.endEditing()
         }
@@ -709,13 +733,17 @@ public final class EditorController: NSObject {
 
     public func setTextColor(_ color: NSColor) {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
-        let range = tv.selectedRange()
-        if range.length == 0 {
+        let ranges = selectedTextRanges(of: tv)
+        if ranges.isEmpty {
             tv.typingAttributes[.foregroundColor] = color
             return
         }
         withUndo("Text Color") {
-            storage.addAttribute(.foregroundColor, value: color, range: range)
+            storage.beginEditing()
+            for range in ranges {
+                storage.addAttribute(.foregroundColor, value: color, range: range)
+            }
+            storage.endEditing()
         }
     }
 
@@ -1544,9 +1572,15 @@ extension EditorController: NSTextStorageDelegate {
                             range editedRange: NSRange,
                             changeInLength delta: Int) {
         guard editedMask.contains(.editedCharacters) || editedMask.contains(.editedAttributes) else { return }
-        // Defer to the next runloop turn so layout settles before we add/trim pages.
+        // Defer to the next runloop turn so layout settles before we add/trim pages,
+        // coalescing a burst of edits (paste, IME, programmatic rewrites) into a
+        // single full relayout instead of one per edit.
+        guard !relayoutScheduled else { return }
+        relayoutScheduled = true
         DispatchQueue.main.async { [weak self] in
-            self?.relayoutText(syncImages: true)
+            guard let self else { return }
+            self.relayoutScheduled = false
+            self.relayoutText(syncImages: true)
         }
     }
 }
@@ -1628,6 +1662,18 @@ extension EditorController: FloatingImageViewDelegate {
         removeObject(id: view.objectID, undoName: "Delete Image")
     }
 
+    public func floatingImageViewDidCancelDrag(_ view: FloatingImageView) {
+        let previous = dragStartPlacement
+        dragStartPlacement = nil
+        movingImageID = nil
+        if let previous, let index = model.objects.firstIndex(where: { $0.id == view.objectID }) {
+            if let page = previous.page { model.objects[index].page = page }
+            if let frame = previous.frame { model.objects[index].frame = frame }
+        }
+        // syncImageViews restores the view's frame and page parent from the model.
+        relayoutText(syncImages: true)
+    }
+
     /// Sets a placed object's page + frame and re-parents its view into that page
     /// (via syncImageViews). `previous` is the pre-drag placement to restore on undo.
     private func applyPlacement(id: String, page: Int, frame: RectModel,
@@ -1660,7 +1706,7 @@ extension EditorController: FloatingImageViewDelegate {
 
     public func floatingImageView(_ view: FloatingImageView, didHover entered: Bool) {
         onStatusHint?(entered
-            ? "Image — drag to move · drag a corner to resize (hold ⇧ for free aspect) · ⌫ to delete"
+            ? "Image — drag to move · arrows to nudge (⇧ for 10 pt) · drag a corner to resize (⇧ for free aspect) · ⌫ to delete"
             : nil)
     }
 }

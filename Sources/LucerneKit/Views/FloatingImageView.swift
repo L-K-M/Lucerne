@@ -7,6 +7,8 @@ public protocol FloatingImageViewDelegate: AnyObject {
     /// Gesture finished — register a single undo step for the whole move/resize.
     func floatingImageView(_ view: FloatingImageView, didCommitFrom oldFrame: CGRect, to newFrame: CGRect)
     func floatingImageViewRequestsDelete(_ view: FloatingImageView)
+    /// Escape was pressed mid-drag: restore the pre-drag placement, no undo step.
+    func floatingImageViewDidCancelDrag(_ view: FloatingImageView)
     /// Mouse entered (true) or left (false) the image — used to show contextual
     /// help in the status bar.
     func floatingImageView(_ view: FloatingImageView, didHover entered: Bool)
@@ -29,6 +31,7 @@ public final class FloatingImageView: NSView {
 
     private enum DragMode { case none, move, resizeTL, resizeTR, resizeBL, resizeBR }
     private var dragMode: DragMode = .none
+    private var dragCancelled = false
     private var dragOrigin: CGPoint = .zero          // in superview coords
     private var frameAtDragStart: CGRect = .zero
     private let handleSize: CGFloat = 9
@@ -104,6 +107,7 @@ public final class FloatingImageView: NSView {
         window?.makeFirstResponder(self)
         delegate?.floatingImageViewDidSelect(self)
         isSelected = true
+        dragCancelled = false
         dragMode = mode(forLocalPoint: convert(event.locationInWindow, from: nil))
         // Let the controller re-parent a move before we capture the start frame, so
         // frameAtDragStart / dragOrigin are in the (possibly new) superview's coords.
@@ -122,7 +126,7 @@ public final class FloatingImageView: NSView {
     }
 
     public override func mouseDragged(with event: NSEvent) {
-        guard let superview else { return }
+        guard !dragCancelled, let superview else { return }
         let cur = superview.convert(event.locationInWindow, from: nil)
         let dx = cur.x - dragOrigin.x
         let dy = cur.y - dragOrigin.y       // flipped: +dy is downward
@@ -185,8 +189,10 @@ public final class FloatingImageView: NSView {
     }
 
     public override func mouseUp(with event: NSEvent) {
+        let wasCancelled = dragCancelled
         dragMode = .none
-        if frame != frameAtDragStart {
+        dragCancelled = false
+        if !wasCancelled, frame != frameAtDragStart {
             delegate?.floatingImageView(self, didCommitFrom: frameAtDragStart, to: frame)
         }
     }
@@ -197,9 +203,31 @@ public final class FloatingImageView: NSView {
         switch event.keyCode {
         case 51, 117:                    // delete, forward-delete
             delegate?.floatingImageViewRequestsDelete(self)
+        case 53 where dragMode != .none: // escape mid-drag: abort, restore placement
+            dragCancelled = true
+            dragMode = .none
+            delegate?.floatingImageViewDidCancelDrag(self)
+        case 123, 124, 125, 126:         // arrows: nudge 1 pt (⇧ = 10 pt)
+            let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+            switch event.keyCode {
+            case 123: nudge(dx: -step, dy: 0)
+            case 124: nudge(dx: step, dy: 0)
+            case 125: nudge(dx: 0, dy: step)    // flipped: +y is downward
+            case 126: nudge(dx: 0, dy: -step)
+            default: break
+            }
         default:
             super.keyDown(with: event)
         }
+    }
+
+    /// Moves the image by (dx, dy) as a one-step gesture: the controller captures
+    /// the pre-move placement in `beganDrag` so each nudge is a single undo step.
+    private func nudge(dx: CGFloat, dy: CGFloat) {
+        delegate?.floatingImageView(self, beganDrag: true)
+        let start = frame
+        frame = start.offsetBy(dx: dx, dy: dy)
+        delegate?.floatingImageView(self, didCommitFrom: start, to: frame)
     }
 
     public override func resetCursorRects() {
