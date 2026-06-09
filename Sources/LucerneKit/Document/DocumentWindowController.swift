@@ -264,15 +264,17 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     /// The magnification at which the page fits the viewport (whole page, or width
     /// only), framed by the canvas's gray insets. The clip view's frame is in
-    /// window points, unaffected by the current magnification.
+    /// window points; the canvas — page *and* insets, layoutPages always reserves
+    /// page + insets — is drawn scaled by the magnification, so the largest
+    /// scrollbar-free magnification is visible / (page + insets).
     private func fitZoom(wholePage: Bool) -> CGFloat {
         let page = editor.pageMetrics.pageSize
         guard page.width > 0, page.height > 0 else { return 1 }
         let canvas = editor.canvasView
         let visible = scrollView.contentView.frame.size
-        let fitWidth = (visible.width - 2 * canvas.sideInset) / page.width
+        let fitWidth = visible.width / (page.width + 2 * canvas.sideInset)
         guard wholePage else { return fitWidth }
-        let fitHeight = (visible.height - canvas.topInset - canvas.bottomInset) / page.height
+        let fitHeight = visible.height / (page.height + canvas.topInset + canvas.bottomInset)
         return min(fitWidth, fitHeight)
     }
 
