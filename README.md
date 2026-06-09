@@ -5,7 +5,7 @@ letters, with rulers, tabs, and free placement of images.*
 
 ![Screenshot](screenshot.png)
 
-**Latest release:** v<!-- version -->0.1.1<!-- /version --> · [Download](https://github.com/L-K-M/Lucerne/releases/latest)
+**Latest release:** v<!-- version -->0.2.0<!-- /version --> · [Download](https://github.com/L-K-M/Lucerne/releases/latest)
 
 > [!IMPORTANT]
 > LLM Disclosure: Much of this code base was written by or with the help of large language models. AI coding agents worked from the [`AGENTS.md`](AGENTS.md) brief in this repo.
