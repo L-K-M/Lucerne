@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']        # e.g. v1.2.0
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write       # needed to create the GitHub Release
+
+env:
+  APP_NAME: Lucerne
+
+jobs:
+  release:
+    name: Build & publish (unsigned)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select a recent Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app || true
+
+      - name: Install packaging tooling
+        run: brew install create-dmg
+
+      - name: Version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Stamp the bundle version from the tag
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Scripts/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Scripts/Info.plist
+
+      - name: Build the app bundle
+        # Builds Release, assembles dist/Lucerne.app, and ad-hoc signs it (identity "-").
+        # That isn't a Developer ID signature and the app is not notarized, but it IS
+        # required to launch on Apple Silicon; Gatekeeper still warns on first open.
+        run: Scripts/make-app.sh
+
+      - name: Package zip + DMG
+        run: |
+          APP="dist/$APP_NAME.app"
+          [ -d "$APP" ] || { echo "::error::built $APP_NAME.app not found"; exit 1; }
+          ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION.zip"
+          DMG="$RUNNER_TEMP/$APP_NAME-$VERSION.dmg"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          # create-dmg can exit non-zero on a headless runner even on success — verify the file.
+          create-dmg \
+            --volname "$APP_NAME $VERSION" \
+            --window-size 540 380 \
+            --icon-size 100 \
+            --icon "$APP_NAME.app" 150 185 \
+            --app-drop-link 390 185 \
+            "$DMG" "$APP" || true
+          [ -f "$DMG" ] || { echo "::error::DMG was not created"; exit 1; }
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ env.APP_NAME }} ${{ env.VERSION }}
+          files: |
+            ${{ env.DMG }}
+            ${{ env.ZIP }}
+          generate_release_notes: true
+          body: |
+            ### Unsigned build
+
+            This app is **not** code-signed with a Developer ID or notarized, so macOS
+            Gatekeeper will warn on first launch. To open it:
+
+            - **Right-click** (or Control-click) the app → **Open** → **Open**, or
+            - run `xattr -dr com.apple.quarantine /Applications/${{ env.APP_NAME }}.app`

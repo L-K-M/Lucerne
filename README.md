@@ -3,6 +3,8 @@
 *A ClarisWorks-style word editor for the Mac — a small, pleasant tool for writing
 letters, with rulers, tabs, and genuine free placement of images.*
 
+**Latest release:** v<!-- version -->0.1.0<!-- /version --> · [Download](https://github.com/L-K-M/Lucerne/releases/latest)
+
 Lucerne is a native macOS application built on AppKit and TextKit 1. Its defining
 feature is **100% free image placement with live text flow**: drop an image
 anywhere on the page and the body text reflows around it, staying correct through
