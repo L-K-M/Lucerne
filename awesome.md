@@ -230,17 +230,22 @@ under missing features.)
 
 Ordered roughly by how much a letter-writer would miss them.
 
-1. **Find (and Replace).** The single biggest absence for a word processor —
-   not in the plan, not in the roadmap, no Edit ▸ Find. Even 1984's MacWrite
-   had it. The multi-view-per-page architecture rules out the stock
-   `NSTextFinder` bar, but a small classic Find panel over the shared
-   `textStorage` fits the app's aesthetic perfectly.
-   → **Implemented (Find / Find Next / Find Previous, with Replace) in the
-   "find panel" PR.**
+1. **Find (and Replace).** The single biggest absence for a word processor.
+   Edit ▸ Find items *exist* (`MainMenu.swift:106–114`) but are dead: they
+   target NSTextView's legacy `performFindPanelAction(_:)`, and
+   `usesFindPanel` is never enabled on any page text view, so the items
+   never validate. They couldn't work anyway — with one text view per page,
+   a match laid out in another page's container is beyond a single view's
+   find panel. Even 1984's MacWrite had Find. A small classic Find panel
+   over the shared `textStorage` fits the app's aesthetic perfectly.
+   → **Implemented (Find / Find Next / Find Previous, Replace, Replace All)
+   in PR #11.**
 2. **Spell checking.** `NSTextView` ships it; Lucerne never turns it on —
-   no red squiggles, no Edit ▸ Spelling. For an app whose whole purpose is
-   sending letters to other humans, typo defense is core.
-   → **Enabled (with menu toggles) in the "editor correctness & polish" PR.**
+   no red squiggles. (Edit ▸ Spelling menu items exist and route to the
+   focused text view.) For an app whose whole purpose is sending letters to
+   other humans, typo defense is core.
+   → **Enabled in PR #10**, with a Check Spelling While Typing toggle in
+   PR #11.
 3. **Word count.** The classic statistic — ClarisWorks had it in Document
    Info; writers live by it. The status bar shows style + page count and has
    room for it. → **Added in the "find panel" PR** (status bar).
@@ -317,10 +322,10 @@ they merge independently:
 
 | PR | Branch | Contents |
 |---|---|---|
-| MiniZip hardening | `claude/minizip-hardening` | Bugs 1.1, 1.2, 1.3 + malformed-archive tests (2.8) |
-| Updater polish | `claude/updater-semver-polish` | Bug 1.4 + tests, download timeout (2.10), "last checked" in Settings (3.7) |
-| Editor correctness & polish | `claude/editor-polish` | Bug 1.5, relayout coalescing (2.1), spell checking (3.2), arrow-key nudge + Esc-cancel (3.5, 3.6) |
-| Find panel & friends | `claude/find-panel` | Find & Replace (3.1), word count (3.3), Fit Page / Fit Width zoom (3.4) |
+| #8 MiniZip hardening | `claude/minizip-hardening` | Bugs 1.1, 1.2, 1.3 + malformed-archive tests (2.8) |
+| #9 Updater polish | `claude/updater-semver-polish` | Bug 1.4 + tests, download timeout (2.10), "last checked" in Settings (3.7), honest unparseable-tag message (2.9) |
+| #10 Editor correctness & polish | `claude/editor-polish` | Bug 1.5, relayout coalescing (2.1), spell checking (3.2), arrow-key nudge + Esc-cancel (3.5, 3.6) |
+| #11 Find panel & friends | `claude/find-panel` | Find & Replace (3.1), word count (3.3), Fit Page / Fit Width zoom (3.4) |
 
 `PROGRESS.md`/`AGENTS.md` updates were deliberately left out of the
 implementation PRs to keep them conflict-free; a follow-up housekeeping
