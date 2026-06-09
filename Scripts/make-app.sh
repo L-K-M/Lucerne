@@ -39,6 +39,8 @@ rm -rf "$APP"
 mkdir -p "$MACOS_DIR" "$RES_DIR"
 cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
 cp "$ROOT/Scripts/Info.plist" "$CONTENTS/Info.plist"
+# AppleScript dictionary (referenced by Info.plist OSAScriptingDefinition).
+[[ -f "$ROOT/Scripts/Lucerne.sdef" ]] && cp "$ROOT/Scripts/Lucerne.sdef" "$RES_DIR/Lucerne.sdef"
 
 # Generate the app + document icons from media-sources/icon.png (Info.plist
 # already references AppIcon / DocumentIcon).

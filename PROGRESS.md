@@ -78,6 +78,16 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] `.luce` package round-trip (model + image bytes + content.md present)
 - [x] `PageMetrics` exclusion-rect + clamp geometry
 
+## On-device feedback (round 5)
+- [x] Icons: artwork is edge-to-edge (clipped to the squircle/page; no white inset)
+- [x] Nice About box (custom standard about panel: name, version, credits, icon)
+- [x] Toolbar overflow: window minimum width fits the toolbar so controls can
+  never be pushed off-screen (replaced the unreliable overlay scroller)
+- [x] Higher contrast: stronger page shadow, darker canvas backdrop, defined
+  toolbar/ruler/status borders
+- [x] AppleScript support (`Scripts/Lucerne.sdef`; standard suite + document
+  `text` (r/w) and `page count` (r) properties; `NSAppleScriptEnabled`)
+
 ## On-device feedback (round 4)
 - [x] Zoom widget in the footer (− / % / +); click the % to reset to 100%
 - [x] Removed the toolbar separator lines (grouping via spacing instead)

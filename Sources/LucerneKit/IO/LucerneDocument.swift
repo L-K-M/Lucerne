@@ -89,6 +89,28 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     public var editorUndoManager: UndoManager? { undoManager }
     public func editorDidChange() { updateChangeCount(.changeDone) }
 
+    // MARK: - AppleScript (see Scripts/Lucerne.sdef)
+
+    /// The document's plain text. Setting it replaces the body with one Body
+    /// paragraph per line (coarse, by design — fine formatting isn't scriptable).
+    @objc public var scriptingText: String {
+        get {
+            editor?.textStorage.string ?? pendingModel.body.map(\.plainText).joined(separator: "\n")
+        }
+        set {
+            var model = editor?.snapshotModel() ?? pendingModel
+            let lines = newValue.isEmpty ? [""] : newValue.components(separatedBy: "\n")
+            model.body = lines.map {
+                Paragraph(id: IDGenerator.next("p"), style: "body", runs: [Run(text: $0)])
+            }
+            pendingModel = model
+            editor?.load(model: model)
+            updateChangeCount(.changeDone)
+        }
+    }
+
+    @objc public var scriptingPageCount: Int { editor?.pageCount ?? 1 }
+
     // MARK: - Printing
 
     public override func printOperation(withSettings settings: [NSPrintInfo.AttributeKey: Any]) throws -> NSPrintOperation {
