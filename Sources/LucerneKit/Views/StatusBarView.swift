@@ -81,7 +81,7 @@ public final class StatusBarView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        NSColor(calibratedWhite: 0.75, alpha: 1).setStroke()
+        NSColor(calibratedWhite: 0.62, alpha: 1).setStroke()
         let top = NSBezierPath()
         top.move(to: CGPoint(x: 0, y: bounds.maxY - 0.5))
         top.line(to: CGPoint(x: bounds.width, y: bounds.maxY - 0.5))

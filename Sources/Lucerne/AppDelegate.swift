@@ -24,6 +24,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    // MARK: - About
+
+    @objc func showAbout(_ sender: Any?) {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.paragraphSpacing = 6
+        let credits = NSAttributedString(
+            string: "A ClarisWorks-style word editor for the Mac — letters with rulers, "
+                + "tabs, and genuine free placement of images.\n"
+                + "Documents are saved as “.luce”, a ZIP package you can always open.",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph
+            ])
+
+        var options: [NSApplication.AboutPanelOptionKey: Any] = [
+            .applicationName: "Lucerne",
+            .applicationVersion: version,
+            .version: build,
+            .credits: credits
+        ]
+        if let icon = NSApp.applicationIconImage { options[.applicationIcon] = icon }
+
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: options)
+    }
+
     private func openSampleDocument() {
         let controller = NSDocumentController.shared
         guard let document = try? controller.makeUntitledDocument(ofType: LucerneUTI.document) as? LucerneDocument else {

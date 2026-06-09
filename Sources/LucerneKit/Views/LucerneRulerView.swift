@@ -104,7 +104,7 @@ public final class LucerneRulerView: NSView {
             p += 9
         }
 
-        NSColor(calibratedWhite: 0.7, alpha: 1).setStroke()
+        NSColor(calibratedWhite: 0.6, alpha: 1).setStroke()
         let border = NSBezierPath()
         border.move(to: CGPoint(x: 0, y: 0.5))
         border.line(to: CGPoint(x: bounds.width, y: 0.5))

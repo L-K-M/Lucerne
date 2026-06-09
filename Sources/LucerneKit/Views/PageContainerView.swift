@@ -19,9 +19,9 @@ public final class PageContainerView: NSView {
         wantsLayer = true
         if let layer {
             layer.shadowColor = NSColor.black.cgColor
-            layer.shadowOpacity = 0.22
-            layer.shadowRadius = 6
-            layer.shadowOffset = .zero
+            layer.shadowOpacity = 0.38
+            layer.shadowRadius = 12
+            layer.shadowOffset = CGSize(width: 0, height: -2)
         }
     }
 
@@ -31,7 +31,7 @@ public final class PageContainerView: NSView {
     public override func draw(_ dirtyRect: NSRect) {
         NSColor.white.setFill()
         bounds.fill()
-        NSColor(calibratedWhite: 0.80, alpha: 1).setStroke()
+        NSColor(calibratedWhite: 0.70, alpha: 1).setStroke()
         let border = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
         border.lineWidth = 1
         border.stroke()

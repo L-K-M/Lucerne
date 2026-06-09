@@ -28,8 +28,9 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             backing: .buffered, defer: false)
         window.title = "Lucerne"
         window.tabbingMode = .disallowed
-        // The toolbar scrolls if narrower than its content, so the floor can be modest.
-        window.minSize = NSSize(width: 480, height: 420)
+        // Keep the window at least as wide as the toolbar so its controls can never
+        // be pushed off-screen (capped so it stays reasonable on small displays).
+        window.minSize = NSSize(width: min(toolbarFitWidth, 1100), height: 420)
         // Lucerne is a white-paper document editor: render the whole window in the
         // light (aqua) appearance so the toolbar controls, ruler labels, and the
         // text caret stay visible on the white page even when macOS is in Dark Mode.
@@ -61,7 +62,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = NSColor(calibratedWhite: 0.80, alpha: 1)
+        scrollView.backgroundColor = NSColor(calibratedWhite: 0.68, alpha: 1)
         scrollView.documentView = editor.canvasView
         scrollView.allowsMagnification = true
         scrollView.minMagnification = 0.25

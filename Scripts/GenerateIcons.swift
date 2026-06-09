@@ -38,24 +38,34 @@ func renderPNG(pixels: Int, _ draw: (CGFloat) -> Void) -> Data {
     return rep.representation(using: .png, properties: [:]) ?? Data()
 }
 
-// MARK: - App icon: rounded white tile with the artwork inset.
+// Draws the artwork to fill `bounds` (aspect-fill / cover), clipped to `shape`, so
+// it bleeds to the edges of the shape with no surrounding border.
+func drawArtFilling(_ bounds: NSRect, clippedTo shape: NSBezierPath) {
+    NSGraphicsContext.saveGraphicsState()
+    shape.addClip()
+    let art = source.size
+    let scale = max(bounds.width / art.width, bounds.height / art.height)
+    let w = art.width * scale, h = art.height * scale
+    source.draw(in: NSRect(x: bounds.midX - w / 2, y: bounds.midY - h / 2, width: w, height: h),
+                from: .zero, operation: .sourceOver, fraction: 1)
+    NSGraphicsContext.restoreGraphicsState()
+}
+
+// MARK: - App icon: the artwork filling a rounded (squircle) tile, edge-to-edge.
 
 func drawAppIcon(_ s: CGFloat) {
     let tile = NSRect(x: s * 0.04, y: s * 0.04, width: s * 0.92, height: s * 0.92)
     let radius = tile.width * 0.2237
     let bg = NSBezierPath(roundedRect: tile, xRadius: radius, yRadius: radius)
     NSColor.white.setFill()
-    bg.fill()
+    bg.fill()                              // shows through any transparent parts of the art
+    drawArtFilling(tile, clippedTo: bg)    // artwork to the squircle's edges
     bg.lineWidth = max(1, s * 0.004)
     NSColor(calibratedWhite: 0.85, alpha: 1).setStroke()
-    bg.stroke()
-
-    let inset = s * 0.15
-    source.draw(in: tile.insetBy(dx: inset, dy: inset), from: .zero,
-                operation: .sourceOver, fraction: 1)
+    bg.stroke()                            // hairline edge for definition (not a border)
 }
 
-// MARK: - Document icon: a page with a folded corner, artwork in the lower area.
+// MARK: - Document icon: the artwork filling a page with a folded corner.
 
 func drawDocumentIcon(_ s: CGFloat) {
     let pageW = s * 0.62, pageH = s * 0.80
@@ -69,11 +79,10 @@ func drawDocumentIcon(_ s: CGFloat) {
     outline.line(to: NSPoint(x: page.maxX, y: page.maxY - fold))
     outline.line(to: NSPoint(x: page.maxX, y: page.minY))
     outline.close()
+
     NSColor.white.setFill()
     outline.fill()
-    outline.lineWidth = max(1, s * 0.006)
-    NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
-    outline.stroke()
+    drawArtFilling(page, clippedTo: outline)   // artwork to the page edges
 
     let corner = NSBezierPath()
     corner.move(to: NSPoint(x: page.maxX - fold, y: page.maxY))
@@ -86,10 +95,9 @@ func drawDocumentIcon(_ s: CGFloat) {
     NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
     corner.stroke()
 
-    let artW = pageW * 0.76
-    let artRect = NSRect(x: page.minX + (pageW - artW) / 2,
-                         y: page.minY + pageH * 0.12, width: artW, height: artW)
-    source.draw(in: artRect, from: .zero, operation: .sourceOver, fraction: 1)
+    outline.lineWidth = max(1, s * 0.006)
+    NSColor(calibratedWhite: 0.78, alpha: 1).setStroke()
+    outline.stroke()
 }
 
 // MARK: - Build each .iconset and package it with iconutil.

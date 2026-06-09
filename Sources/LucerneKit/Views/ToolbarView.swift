@@ -28,7 +28,6 @@ public final class ToolbarView: NSView {
     private let alignControl = NSSegmentedControl()
     private let lineSpacingPopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
-    private let scroller = NSScrollView()
     private var stack = NSStackView()
 
     private let lineSpacings: [(String, CGFloat)] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)]
@@ -38,13 +37,21 @@ public final class ToolbarView: NSView {
         let styles = DefaultDocuments.defaultStyles()
         styleNames = DefaultDocuments.styleRoleOrder.map { styles[$0]?.name ?? $0 }
         super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor(calibratedWhite: 0.93, alpha: 1).cgColor
         build()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedWhite: 0.93, alpha: 1).setFill()
+        bounds.fill()
+        NSColor(calibratedWhite: 0.62, alpha: 1).setStroke()
+        let border = NSBezierPath()       // bottom edge (origin bottom-left, y up)
+        border.move(to: CGPoint(x: 0, y: 0.5))
+        border.line(to: CGPoint(x: bounds.width, y: 0.5))
+        border.stroke()
+    }
 
     /// Natural width of all the controls; the window uses it to size itself.
     public var preferredContentWidth: CGFloat { stack.fittingSize.width }
@@ -97,32 +104,16 @@ public final class ToolbarView: NSView {
         stack.setCustomSpacing(18, after: sizeCombo)
         stack.setCustomSpacing(18, after: colorWell)
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
-        stack.translatesAutoresizingMaskIntoConstraints = true
+        stack.translatesAutoresizingMaskIntoConstraints = false
         stack.setContentHuggingPriority(.required, for: .horizontal)
-
-        scroller.drawsBackground = false
-        scroller.hasVerticalScroller = false
-        scroller.hasHorizontalScroller = true
-        scroller.autohidesScrollers = true
-        scroller.scrollerStyle = .overlay
-        scroller.verticalScrollElasticity = .none
-        scroller.documentView = stack
-        scroller.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(scroller)
+        addSubview(stack)
         NSLayoutConstraint.activate([
-            scroller.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scroller.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scroller.topAnchor.constraint(equalTo: topAnchor),
-            scroller.bottomAnchor.constraint(equalTo: bottomAnchor)
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
         registerHelp()
-    }
-
-    public override func layout() {
-        super.layout()
-        // Size the (frame-based) stack to its natural width and the toolbar height.
-        stack.frame = NSRect(x: 0, y: 0, width: max(stack.fittingSize.width, bounds.width), height: bounds.height)
     }
 
     private func fixedWidth(_ view: NSView, _ width: CGFloat) {

@@ -17,7 +17,7 @@ public final class PageCanvasView: NSView {
     public override var isFlipped: Bool { true }
 
     public override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.80, alpha: 1).setFill()
+        NSColor(calibratedWhite: 0.68, alpha: 1).setFill()
         dirtyRect.fill()
     }
 
