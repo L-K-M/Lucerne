@@ -89,9 +89,11 @@ Sources/
 Tests/
   LucerneKitTests/  unit tests for the model, Markdown export, and geometry
 Scripts/
-  make-app.sh     assembles a .app bundle around the SPM-built binary
-  Info.plist      bundle metadata + .luce document type / UTI declarations
-docs/             architecture, file format, building notes
+  make-app.sh         assembles a .app bundle around the SPM-built binary
+  Info.plist          bundle metadata + .luce document type / UTI declarations
+  GenerateIcons.swift renders the app + document icons from media-sources/icon.png
+media-sources/        artwork sources (icon.png, icon.af) for the icons
+docs/                 architecture, file format, building notes
 ```
 
 ## License

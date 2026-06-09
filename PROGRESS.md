@@ -85,6 +85,8 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
   live onto whichever page it's over, and re-anchors there on drop (undoable)
 - [x] Page size moved to **File ▸ Page Setup** (drives the document page size and
   printing); **Document Setup** now holds margins (+ room for more)
+- [x] App icon + derived document icon generated from `media-sources/icon.png`
+  (`Scripts/GenerateIcons.swift`, wired into `make-app.sh`; validated in CI)
 
 ## On-device feedback (round 3)
 - [x] Insert Image removed from the toolbar (menu item kept)

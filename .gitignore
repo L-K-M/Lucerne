@@ -10,6 +10,11 @@ DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 
+# Generated icons (derived from media-sources/icon.png by Scripts/GenerateIcons.swift)
+Scripts/AppIcon.icns
+Scripts/DocumentIcon.icns
+*.iconset/
+
 # macOS
 .DS_Store
 

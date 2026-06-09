@@ -40,12 +40,15 @@ mkdir -p "$MACOS_DIR" "$RES_DIR"
 cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
 cp "$ROOT/Scripts/Info.plist" "$CONTENTS/Info.plist"
 
-# Optional icon: drop an AppIcon.icns into Scripts/ to have it bundled.
-if [[ -f "$ROOT/Scripts/AppIcon.icns" ]]; then
-    cp "$ROOT/Scripts/AppIcon.icns" "$RES_DIR/AppIcon.icns"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" \
-        "$CONTENTS/Info.plist" 2>/dev/null || true
+# Generate the app + document icons from media-sources/icon.png (Info.plist
+# already references AppIcon / DocumentIcon).
+if [[ -f "$ROOT/media-sources/icon.png" ]]; then
+    echo "==> Generating icons…"
+    ( cd "$ROOT" && swift Scripts/GenerateIcons.swift ) || \
+        echo "warning: icon generation failed; building without custom icons." >&2
 fi
+[[ -f "$ROOT/Scripts/AppIcon.icns" ]] && cp "$ROOT/Scripts/AppIcon.icns" "$RES_DIR/AppIcon.icns"
+[[ -f "$ROOT/Scripts/DocumentIcon.icns" ]] && cp "$ROOT/Scripts/DocumentIcon.icns" "$RES_DIR/DocumentIcon.icns"
 
 # Ad-hoc codesign so Gatekeeper and the document system are happy locally.
 if command -v codesign >/dev/null 2>&1; then

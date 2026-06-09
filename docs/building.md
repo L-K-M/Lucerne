@@ -37,8 +37,14 @@ The script compiles with SPM, lays out `Lucerne.app/Contents/{MacOS,Resources}`,
 copies `Scripts/Info.plist` (which declares the `.luce` document type and its
 `public.zip-archive`-conforming UTI), and ad-hoc codesigns it.
 
-To get a custom document/app icon, drop an `AppIcon.icns` into `Scripts/` before
-running; the script will bundle it.
+The app and document icons are generated automatically from
+`media-sources/icon.png` by `Scripts/GenerateIcons.swift` (run by `make-app.sh`,
+needs `iconutil`): the app icon is a rounded tile of the artwork, and the document
+icon derives a folded-corner page from it. To regenerate them by hand:
+
+```sh
+swift Scripts/GenerateIcons.swift   # writes Scripts/{AppIcon,DocumentIcon}.icns
+```
 
 ## Open in Xcode
 
