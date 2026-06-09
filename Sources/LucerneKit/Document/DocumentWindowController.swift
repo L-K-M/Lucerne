@@ -24,6 +24,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             backing: .buffered, defer: false)
         window.title = "Lucerne"
         window.tabbingMode = .disallowed
+        // Lucerne is a white-paper document editor: render the whole window in the
+        // light (aqua) appearance so the toolbar controls, ruler labels, and the
+        // text caret stay visible on the white page even when macOS is in Dark Mode.
+        window.appearance = NSAppearance(named: .aqua)
         super.init(window: window)
 
         window.delegate = self

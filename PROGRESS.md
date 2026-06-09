@@ -79,6 +79,14 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] `PageMetrics` exclusion-rect + clamp geometry
 
 ## Notes / decisions taken during implementation
+- **Dark Mode:** the document window is pinned to the light (aqua) appearance
+  (`window.appearance`) — it's a white-paper editor, so this keeps toolbar
+  controls, ruler labels, and the caret visible on the white page in Dark Mode.
+  (Fix for on-device report of an invisible toolbar in Dark Mode.)
+- **Narrow wrap columns:** if a placed image leaves a side gap too small to hold
+  text, the exclusion is extended to that margin so text doesn't clip into a
+  sliver (`PageMetrics.exclusionRect` `minColumn`, default 1"). Fix for on-device
+  report of text being cut off to the right of an image.
 - ZIP handled by an in-repo `MiniZip` (no external dependency) so the project
   builds offline; *stored* entries are sufficient because payloads are
   pre-compressed images plus tiny text.

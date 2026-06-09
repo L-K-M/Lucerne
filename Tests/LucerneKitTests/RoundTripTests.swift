@@ -121,6 +121,33 @@ final class PageMetricsTests: XCTestCase {
         XCTAssertEqual(rect.height, 164, accuracy: 0.001)  // 140 + 24
     }
 
+    func testNarrowRightGapSnapsExclusionToRightMargin() {
+        let metrics = PageMetrics(page: .a4)
+        // Image whose right edge sits ~23pt from the right margin → unusable column.
+        let rect = metrics.exclusionRect(
+            forObjectFrame: RectModel(x: 380, y: 200, width: 120, height: 100), standoff: 12)
+        XCTAssertEqual(rect.maxX, metrics.contentSize.width, accuracy: 0.001,
+                       "a too-narrow right gap should be absorbed into the exclusion")
+    }
+
+    func testNarrowLeftGapSnapsExclusionToLeftMargin() {
+        let metrics = PageMetrics(page: .a4)
+        // Image near the left margin leaving a ~16pt sliver on the left.
+        let rect = metrics.exclusionRect(
+            forObjectFrame: RectModel(x: 100, y: 200, width: 200, height: 100), standoff: 12)
+        XCTAssertEqual(rect.minX, 0, accuracy: 0.001,
+                       "a too-narrow left gap should be absorbed into the exclusion")
+    }
+
+    func testUsableColumnsAreKept() {
+        let metrics = PageMetrics(page: .a4)
+        // A centered-ish image leaving generous columns on both sides keeps them.
+        let rect = metrics.exclusionRect(
+            forObjectFrame: RectModel(x: 220, y: 200, width: 150, height: 100), standoff: 12)
+        XCTAssertGreaterThan(rect.minX, 0)
+        XCTAssertLessThan(rect.maxX, metrics.contentSize.width)
+    }
+
     func testClampKeepsObjectOnPage() {
         let metrics = PageMetrics(page: .a4)
         let clamped = metrics.clampObjectFrame(CGRect(x: -50, y: -50, width: 100, height: 100))

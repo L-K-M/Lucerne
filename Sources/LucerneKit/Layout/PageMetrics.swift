@@ -39,12 +39,24 @@ public struct PageMetrics: Equatable {
     /// The exclusion rectangle for a page-anchored object, in **text-container**
     /// coordinates: shift by the margins (the container starts at the margin) and
     /// inflate outward by the standoff gutter.
-    public func exclusionRect(forObjectFrame frame: RectModel, standoff: Double) -> CGRect {
+    ///
+    /// If the gap left between the obstacle and a side margin is narrower than
+    /// `minColumn`, the exclusion is extended to that margin so text doesn't flow
+    /// into an unusable sliver and clip mid-word — it wraps on the wider side and
+    /// below instead. This matches how ClarisWorks/DTP handle a box near a margin.
+    public func exclusionRect(forObjectFrame frame: RectModel, standoff: Double,
+                              minColumn: CGFloat = 72) -> CGRect {
         let s = CGFloat(standoff)
-        return CGRect(x: CGFloat(frame.x) - marginLeft - s,
-                      y: CGFloat(frame.y) - marginTop - s,
-                      width: CGFloat(frame.width) + 2 * s,
-                      height: CGFloat(frame.height) + 2 * s)
+        var left = CGFloat(frame.minX) - marginLeft - s
+        var right = CGFloat(frame.maxX) - marginLeft + s
+        let top = CGFloat(frame.minY) - marginTop - s
+        let height = CGFloat(frame.height) + 2 * s
+        let width = contentSize.width
+
+        if left > 0, left < minColumn { left = 0 }
+        if right < width, width - right < minColumn { right = width }
+
+        return CGRect(x: left, y: top, width: right - left, height: height)
     }
 
     /// Clamp a proposed object frame so the image stays within the page bounds
