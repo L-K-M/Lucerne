@@ -4,8 +4,10 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 `[x]` done · `[~]` partial / in progress · `[ ]` not started.
 
 > **Verification:** authored on Linux (no Swift toolchain). Compilation is checked
-> by the macOS CI workflow, not locally. "Done" here means *implemented and
-> internally consistent*, pending a green CI build and on-device QA on a Mac.
+> by the macOS CI workflow, not locally. **The macOS CI build + unit tests are
+> green** as of the latest commit, so "done" means *implemented, compiling, and
+> unit-tested* — pending interactive on-device QA on a Mac for the things tests
+> can't cover (live reflow feel, ruler dragging, pagination across many pages).
 
 ## Milestone 0 — scaffolding
 - [x] Package manifest (`Package.swift`), executable + library + test targets
@@ -67,6 +69,13 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [ ] Lists (numbering / nesting)
 - [ ] Document inspector (page size, margins) UI
 - [ ] Preferences
+
+## Tests (run on macOS CI)
+- [x] Model JSON round-trip, geometry, Markdown export (`ModelTests`)
+- [x] Text bridge round-trip — text/roles/ids/italic/alignment (`RoundTripTests`)
+- [x] `MiniZip` stored round-trip + non-zip rejection
+- [x] `.luce` package round-trip (model + image bytes + content.md present)
+- [x] `PageMetrics` exclusion-rect + clamp geometry
 
 ## Notes / decisions taken during implementation
 - ZIP handled by an in-repo `MiniZip` (no external dependency) so the project

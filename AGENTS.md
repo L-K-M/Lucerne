@@ -14,9 +14,12 @@ holding one paginated text frame, plus floating objects that *punch holes* in it
 ## Critical environment note
 
 This repo was authored in a **Linux container with no Swift toolchain and no
-AppKit**, so the code here has **not been compiled locally**. It is written to be
-correct by construction and is **compile-verified by CI** (`.github/workflows/
-ci.yml`, on a macOS runner). When you change code:
+AppKit**, so the code here was **not compiled locally** during authoring. It is
+written to be correct by construction and is **compile-verified by CI**
+(`.github/workflows/ci.yml`, on a macOS runner) — the build and unit tests are
+**green**. What CI can't check is interactive behaviour (live reflow, ruler
+dragging, multi-page editing); that still needs a human on a Mac. When you change
+code:
 
 - If you are on a Mac, run `swift build` / `swift test` and fix what breaks.
 - If you are not, reason carefully and lean on the CI signal. Do not claim a build
