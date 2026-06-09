@@ -106,6 +106,7 @@ public final class EditorController: NSObject {
     private func makeTextView(container: NSTextContainer) -> PageTextView {
         let tv = PageTextView(frame: metrics.textFrameInPage, textContainer: container)
         tv.editor = self
+        tv.delegate = self
         tv.isEditable = true
         tv.isSelectable = true
         tv.isRichText = true
@@ -719,6 +720,15 @@ extension EditorController: NSTextStorageDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.relayoutText(syncImages: true)
         }
+    }
+}
+
+// MARK: - NSTextViewDelegate (selection tracking for toolbar/ruler sync)
+
+extension EditorController: NSTextViewDelegate {
+    public func textViewDidChangeSelection(_ notification: Notification) {
+        guard let textView = notification.object as? PageTextView else { return }
+        activeSelectionChanged(in: textView)
     }
 }
 

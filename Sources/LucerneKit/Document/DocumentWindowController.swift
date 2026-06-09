@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // page canvas. It is also the responder-chain target for the Format/Insert menu
 // actions, forwarding them to the EditorController, and keeps the toolbar + ruler
 // in sync with the current selection.
-public final class DocumentWindowController: NSWindowController, NSWindowDelegate {
+public final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
 
     private let editor: EditorController
     private let toolbar = ToolbarView(frame: .zero)
@@ -91,12 +91,12 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
                 let data = try Data(contentsOf: url)
                 self.editor.insertImage(data: data, suggestedName: url.lastPathComponent)
             } catch {
-                self.presentError(error)
+                self.showError(error)
             }
         }
     }
 
-    private func presentError(_ error: Error) {
+    private func showError(_ error: Error) {
         guard let window else { return }
         NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
     }
@@ -123,7 +123,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     @objc func lucerneStandoffIncrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: 4) }
     @objc func lucerneStandoffDecrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: -4) }
 
-    public override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+    public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(lucerneDeleteImage(_:)),
              #selector(lucerneWrapNone(_:)),

@@ -20,11 +20,4 @@ public final class PageTextView: NSTextView {
         editor?.deselectAllImages()
         super.mouseDown(with: event)
     }
-
-    // Keep typing attributes in sync with the paragraph under the caret so newly
-    // typed text inherits the right style/role.
-    public override func didChangeSelection(_ notification: Notification) {
-        super.didChangeSelection(notification)
-        editor?.activeSelectionChanged(in: self)
-    }
 }

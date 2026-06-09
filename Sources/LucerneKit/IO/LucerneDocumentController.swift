@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 // A document controller that knows Lucerne's single document type even when the
 // app is run unbundled (no Info.plist). The first NSDocumentController created in
@@ -12,8 +13,9 @@ public final class LucerneDocumentController: NSDocumentController {
     }
 
     public override func runModalOpenPanel(_ openPanel: NSOpenPanel, forTypes types: [String]?) -> Int {
-        openPanel.allowedFileTypes = [LucerneUTI.fileExtension]
-        openPanel.allowsOtherFileTypes = false
+        if let type = UTType(filenameExtension: LucerneUTI.fileExtension) {
+            openPanel.allowedContentTypes = [type]
+        }
         return super.runModalOpenPanel(openPanel, forTypes: [LucerneUTI.document])
     }
 }
