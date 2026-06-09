@@ -199,16 +199,21 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     // MARK: - Headers/footers & navigator
 
     @objc func lucerneInsertPageNumber(_ sender: Any?) {
+        // A plain, centered page number in the footer — the conventional minimal
+        // setup. Use Header & Footer… for "Page x of y", other zones, or to choose
+        // where numbering starts.
         var footer = editor.model.footer ?? PageFurniture()
-        footer.center = "Page {page} of {pages}"
-        editor.updatePageFurniture(header: editor.model.header, footer: footer)
+        footer.center = "{page}"
+        editor.updatePageFurniture(header: editor.model.header, footer: footer,
+                                   pageNumberStart: editor.model.pageNumberStart)
     }
 
     @objc func lucerneHeaderFooter(_ sender: Any?) {
         guard let window else { return }
-        HeaderFooterSheet.present(from: window, header: editor.model.header, footer: editor.model.footer) {
-            [weak self] header, footer in
-            self?.editor.updatePageFurniture(header: header, footer: footer)
+        HeaderFooterSheet.present(from: window, header: editor.model.header, footer: editor.model.footer,
+                                  pageNumberStart: editor.model.pageNumberStart ?? 1) {
+            [weak self] header, footer, start in
+            self?.editor.updatePageFurniture(header: header, footer: footer, pageNumberStart: start)
         }
     }
 

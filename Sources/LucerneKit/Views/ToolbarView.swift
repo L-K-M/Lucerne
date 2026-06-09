@@ -166,9 +166,11 @@ public final class ToolbarView: NSView {
         let index = stylePopup.indexOfSelectedItem
         guard styleRoles.indices.contains(index) else { return }
         editor?.applyStyleRole(styleRoles[index])
+        returnFocusToPage()
     }
     @objc private func fontChanged() {
         if let family = fontPopup.titleOfSelectedItem { editor?.setFontFamily(family) }
+        returnFocusToPage()
     }
     @objc private func sizeChanged() {
         // Read the selected item's value when picking from the list (stringValue
@@ -181,6 +183,7 @@ public final class ToolbarView: NSView {
             raw = sizeCombo.stringValue
         }
         if let value = Double(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
+        returnFocusToPage()
     }
     @objc private func formatChanged() {
         switch formatControl.selectedSegment {
@@ -190,17 +193,26 @@ public final class ToolbarView: NSView {
         default: break
         }
         syncFromSelection()   // reflect the true state (and accent) back on the control
+        returnFocusToPage()
     }
     @objc private func colorChanged() { editor?.setTextColor(colorWell.color) }
     @objc private func alignChanged() {
         let map: [NSTextAlignment] = [.left, .center, .right, .justified]
         editor?.setAlignment(map[min(alignControl.selectedSegment, 3)])
+        returnFocusToPage()
     }
     @objc private func lineSpacingChanged() {
         let index = lineSpacingPopup.indexOfSelectedItem
         guard lineSpacings.indices.contains(index) else { return }
         editor?.setLineHeightMultiple(lineSpacings[index].1)
+        returnFocusToPage()
     }
+
+    /// After a toolbar formatting action, hand keyboard focus back to the editing
+    /// surface so a change made with no selection (a typing-attribute change) takes
+    /// effect on the next typed character. The color well is excluded — it drives the
+    /// color panel and must keep focus.
+    private func returnFocusToPage() { editor?.focusActiveTextView() }
 
     // MARK: - Sync
 

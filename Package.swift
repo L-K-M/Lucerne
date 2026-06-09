@@ -20,7 +20,10 @@ let package = Package(
         .executableTarget(
             name: "Lucerne",
             dependencies: ["LucerneKit"],
-            path: "Sources/Lucerne"
+            path: "Sources/Lucerne",
+            // Bundled so the About / Welcome windows show the real artwork even when
+            // running unbundled (where NSApp.applicationIconImage is the generic icon).
+            resources: [.copy("Resources/icon.png")]
         ),
         .target(
             name: "LucerneKit",

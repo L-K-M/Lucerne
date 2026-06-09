@@ -28,10 +28,14 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
         pendingModel = DefaultDocuments.sampleLetter()
     }
 
-    // Autosave in place enables Versions and, crucially, crash/draft recovery:
-    // edits are autosaved periodically and untitled documents are kept as drafts
-    // that the system offers to recover on relaunch (autosavesDrafts defaults true).
-    public override class var autosavesInPlace: Bool { true }
+    // Keep the classic, predictable save UX: the unsaved-changes dot in the close
+    // button and a "save?" prompt when closing with changes. (Autosave-in-place
+    // replaces the dot with an "Edited" title and is what produced the inconsistent
+    // behaviour reported.) Crash recovery is preserved separately via draft
+    // autosaving: a never-saved document is autosaved as a draft the system offers
+    // to recover on the next launch.
+    public override class var autosavesInPlace: Bool { false }
+    public override class var autosavesDrafts: Bool { true }
 
     // MARK: - Window
 

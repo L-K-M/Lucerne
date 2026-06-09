@@ -94,6 +94,7 @@ unzipping the file. This is purely additive and does not change `formatVersion`.
 | `objects` | array | REQUIRED | List of placed objects (§7). MAY be empty. |
 | `header` | object | optional | Running header (§3.2). |
 | `footer` | object | optional | Running footer (§3.2). |
+| `pageNumberStart` | integer | optional | 1-based page where numbering begins (§3.2). |
 
 A reader **MUST** reject a file whose `format` is not `"lucerne-document"`.
 
@@ -114,6 +115,14 @@ time:
 Example: a `footer` of `{ "center": "Page {page} of {pages}" }`. These are
 **presentational** and additive — they are not represented in `content.md`, and
 adding them does not change `formatVersion`.
+
+`pageNumberStart`, when present, is a positive integer: the 1-based physical page
+on which the number substituted for `{page}` becomes `1`. Pages before it are
+unnumbered, and `{pages}` counts only the numbered pages. For example,
+`pageNumberStart: 3` makes physical page 3 show `1` (to skip a title page and a
+contents page). Absent means every page is numbered starting at `1`. On an
+unnumbered page a reader **SHOULD** suppress a zone that references a page-number
+token rather than render a partial string. This is presentational and additive.
 
 ## 4. Coordinates, units, and page geometry
 
@@ -386,7 +395,8 @@ prose in §7 is authoritative over the schema here).
     "body": { "type": "array", "items": { "$ref": "#/$defs/paragraph" } },
     "objects": { "type": "array", "items": { "$ref": "#/$defs/object" } },
     "header": { "$ref": "#/$defs/furniture" },
-    "footer": { "$ref": "#/$defs/furniture" }
+    "footer": { "$ref": "#/$defs/furniture" },
+    "pageNumberStart": { "type": "integer", "minimum": 1 }
   },
   "$defs": {
     "furniture": {

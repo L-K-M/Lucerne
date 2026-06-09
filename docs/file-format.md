@@ -113,6 +113,9 @@ top-left, y increasing downward**.
   (`left`/`center`/`right`) drawn in the page margins; each zone may contain the
   tokens `{page}`, `{pages}`, `{date}`, `{title}`. Additive and presentational —
   not represented in `content.md`. Full rules in the spec, §3.2.
+- **Optional `pageNumberStart`.** A positive integer: the 1-based page where
+  `{page}` becomes 1 (earlier pages are unnumbered, e.g. `3` to skip a title and a
+  contents page). Absent means every page is numbered from 1.
 - **Generated regions carry no special structure.** A printed table of contents,
   for example, is just ordinary paragraphs (the app tags them with a `toc` style
   role); the format has no dedicated "ToC" or "field" block. An unknown style role

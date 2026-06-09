@@ -469,6 +469,24 @@ public final class EditorController: NSObject {
 
     // MARK: - Formatting
 
+    /// The text view formatting commands act on: the active one, or the first page
+    /// if focus hasn't landed in the text yet. This means a toolbar/menu command
+    /// always has a target — fixing "the tools look active but do nothing" when no
+    /// text view is first responder. With no selection, commands set the typing
+    /// attributes so the next typed text picks up the change.
+    private func formattingTextView() -> PageTextView? {
+        if activeTextView == nil { activeTextView = pages.first?.textView }
+        return activeTextView
+    }
+
+    /// Returns keyboard focus to the editing surface — called after a toolbar action
+    /// so a change made with no selection (a typing-attribute change) is immediately
+    /// usable: the caret returns to the page, ready to type in the new format.
+    public func focusActiveTextView() {
+        let tv = activeTextView ?? pages.first?.textView
+        tv?.window?.makeFirstResponder(tv)
+    }
+
     /// Whole-text snapshot undo for attribute edits (small letters → cheap & exact).
     private func withUndo(_ name: String, _ changes: () -> Void) {
         guard let storage = activeTextView?.textStorage else { changes(); return }
@@ -498,7 +516,7 @@ public final class EditorController: NSObject {
     public func toggleItalic() { toggleTrait(.italicFontMask, name: "Italic") }
 
     private func toggleTrait(_ trait: NSFontTraitMask, name: String) {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let range = tv.selectedRange()
         let fm = NSFontManager.shared
 
@@ -528,7 +546,7 @@ public final class EditorController: NSObject {
     }
 
     public func toggleUnderline() {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let range = tv.selectedRange()
         if range.length == 0 {
             let on = (tv.typingAttributes[.underlineStyle] as? Int ?? 0) != 0
@@ -565,7 +583,7 @@ public final class EditorController: NSObject {
     /// stops to every paragraph (and to typing attributes, so new paragraphs
     /// inherit them too). Indents remain per-paragraph.
     public func setTabStops(_ tabs: [NSTextTab]) {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
 
         if storage.length > 0 {
             withUndo("Tab Stops") {
@@ -588,7 +606,7 @@ public final class EditorController: NSObject {
     }
 
     private func modifyParagraphStyle(name: String, _ transform: @escaping (NSMutableParagraphStyle) -> Void) {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let ns = storage.string as NSString
 
         if storage.length == 0 {
@@ -620,7 +638,7 @@ public final class EditorController: NSObject {
     }
 
     private func applyFontTransform(name: String, _ transform: @escaping (NSFont) -> NSFont) {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let range = tv.selectedRange()
         if range.length == 0 {
             let current = (tv.typingAttributes[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 12)
@@ -638,7 +656,7 @@ public final class EditorController: NSObject {
     }
 
     public func setTextColor(_ color: NSColor) {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let range = tv.selectedRange()
         if range.length == 0 {
             tv.typingAttributes[.foregroundColor] = color
@@ -650,7 +668,7 @@ public final class EditorController: NSObject {
     }
 
     public func applyStyleRole(_ role: String) {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let ns = storage.string as NSString
         if storage.length == 0 {
             let id = model.body.first?.id ?? IDGenerator.next("p")
@@ -681,7 +699,7 @@ public final class EditorController: NSObject {
     /// new page. Implemented by flagging the paragraph that begins at the caret
     /// (splitting the current paragraph first if the caret is mid-paragraph).
     public func insertPageBreak() {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         withUndo("Insert Page Break") {
             let ns = storage.string as NSString
             let loc = min(tv.selectedRange().location, ns.length)
@@ -713,9 +731,13 @@ public final class EditorController: NSObject {
         return storage.attribute(.lucerneStyleRole, at: loc, effectiveRange: nil) as? String
     }
 
-    /// Attributes at the caret/selection start (or typing attributes), for toolbar sync.
+    /// Attributes for toolbar sync. With a real selection, read the run at its start;
+    /// with a collapsed caret, use the typing attributes — that's the format the next
+    /// typed character will take, so a bold/italic/etc. toggle made with no selection
+    /// is reflected on the toolbar instead of snapping back to the character behind.
     public func currentAttributes() -> [NSAttributedString.Key: Any] {
         guard let tv = activeTextView else { return [:] }
+        if tv.selectedRange().length == 0 { return tv.typingAttributes }
         if let storage = tv.textStorage, storage.length > 0 {
             let loc = min(tv.selectedRange().location, storage.length - 1)
             return storage.attributes(at: loc, effectiveRange: nil)
@@ -815,10 +837,13 @@ public final class EditorController: NSObject {
         return page + 1
     }
 
-    /// Sets the running header/footer and redraws (no reflow — they live in the margins).
-    public func updatePageFurniture(header: PageFurniture?, footer: PageFurniture?) {
+    /// Sets the running header/footer (and where page numbering starts) and redraws —
+    /// no reflow, they live in the margins. `pageNumberStart` is the 1-based physical
+    /// page that shows page number 1; earlier pages are unnumbered.
+    public func updatePageFurniture(header: PageFurniture?, footer: PageFurniture?, pageNumberStart: Int?) {
         model.header = header
         model.footer = footer
+        model.pageNumberStart = pageNumberStart
         updateFurniture()
         document?.editorDidChange()
     }
@@ -828,25 +853,33 @@ public final class EditorController: NSObject {
     public func refreshFurniture() { updateFurniture() }
 
     private func updateFurniture() {
-        let count = pages.count
         let date = EditorController.dateFormatter.string(from: Date())
         let header = model.header ?? PageFurniture()
         let footer = model.footer ?? PageFurniture()
+        // Page numbering starts at 1 on physical page `start`; earlier pages are
+        // unnumbered, and the total shown by {pages} counts only numbered pages.
+        let start = max(1, model.pageNumberStart ?? 1)
+        let numberedCount = max(0, pages.count - (start - 1))
         for (index, page) in pages.enumerated() {
+            let displayed: Int? = (index + 1) >= start ? (index + 1) - (start - 1) : nil
             let view = page.pageView
-            view.headerLeft = resolve(header.left, page: index + 1, of: count, date: date)
-            view.headerCenter = resolve(header.center, page: index + 1, of: count, date: date)
-            view.headerRight = resolve(header.right, page: index + 1, of: count, date: date)
-            view.footerLeft = resolve(footer.left, page: index + 1, of: count, date: date)
-            view.footerCenter = resolve(footer.center, page: index + 1, of: count, date: date)
-            view.footerRight = resolve(footer.right, page: index + 1, of: count, date: date)
+            view.headerLeft = resolve(header.left, page: displayed, of: numberedCount, date: date)
+            view.headerCenter = resolve(header.center, page: displayed, of: numberedCount, date: date)
+            view.headerRight = resolve(header.right, page: displayed, of: numberedCount, date: date)
+            view.footerLeft = resolve(footer.left, page: displayed, of: numberedCount, date: date)
+            view.footerCenter = resolve(footer.center, page: displayed, of: numberedCount, date: date)
+            view.footerRight = resolve(footer.right, page: displayed, of: numberedCount, date: date)
         }
     }
 
-    private func resolve(_ template: String, page: Int, of count: Int, date: String) -> String {
+    /// Substitutes the furniture tokens. `page` is nil on an unnumbered page (before
+    /// the numbering start): a zone that references a page number is then blanked so
+    /// you don't get "Page  of 3", while date/title-only zones still render.
+    private func resolve(_ template: String, page: Int?, of count: Int, date: String) -> String {
         guard !template.isEmpty else { return "" }
+        if page == nil, template.contains("{page}") || template.contains("{pages}") { return "" }
         return template
-            .replacingOccurrences(of: "{page}", with: "\(page)")
+            .replacingOccurrences(of: "{page}", with: page.map { "\($0)" } ?? "")
             .replacingOccurrences(of: "{pages}", with: "\(count)")
             .replacingOccurrences(of: "{date}", with: date)
             .replacingOccurrences(of: "{title}", with: documentTitle)
@@ -909,7 +942,7 @@ public final class EditorController: NSObject {
     /// of the document: one entry per heading, with the page number right-aligned at
     /// the margin. Page numbers are converged by re-laying out a couple of times.
     public func insertOrUpdateTableOfContents() {
-        guard let tv = activeTextView, let storage = tv.textStorage else { return }
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         ensureTOCStyle()
         withUndo("Table of Contents") {
             removeTOCParagraphs(in: storage)
@@ -954,14 +987,18 @@ public final class EditorController: NSObject {
     }
 
     private func buildTOCAttributed(headings: [HeadingItem], pages: [Int]) -> NSAttributedString {
+        let font = tocMeasuringFont()
         var tocModel = model
         tocModel.objects = []
         tocModel.body = zip(headings, pages).map { heading, page in
-            Paragraph(id: IDGenerator.next("toc"),
-                      style: EditorController.tocRole,
-                      indent: IndentModel(left: Double((heading.level - 1) * 18)),
-                      tabStops: [TabStopModel(pos: Double(metrics.contentSize.width), type: "right")],
-                      runs: [Run(text: "\(heading.title)\t\(page)")])
+            let leftIndent = Double((heading.level - 1) * 18)
+            // Left-aligned line with a measured dotted leader (no tab — Cocoa tabs
+            // have no leader fill), so the page number lands at the right margin.
+            return Paragraph(id: IDGenerator.next("toc"),
+                             style: EditorController.tocRole,
+                             indent: IndentModel(left: leftIndent),
+                             runs: [Run(text: tocLine(title: heading.title, page: page,
+                                                      leftIndent: CGFloat(leftIndent), font: font))])
         }
         let attributed = NSMutableAttributedString(
             attributedString: AttributedStringBuilder.attributedString(for: tocModel))
@@ -970,6 +1007,39 @@ public final class EditorController: NSObject {
             role: EditorController.tocRole, in: tocModel, paragraphID: IDGenerator.next("toc"))
         attributed.append(NSAttributedString(string: "\n", attributes: separator))
         return attributed
+    }
+
+    /// The font the ToC entries render in, so leader measurement matches layout.
+    private func tocMeasuringFont() -> NSFont {
+        let style = model.resolvedStyle(for: EditorController.tocRole)
+        return FontResolver.font(family: style.font, size: CGFloat(style.size ?? 12),
+                                 bold: style.bold ?? false, italic: style.italic ?? false)
+    }
+
+    /// "Title …… 12" — title, a dotted leader, then the page number near the right
+    /// margin. Falls back to two spaces when there's no room (e.g. a long title).
+    private func tocLine(title: String, page: Int, leftIndent: CGFloat, font: NSFont) -> String {
+        let available = metrics.contentSize.width - leftIndent
+        let dots = EditorController.leaderDotCount(title: title, page: "\(page)",
+                                                   availableWidth: available, font: font)
+        guard dots > 0 else { return "\(title)  \(page)" }
+        return "\(title) " + String(repeating: ".", count: dots) + " \(page)"
+    }
+
+    /// Pure, testable: how many '.' fit between `title` and a right-aligned `page`
+    /// number on a line `availableWidth` points wide, leaving a space each side of
+    /// the dots. Returns 0 when the title + number already fill (or overflow) the line.
+    static func leaderDotCount(title: String, page: String,
+                               availableWidth: CGFloat, font: NSFont) -> Int {
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let titleW = (title as NSString).size(withAttributes: attrs).width
+        let pageW = (page as NSString).size(withAttributes: attrs).width
+        let dotW = ("." as NSString).size(withAttributes: attrs).width
+        let spaceW = (" " as NSString).size(withAttributes: attrs).width
+        guard dotW > 0 else { return 0 }
+        let room = availableWidth - titleW - pageW - 2 * spaceW
+        guard room > dotW else { return 0 }
+        return max(0, Int(room / dotW))
     }
 
     /// Scrolls the given character into view and places the caret there.

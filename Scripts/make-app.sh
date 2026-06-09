@@ -39,6 +39,14 @@ rm -rf "$APP"
 mkdir -p "$MACOS_DIR" "$RES_DIR"
 cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
 cp "$ROOT/Scripts/Info.plist" "$CONTENTS/Info.plist"
+
+# Copy SPM resource bundles (e.g. Lucerne_Lucerne.bundle, which holds the icon.png
+# the About / Welcome windows load via Bundle.module) into Resources so they resolve
+# in the bundled app.
+BIN_DIR="$(dirname "$BIN_PATH")"
+for bundle in "$BIN_DIR"/*.bundle; do
+    [[ -d "$bundle" ]] && cp -R "$bundle" "$RES_DIR/"
+done
 # AppleScript dictionary (referenced by Info.plist OSAScriptingDefinition).
 [[ -f "$ROOT/Scripts/Lucerne.sdef" ]] && cp "$ROOT/Scripts/Lucerne.sdef" "$RES_DIR/Lucerne.sdef"
 

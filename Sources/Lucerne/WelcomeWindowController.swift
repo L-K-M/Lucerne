@@ -35,7 +35,8 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
         guard let content = window?.contentView else { return }
 
         let icon = NSImageView()
-        icon.image = NSApp.applicationIconImage
+        icon.image = AppIcon.image
+        icon.imageScaling = .scaleProportionallyUpOrDown
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.widthAnchor.constraint(equalToConstant: 84).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 84).isActive = true

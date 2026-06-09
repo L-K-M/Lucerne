@@ -32,15 +32,17 @@ The original exploration proposed five steps; the first four are done:
    every page. Set via a dialog (Insert ▸ Header & Footer…) and persisted as
    `header`/`footer` in `document.json`. They are *repeated margin content*, not
    part of the flowing `NSTextStorage`, so they don't interact with body reflow.
+   Numbering can start on a chosen page (`pageNumberStart`) so a title/contents page
+   stays unnumbered.
 3. ✅ **Heading navigator** — a sidebar (View ▸ Show Navigator) listing the
    document's headings, built by scanning body paragraphs for heading style roles;
    click an entry to scroll to it.
 4. ✅ **Printed table of contents** — Insert ▸ Table of Contents generates a block
-   of entries with right-aligned page numbers. Because inserting it shifts later
-   content (and thus the page numbers it lists), it **converges over a short
-   relayout loop** (≤3 passes), like the page-break bands. It's persisted as a
-   `toc` paragraph style and carries no special structure in the file (it's just
-   paragraphs); re-run the command to refresh it.
+   of entries with a **dotted leader** to a right-aligned page number. Because
+   inserting it shifts later content (and thus the page numbers it lists), it
+   **converges over a short relayout loop** (≤3 passes), like the page-break bands.
+   It's persisted as a `toc` paragraph style and carries no special structure in the
+   file (it's just paragraphs); re-run the command to refresh it.
 
 What remains from the original plan — **editable** headers/footers and **tables** —
 plus items learned along the way, is below, roughly in priority order.
@@ -70,18 +72,6 @@ for us — so tables do *not* require a new layout engine; they fit the current 
 - **Known hard parts:** a table row straddling a page boundary, and serializing the
   shared-table object graph faithfully. Ship rectangular, non-splitting tables
   first; document the limits.
-
-### Dotted leaders for the printed ToC · ~0.5–1 day
-
-The ToC right-aligns page numbers with a tab today; the classic look adds a dotted
-leader (`Chapter One .......... 12`). Cocoa's `NSTextTab` has **no** leader/fill
-support, so the approach is to **fill the gap with dots manually**: measure the
-title and number widths in the ToC font, divide the remaining line width by the
-dot-glyph width, and insert that many `.` characters between them (no tab needed —
-the dots push the number to the right edge). The dot count is a pure,
-unit-testable function; exact alignment needs on-device QA. Degrade gracefully:
-clamp to ≥0 dots and fall back to plain spacing when there's no room or the title
-wraps to a second line.
 
 ### Editable header/footer click-zones · ~3–5 days (almost all UI)
 

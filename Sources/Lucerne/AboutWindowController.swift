@@ -23,7 +23,7 @@ final class AboutWindowController: NSWindowController {
         let build = info?["CFBundleVersion"] as? String ?? "1"
 
         let icon = NSImageView()
-        icon.image = NSApp.applicationIconImage
+        icon.image = AppIcon.image
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.widthAnchor.constraint(equalToConstant: 128).isActive = true

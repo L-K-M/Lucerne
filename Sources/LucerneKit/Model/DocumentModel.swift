@@ -18,6 +18,10 @@ public struct LucerneDocumentModel: Codable, Equatable {
     public var objects: [PlacedObject]
     public var header: PageFurniture?
     public var footer: PageFurniture?
+    /// 1-based physical page on which the page number shown by `{page}` becomes 1.
+    /// Earlier pages are unnumbered (e.g. set to 3 to skip a title page and a
+    /// contents page). Absent / nil means every page is numbered starting at 1.
+    public var pageNumberStart: Int?
 
     public static let canonicalFormat = "lucerne-document"
     public static let currentFormatVersion = 1
@@ -29,7 +33,8 @@ public struct LucerneDocumentModel: Codable, Equatable {
                 body: [Paragraph],
                 objects: [PlacedObject],
                 header: PageFurniture? = nil,
-                footer: PageFurniture? = nil) {
+                footer: PageFurniture? = nil,
+                pageNumberStart: Int? = nil) {
         self.format = format
         self.formatVersion = formatVersion
         self.page = page
@@ -38,6 +43,7 @@ public struct LucerneDocumentModel: Codable, Equatable {
         self.objects = objects
         self.header = header
         self.footer = footer
+        self.pageNumberStart = pageNumberStart
     }
 
     /// The default style role applied to a paragraph that names a role we do not

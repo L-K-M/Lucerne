@@ -107,17 +107,31 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   margins per page; Insert ▸ Page Number and Insert ▸ Header & Footer…
 - [x] **Heading navigator** sidebar (View ▸ Show Navigator) listing headings;
   click to scroll to one. Built on `pageNumber(forCharacterAt:)` + `headingOutline()`.
-- [x] **Printed table of contents** (Insert ▸ Table of Contents) — entries with
-  right-aligned page numbers (converged via relayout), persisted as a `toc`
-  paragraph style; re-run to update
-- [ ] Editable header/footer click-zones, dotted ToC leaders, tables — `docs/roadmap.md`
+- [x] **Printed table of contents** (Insert ▸ Table of Contents) — entries with a
+  **dotted leader** to a right-aligned page number (converged via relayout),
+  persisted as a `toc` paragraph style; re-run to update
+- [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
+
+## On-device feedback (round 8)
+- [x] Formatting with **no selection** now works: a toolbar/menu command always has
+  a target text view, sets the typing attributes, and returns focus to the page so
+  the next typed text picks up the change
+- [x] **Insert ▸ Page Number** now sets a plain centered page number (`{page}`),
+  not the verbose "Page x of y" (Header & Footer… still does the full version)
+- [x] **Start page numbering** at a chosen page (Header & Footer… → "Numbered from
+  page") so a title page / contents page can be unnumbered; model `pageNumberStart`
+- [x] About / Welcome windows load the real icon from a **bundled resource** (shows
+  even when run unbundled), not just `NSApp.applicationIconImage`
+- [x] Reverted autosave-in-place → the unsaved-changes **dot** and save-on-close
+  prompt are back; crash recovery kept via **draft autosave** (`autosavesDrafts`)
+- [x] Dotted leaders on the printed table of contents (see round 6)
 
 ## On-device feedback (round 7)
 - [x] Custom About window with the app icon (replaces the stock panel)
 - [x] Toolbar Bold/Italic/Underline are a segmented control now, so the selected
   ones take the accent color (matching alignment)
-- [x] Crash/draft recovery via `NSDocument` autosave-in-place (untitled drafts are
-  recovered on relaunch); saved docs restore via macOS Resume
+- [x] Crash/draft recovery for never-saved documents via **draft autosave**
+  (untitled drafts are recovered on relaunch); saved docs restore via macOS Resume
 - [x] **Welcome window** on launch when nothing is open: recent documents +
   New / Open / New Sample Letter
 

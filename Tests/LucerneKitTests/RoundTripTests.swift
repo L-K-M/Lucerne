@@ -161,6 +161,59 @@ final class HistoryPrunerTests: XCTestCase {
     }
 }
 
+final class TableOfContentsLeaderTests: XCTestCase {
+
+    private let font = NSFont.systemFont(ofSize: 12)
+
+    func testMoreWidthFitsMoreDots() {
+        let narrow = EditorController.leaderDotCount(title: "Chapter One", page: "12",
+                                                     availableWidth: 220, font: font)
+        let wide = EditorController.leaderDotCount(title: "Chapter One", page: "12",
+                                                   availableWidth: 440, font: font)
+        XCTAssertGreaterThan(wide, narrow)
+    }
+
+    func testNoRoomYieldsNoDots() {
+        let n = EditorController.leaderDotCount(title: String(repeating: "x", count: 90), page: "100",
+                                                availableWidth: 60, font: font)
+        XCTAssertEqual(n, 0)
+    }
+
+    func testLeaderLineStaysWithinAvailableWidth() {
+        let width: CGFloat = 360
+        let title = "Introduction", page = "7"
+        let n = EditorController.leaderDotCount(title: title, page: page,
+                                                availableWidth: width, font: font)
+        XCTAssertGreaterThan(n, 0)
+        let line = "\(title) " + String(repeating: ".", count: n) + " \(page)"
+        let laidOut = (line as NSString).size(withAttributes: [.font: font]).width
+        XCTAssertLessThanOrEqual(laidOut, width + 0.5, "the leader line must not overflow the column")
+    }
+}
+
+final class FurnitureModelTests: XCTestCase {
+
+    func testHeaderFooterAndPageNumberStartRoundTripThroughJSON() throws {
+        var model = DefaultDocuments.empty()
+        model.header = PageFurniture(center: "{title}")
+        model.footer = PageFurniture(left: "{date}", center: "{page}")
+        model.pageNumberStart = 3
+
+        let data = try JSONEncoder().encode(model)
+        let decoded = try JSONDecoder().decode(LucerneDocumentModel.self, from: data)
+        XCTAssertEqual(decoded, model)
+        XCTAssertEqual(decoded.pageNumberStart, 3)
+    }
+
+    func testAbsentPageNumberStartDecodesAsNil() throws {
+        // A v1 file without the (additive, optional) key must still load.
+        let model = DefaultDocuments.empty()
+        let data = try JSONEncoder().encode(model)
+        let decoded = try JSONDecoder().decode(LucerneDocumentModel.self, from: data)
+        XCTAssertNil(decoded.pageNumberStart)
+    }
+}
+
 final class PageMetricsTests: XCTestCase {
 
     func testExclusionRectShiftsByMarginAndStandoff() {
