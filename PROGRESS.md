@@ -119,7 +119,10 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   (overrides `moveUp`/`moveDown`); at the table edge they step out normally
 - [x] **Select Table** (Format ▸ Table or the context menu) selects the whole table
   so it can be deleted/cut/copied as a unit
-- [ ] Cell merging — next
+- [x] **Merge cells** — select a rectangular block of cells and Format ▸ Table ▸
+  Merge Cells (or the context menu) merges them into one spanning cell; spans persist
+  (`cell.rowSpan`/`columnSpan`) and round-trip. (Structural row/column edits reset
+  merges back to a full grid.)
 
 ## On-device feedback (round 9)
 - [x] **Ruler units** default to **centimeters**, switchable in **Settings…** (⌘,);

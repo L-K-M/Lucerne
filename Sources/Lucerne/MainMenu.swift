@@ -165,6 +165,7 @@ enum MainMenu {
             add(tableMenu, "Insert Column Before", "lucerneInsertColumnBefore:")
             add(tableMenu, "Insert Column After", "lucerneInsertColumnAfter:")
             tableMenu.addItem(.separator())
+            add(tableMenu, "Merge Cells", "lucerneMergeCells:")
             add(tableMenu, "Delete Row", "lucerneDeleteRow:")
             add(tableMenu, "Delete Column", "lucerneDeleteColumn:")
             tableMenu.addItem(.separator())
