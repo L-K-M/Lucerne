@@ -1,4 +1,5 @@
 import Foundation
+import LucerneKit
 
 /// Fetches releases for a GitHub repository over the public REST API (no token —
 /// unauthenticated requests are rate-limited to 60/hour per IP, ample for a
