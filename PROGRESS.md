@@ -78,6 +78,14 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 - [x] `.luce` package round-trip (model + image bytes + content.md present)
 - [x] `PageMetrics` exclusion-rect + clamp geometry
 
+## On-device feedback (round 4)
+- [x] Zoom widget in the footer (− / % / +); click the % to reset to 100%
+- [x] Removed the toolbar separator lines (grouping via spacing instead)
+- [x] Drag images **between pages** — a moving image floats above pages, reflows
+  live onto whichever page it's over, and re-anchors there on drop (undoable)
+- [x] Page size moved to **File ▸ Page Setup** (drives the document page size and
+  printing); **Document Setup** now holds margins (+ room for more)
+
 ## On-device feedback (round 3)
 - [x] Insert Image removed from the toolbar (menu item kept)
 - [x] Dragging an image file/data onto a page makes a floating image at the drop

@@ -83,6 +83,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
                              pageWidth: metrics.pageSize.width)
         editor.selectionObserver = { [weak self] _ in self?.syncUI() }
         editor.onStatusHint = { [weak self] hint in self?.showStatus(hint) }
+        statusBar.onZoomIn = { [weak self] in self?.lucerneZoomIn(nil) }
+        statusBar.onZoomOut = { [weak self] in self?.lucerneZoomOut(nil) }
+        statusBar.onZoomReset = { [weak self] in self?.lucerneActualSize(nil) }
+        statusBar.setZoom(percent: 100)
     }
 
     public override func showWindow(_ sender: Any?) {
@@ -110,8 +114,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             return "Image selected — drag to move · drag a corner to resize (⇧ for free aspect) · ⌫ to delete"
         }
         let styleName = editor.currentStyleRole().flatMap { editor.model.styles[$0]?.name } ?? "Body"
-        let zoom = Int((scrollView.magnification * 100).rounded())
-        return "\(styleName)  ·  \(pageText)  ·  \(zoom)%"
+        return "\(styleName)  ·  \(pageText)"
     }
 
     public func windowDidResize(_ notification: Notification) {
@@ -173,8 +176,8 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     private func setMagnification(_ value: CGFloat) {
         scrollView.magnification = min(max(value, scrollView.minMagnification), scrollView.maxMagnification)
+        statusBar.setZoom(percent: Int((scrollView.magnification * 100).rounded()))
         (window?.contentView as? EditorContainerView)?.layoutContents()
-        showStatus(nil)
     }
 
     @objc func viewportChanged() {
@@ -186,14 +189,40 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     @objc func lucerneDocumentSetup(_ sender: Any?) {
         guard let window else { return }
         DocumentSetupSheet.present(from: window, config: editor.model.page) { [weak self] newConfig in
-            guard let self else { return }
-            self.editor.updatePageConfig(newConfig)
-            let metrics = self.editor.pageMetrics
-            self.ruler.updateGeometry(marginLeft: metrics.marginLeft, marginRight: metrics.marginRight,
-                                      pageWidth: metrics.pageSize.width)
-            (self.window?.contentView as? EditorContainerView)?.setPageWidth(metrics.pageSize.width)
-            self.syncUI()
+            self?.applyPageConfig(newConfig)
         }
+    }
+
+    // Page Setup chooses the page/paper size (A4, Letter, …). Implemented here —
+    // ahead of NSDocument in the responder chain — so it drives the document page
+    // size (and the ruler/canvas refresh) as well as the print paper size.
+    @objc func runPageLayout(_ sender: Any?) {
+        guard let doc = document as? NSDocument else { return }
+        if NSPageLayout().runModal(with: doc.printInfo) == NSApplication.ModalResponse.OK.rawValue {
+            applyPageSize(doc.printInfo.paperSize)
+        }
+    }
+
+    private func applyPageSize(_ paper: NSSize) {
+        let sizeKey: String
+        if approxEqual(paper, 595.28, 841.89) { sizeKey = "A4" }
+        else if approxEqual(paper, 612, 792) { sizeKey = "Letter" }
+        else { sizeKey = "custom" }
+        applyPageConfig(PageConfig(size: sizeKey, width: Double(paper.width), height: Double(paper.height),
+                                   margins: editor.model.page.margins))
+    }
+
+    private func approxEqual(_ size: NSSize, _ width: CGFloat, _ height: CGFloat) -> Bool {
+        abs(size.width - width) < 2 && abs(size.height - height) < 2
+    }
+
+    private func applyPageConfig(_ newConfig: PageConfig) {
+        editor.updatePageConfig(newConfig)
+        let metrics = editor.pageMetrics
+        ruler.updateGeometry(marginLeft: metrics.marginLeft, marginRight: metrics.marginRight,
+                             pageWidth: metrics.pageSize.width)
+        (window?.contentView as? EditorContainerView)?.setPageWidth(metrics.pageSize.width)
+        syncUI()
     }
 
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {

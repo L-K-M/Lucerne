@@ -10,6 +10,9 @@ public protocol FloatingImageViewDelegate: AnyObject {
     /// Mouse entered (true) or left (false) the image — used to show contextual
     /// help in the status bar.
     func floatingImageView(_ view: FloatingImageView, didHover entered: Bool)
+    /// A drag is starting. `isMove` is true for a body drag (the controller may
+    /// re-parent the view so it can cross page boundaries) and false for a resize.
+    func floatingImageView(_ view: FloatingImageView, beganDrag isMove: Bool)
 }
 
 // A free-placed image: a draggable, resizable view sitting above the page text.
@@ -101,9 +104,12 @@ public final class FloatingImageView: NSView {
         window?.makeFirstResponder(self)
         delegate?.floatingImageViewDidSelect(self)
         isSelected = true
+        dragMode = mode(forLocalPoint: convert(event.locationInWindow, from: nil))
+        // Let the controller re-parent a move before we capture the start frame, so
+        // frameAtDragStart / dragOrigin are in the (possibly new) superview's coords.
+        delegate?.floatingImageView(self, beganDrag: dragMode == .move)
         frameAtDragStart = frame
         dragOrigin = superview?.convert(event.locationInWindow, from: nil) ?? .zero
-        dragMode = mode(forLocalPoint: convert(event.locationInWindow, from: nil))
     }
 
     private func mode(forLocalPoint p: CGPoint) -> DragMode {

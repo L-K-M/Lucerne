@@ -85,13 +85,17 @@ public final class ToolbarView: NSView {
         fixedWidth(lineSpacingPopup, 64)
 
         stack = NSStackView(views: [
-            stylePopup, separator(), fontPopup, sizeCombo, separator(),
-            boldButton, italicButton, underlineButton, colorWell, separator(),
+            stylePopup, fontPopup, sizeCombo,
+            boldButton, italicButton, underlineButton, colorWell,
             alignControl, lineSpacingPopup
         ])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
+        // Group with extra spacing instead of separator lines.
+        stack.setCustomSpacing(18, after: stylePopup)
+        stack.setCustomSpacing(18, after: sizeCombo)
+        stack.setCustomSpacing(18, after: colorWell)
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
         stack.translatesAutoresizingMaskIntoConstraints = true
         stack.setContentHuggingPriority(.required, for: .horizontal)
@@ -132,14 +136,6 @@ public final class ToolbarView: NSView {
         button.target = self
         button.action = selector
         fixedWidth(button, 30)
-    }
-
-    private func separator() -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.heightAnchor.constraint(equalToConstant: 22).isActive = true
-        return box
     }
 
     private func registerHelp() {

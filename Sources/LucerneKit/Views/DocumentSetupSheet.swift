@@ -1,22 +1,13 @@
 import AppKit
 
-// A small modal sheet for editing the document's page size and margins. Calls
-// `apply` with the new PageConfig when the user confirms. Presented from the
-// window controller; applies via EditorController.updatePageConfig.
+// A small modal sheet for the document's margins (and room for future
+// document-level settings). The page *size* is chosen in File ▸ Page Setup, which
+// drives both printing and the document page size. Calls `apply` with an updated
+// PageConfig (same size, new margins) when confirmed.
 public enum DocumentSetupSheet {
 
     public static func present(from window: NSWindow, config: PageConfig,
                                apply: @escaping (PageConfig) -> Void) {
-        let sizePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        sizePopup.addItems(withTitles: ["A4", "Letter", "Custom"])
-        switch config.size.lowercased() {
-        case "a4": sizePopup.selectItem(withTitle: "A4")
-        case "letter": sizePopup.selectItem(withTitle: "Letter")
-        default: sizePopup.selectItem(withTitle: "Custom")
-        }
-
-        let widthField = numberField(config.width)
-        let heightField = numberField(config.height)
         let topField = numberField(config.margins.top)
         let leftField = numberField(config.margins.left)
         let bottomField = numberField(config.margins.bottom)
@@ -26,9 +17,6 @@ public enum DocumentSetupSheet {
             [NSTextField(labelWithString: title), field]
         }
         let grid = NSGridView(views: [
-            labeled("Page size:", sizePopup),
-            labeled("Width (pt):", widthField),
-            labeled("Height (pt):", heightField),
             labeled("Margin top:", topField),
             labeled("Margin left:", leftField),
             labeled("Margin bottom:", bottomField),
@@ -42,28 +30,19 @@ public enum DocumentSetupSheet {
 
         let alert = NSAlert()
         alert.messageText = "Document Setup"
-        alert.informativeText = "Page size and margins are in points (72 pt = 1 inch). "
-            + "Width and height apply when the size is Custom."
+        alert.informativeText = "Margins are in points (72 pt = 1 inch). "
+            + "Choose the page size in File ▸ Page Setup."
         alert.addButton(withTitle: "Apply")
         alert.addButton(withTitle: "Cancel")
         alert.accessoryView = grid
 
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
-            let sizeTitle = sizePopup.titleOfSelectedItem ?? "A4"
-            let width: Double, height: Double, sizeKey: String
-            switch sizeTitle {
-            case "Letter": sizeKey = "Letter"; width = 612; height = 792
-            case "Custom": sizeKey = "custom"
-                width = max(72, widthField.doubleValue)
-                height = max(72, heightField.doubleValue)
-            default: sizeKey = "A4"; width = 595.28; height = 841.89
-            }
             let margins = EdgeInsetsModel(top: max(0, topField.doubleValue),
                                           left: max(0, leftField.doubleValue),
                                           bottom: max(0, bottomField.doubleValue),
                                           right: max(0, rightField.doubleValue))
-            apply(PageConfig(size: sizeKey, width: width, height: height, margins: margins))
+            apply(PageConfig(size: config.size, width: config.width, height: config.height, margins: margins))
         }
     }
 

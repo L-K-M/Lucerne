@@ -40,6 +40,8 @@ public final class EditorController: NSObject {
 
     public private(set) weak var activeTextView: PageTextView?
     private weak var selectedImageView: FloatingImageView?
+    private var dragStartPlacement: (page: Int?, frame: RectModel?)?
+    private var movingImageID: String?
 
     private var isUpdatingLayout = false
     private let maxPages = 2000     // safety cap against pathological geometry
@@ -453,19 +455,6 @@ public final class EditorController: NSObject {
         document?.editorDidChange()
     }
 
-    private func setObjectFrame(id: String, to newFrame: CGRect, undoName: String) {
-        guard let index = model.objects.firstIndex(where: { $0.id == id }) else { return }
-        let clamped = metrics.clampObjectFrame(newFrame)
-        let previous = model.objects[index].frame
-        model.objects[index].frame = RectModel(clamped)
-        if let view = imageViews[id], view.frame != clamped { view.frame = clamped }
-        relayoutAfterObjectChange(page: model.objects[index].page)
-        registerObjectUndo(undoName) { controller in
-            controller.setObjectFrame(id: id, to: (previous ?? RectModel(clamped)).cgRect, undoName: undoName)
-        }
-        document?.editorDidChange()
-    }
-
     private func registerObjectUndo(_ name: String, _ action: @escaping (EditorController) -> Void) {
         guard let undo = document?.editorUndoManager else { return }
         undo.registerUndo(withTarget: self) { action($0) }
@@ -870,24 +859,90 @@ extension EditorController: FloatingImageViewDelegate {
         selectionObserver?(self)
     }
 
+    public func floatingImageView(_ view: FloatingImageView, beganDrag isMove: Bool) {
+        if let object = model.objects.first(where: { $0.id == view.objectID }) {
+            dragStartPlacement = (object.page, object.frame)
+        }
+        movingImageID = isMove ? view.objectID : nil
+        // Bring the image's page to the front so the image stays visible while it's
+        // dragged over neighbouring pages (the image itself is not re-parented until
+        // the drag commits, which keeps mouse tracking intact).
+        if isMove, let pageView = view.superview as? PageContainerView {
+            canvasView.addSubview(pageView)
+        }
+    }
+
     public func floatingImageView(_ view: FloatingImageView, didChangeFrameLive frame: CGRect) {
         guard let index = model.objects.firstIndex(where: { $0.id == view.objectID }) else { return }
-        let clamped = metrics.clampObjectFrame(frame)
-        if clamped != frame { view.frame = clamped }
-        model.objects[index].frame = RectModel(clamped)
+        if view.objectID == movingImageID, let pageView = view.superview {
+            // Moving: map the view's (page-space) frame through the canvas to find
+            // which page it's over now, so text reflows on that page live.
+            let canvasFrame = pageView.convert(frame, to: canvasView)
+            let target = pageIndex(forCanvasPoint: CGPoint(x: canvasFrame.midX, y: canvasFrame.midY))
+            model.objects[index].page = target
+            model.objects[index].frame = RectModel(canvasView.convert(canvasFrame, to: pages[target].pageView))
+        } else {
+            // Resizing within the page: `frame` is already in page coordinates.
+            model.objects[index].frame = RectModel(frame)
+        }
         relayoutText(syncImages: false)   // paginateAndExclude recomputes wrap from the model
     }
 
     public func floatingImageView(_ view: FloatingImageView, didCommitFrom oldFrame: CGRect, to newFrame: CGRect) {
-        guard let index = model.objects.firstIndex(where: { $0.id == view.objectID }) else { return }
-        // The live updates already moved the model to `newFrame`; reset to `oldFrame`
-        // then route through setObjectFrame so a single undo step is recorded.
-        model.objects[index].frame = RectModel(oldFrame)
-        setObjectFrame(id: view.objectID, to: newFrame, undoName: "Move Image")
+        let previous = dragStartPlacement
+        dragStartPlacement = nil
+        let moving = view.objectID == movingImageID
+        movingImageID = nil
+
+        let targetPage: Int
+        let targetFrame: RectModel
+        if moving, let pageView = view.superview {
+            let canvasFrame = pageView.convert(newFrame, to: canvasView)
+            targetPage = pageIndex(forCanvasPoint: CGPoint(x: canvasFrame.midX, y: canvasFrame.midY))
+            let pageRelative = canvasView.convert(canvasFrame, to: pages[targetPage].pageView)
+            targetFrame = RectModel(metrics.clampObjectFrame(pageRelative))
+        } else {
+            targetPage = model.objects.first(where: { $0.id == view.objectID })?.page ?? 0
+            targetFrame = RectModel(metrics.clampObjectFrame(newFrame))
+        }
+        // applyPlacement → relayout(syncImages:true) re-parents the image into its
+        // target page (and restores normal page z-order) via syncImageViews.
+        applyPlacement(id: view.objectID, page: targetPage, frame: targetFrame,
+                       previous: previous, undoName: moving ? "Move Image" : "Resize Image")
     }
 
     public func floatingImageViewRequestsDelete(_ view: FloatingImageView) {
         removeObject(id: view.objectID, undoName: "Delete Image")
+    }
+
+    /// Sets a placed object's page + frame and re-parents its view into that page
+    /// (via syncImageViews). `previous` is the pre-drag placement to restore on undo.
+    private func applyPlacement(id: String, page: Int, frame: RectModel,
+                                previous: (page: Int?, frame: RectModel?)?, undoName: String) {
+        guard let index = model.objects.firstIndex(where: { $0.id == id }) else { return }
+        let restore = previous ?? (model.objects[index].page, model.objects[index].frame)
+        model.objects[index].page = page
+        model.objects[index].frame = frame
+        relayoutText(syncImages: true)
+        registerObjectUndo(undoName) { controller in
+            controller.applyPlacement(id: id, page: restore.page ?? page, frame: restore.frame ?? frame,
+                                      previous: (page, frame), undoName: undoName)
+        }
+        document?.editorDidChange()
+    }
+
+    /// The page whose view contains the given canvas-space point, or the vertically
+    /// nearest page if the point is in a gap.
+    private func pageIndex(forCanvasPoint point: CGPoint) -> Int {
+        for (index, page) in pages.enumerated() where page.pageView.frame.contains(point) { return index }
+        var best = 0
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for (index, page) in pages.enumerated() {
+            let f = page.pageView.frame
+            let dy: CGFloat = point.y < f.minY ? f.minY - point.y : (point.y > f.maxY ? point.y - f.maxY : 0)
+            if dy < bestDistance { bestDistance = dy; best = index }
+        }
+        return best
     }
 
     public func floatingImageView(_ view: FloatingImageView, didHover entered: Bool) {
