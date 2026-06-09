@@ -733,10 +733,11 @@ public final class EditorController: NSObject {
               let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let table = AttributedStringBuilder.makeTextTable(columns: columns)
         let cells = NSMutableAttributedString()
+        let equalWidth = 100.0 / CGFloat(columns)
         for r in 0 ..< rows {
             for c in 0 ..< columns {
                 let block = AttributedStringBuilder.makeTableBlock(
-                    table: table, row: r, column: c, rowSpan: 1, columnSpan: 1)
+                    table: table, row: r, column: c, rowSpan: 1, columnSpan: 1, widthPercent: equalWidth)
                 cells.append(NSAttributedString(string: "\n", attributes: tableCellAttributes(block: block)))
             }
         }
@@ -933,9 +934,16 @@ public final class EditorController: NSObject {
                 } else {
                     span = (1, 1)
                 }
-                // A cell spanning multiple columns is as wide as those columns combined.
-                let widthPercent: CGFloat? = columnWidths.map { widths in
-                    CGFloat((c ..< min(c + span.cols, widths.count)).reduce(0.0) { $0 + widths[$1] })
+                // 1×1 cells carry an explicit per-column width; a column-spanning cell
+                // gets none, so NSTextTable derives it from the columns it covers
+                // (forcing a summed width on it misaligns the boundaries).
+                let widthPercent: CGFloat?
+                if span.cols > 1 {
+                    widthPercent = nil
+                } else if let widths = columnWidths, c < widths.count {
+                    widthPercent = CGFloat(widths[c])
+                } else {
+                    widthPercent = 100.0 / CGFloat(max(1, columns))
                 }
                 let block = AttributedStringBuilder.makeTableBlock(
                     table: table, row: r, column: c, rowSpan: span.rows, columnSpan: span.cols,
