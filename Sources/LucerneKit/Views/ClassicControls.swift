@@ -79,6 +79,36 @@ enum ClassicChrome {
         NSRect(x: rect.minX, y: rect.maxY - 2, width: rect.width, height: 1).fill()
     }
 
+    // MARK: Window silhouette
+
+    /// The classic pre–Big Sur window shape: standard rounded top corners over
+    /// gently rounded bottom corners. Shared by ClassicWindow's corner mask and
+    /// the floating palettes' hand-drawn chrome, so every Lucerne window —
+    /// document or palette — has the same silhouette.
+    static let windowTopCornerRadius: CGFloat = 10   // ≈ the system's own top radius
+    static let windowBottomCornerRadius: CGFloat = 5
+
+    static func windowSilhouette(in rect: NSRect,
+                                 top: CGFloat = windowTopCornerRadius,
+                                 bottom: CGFloat = windowBottomCornerRadius) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: rect.minX + bottom, y: rect.minY))
+        path.line(to: NSPoint(x: rect.maxX - bottom, y: rect.minY))
+        path.appendArc(withCenter: NSPoint(x: rect.maxX - bottom, y: rect.minY + bottom),
+                       radius: bottom, startAngle: 270, endAngle: 360)
+        path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - top))
+        path.appendArc(withCenter: NSPoint(x: rect.maxX - top, y: rect.maxY - top),
+                       radius: top, startAngle: 0, endAngle: 90)
+        path.line(to: NSPoint(x: rect.minX + top, y: rect.maxY))
+        path.appendArc(withCenter: NSPoint(x: rect.minX + top, y: rect.maxY - top),
+                       radius: top, startAngle: 90, endAngle: 180)
+        path.line(to: NSPoint(x: rect.minX, y: rect.minY + bottom))
+        path.appendArc(withCenter: NSPoint(x: rect.minX + bottom, y: rect.minY + bottom),
+                       radius: bottom, startAngle: 180, endAngle: 270)
+        path.close()
+        return path
+    }
+
     /// Stacked up/down chevrons (the pop-up arrow well glyph), centered at `cx/cy`.
     static func drawStackedChevrons(cx: CGFloat, cy: CGFloat, active: Bool) {
         arrowColor(active).setFill()
@@ -394,6 +424,16 @@ class ClassicPopUp: NSControl {
         if send { sendAction(action, to: target) }
     }
 
+    /// Subclass hook: the bezel state the control draws in when idle (a chooser
+    /// deferring to an open floating palette draws sunken).
+    var idleBezelState: ClassicChrome.BezelState { .normal }
+
+    /// Subclass hook: the glyph in the hairline arrow well — stacked chevrons by
+    /// default.
+    func drawArrowWellGlyph(cx: CGFloat, cy: CGFloat, active: Bool) {
+        ClassicChrome.drawStackedChevrons(cx: cx, cy: cy, active: active)
+    }
+
     /// Presents the control's chooser; the default pops the item menu over the
     /// control like NSPopUpButton.
     func presentChoices() {
@@ -416,7 +456,7 @@ class ClassicPopUp: NSControl {
     override func draw(_ dirtyRect: NSRect) {
         let active = ClassicChrome.active(for: self)
         let outline = ClassicChrome.bezelOutline(in: bounds)
-        let state: ClassicChrome.BezelState = isPressed ? .pressed : .normal
+        let state: ClassicChrome.BezelState = isPressed ? .pressed : idleBezelState
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
         ClassicChrome.bezelGradient(state, active: active).draw(in: bounds, angle: 90)
@@ -428,8 +468,8 @@ class ClassicPopUp: NSControl {
         outline.lineWidth = 1
         outline.stroke()
         drawTitle(active: active)
-        ClassicChrome.drawStackedChevrons(cx: bounds.width - arrowZoneWidth / 2 - 0.5,
-                                          cy: bounds.height / 2, active: active)
+        drawArrowWellGlyph(cx: bounds.width - arrowZoneWidth / 2 - 0.5,
+                           cy: bounds.height / 2, active: active)
     }
 
     private func drawTitle(active: Bool) {
@@ -448,8 +488,9 @@ class ClassicPopUp: NSControl {
     }
 }
 
-/// A ClassicPopUp shell whose click presents a custom chooser (the font try-on
-/// picker) instead of an item menu; the closed control shows `title`.
+/// A ClassicPopUp shell whose click presents a custom chooser (the typeface or
+/// style try-on picker) instead of an item menu; the closed control shows
+/// `title`.
 final class ClassicChooserControl: ClassicPopUp {
 
     var onPresent: (() -> Void)?
@@ -458,7 +499,35 @@ final class ClassicChooserControl: ClassicPopUp {
         didSet { needsDisplay = true }
     }
 
+    /// When the control's chooser lives in the app-global floating palette, the
+    /// control draws "engaged elsewhere": sunken bezel, and a tiny floating-
+    /// window glyph in place of the chevrons. Clicking then summons the palette
+    /// (the onPresent handler decides) instead of opening a second picker.
+    var representsOpenPalette = false {
+        didSet { needsDisplay = true }
+    }
+
     override var displayTitle: String? { title.isEmpty ? nil : title }
+
+    override var idleBezelState: ClassicChrome.BezelState {
+        representsOpenPalette ? .on : .normal
+    }
+
+    override func drawArrowWellGlyph(cx: CGFloat, cy: CGFloat, active: Bool) {
+        guard representsOpenPalette else {
+            return super.drawArrowWellGlyph(cx: cx, cy: cy, active: active)
+        }
+        // A miniature floating window: an outlined pane under a filled title bar.
+        let color = ClassicChrome.arrowColor(active)
+        let frame = NSRect(x: (cx - 5).rounded() + 0.5, y: (cy - 4.5).rounded() + 0.5,
+                           width: 10, height: 9)
+        color.setStroke()
+        let outline = NSBezierPath(rect: frame)
+        outline.lineWidth = 1
+        outline.stroke()
+        color.setFill()
+        NSRect(x: frame.minX + 0.5, y: frame.maxY - 2.5, width: frame.width - 1, height: 2).fill()
+    }
 
     override func presentChoices() { onPresent?() }
 }
@@ -808,13 +877,11 @@ public final class ClassicInsetBox: NSView {
 /// corners over gently rounded bottom corners. Modern macOS rounds all four
 /// corners equally and has no public API to change that, so this answers the
 /// private `_cornerMask` hook AppKit consults for the window's shape (and
-/// shadow) with a 9-sliced template rounded `topCornerRadius` on top and
-/// `bottomCornerRadius` on the bottom. If a future macOS stops consulting the
-/// hook, the window simply keeps the stock corners — nothing else depends on it.
+/// shadow) with a 9-sliced template of `ClassicChrome.windowSilhouette` — the
+/// same shape the floating palettes draw. If a future macOS stops consulting
+/// the hook, the window simply keeps the stock corners — nothing else depends
+/// on it.
 public final class ClassicWindow: NSWindow {
-
-    private static let topCornerRadius: CGFloat = 10   // ≈ the system's own top radius
-    private static let bottomCornerRadius: CGFloat = 5
 
     public override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask,
                          backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
@@ -829,27 +896,12 @@ public final class ClassicWindow: NSWindow {
     @objc func _cornerMask() -> NSImage? { Self.shapeTemplate }
 
     private static let shapeTemplate: NSImage = {
-        let top = topCornerRadius
-        let bottom = bottomCornerRadius
+        let top = ClassicChrome.windowTopCornerRadius
+        let bottom = ClassicChrome.windowBottomCornerRadius
         let size = NSSize(width: top * 2 + 2, height: top + bottom + 2)
         let image = NSImage(size: size, flipped: false) { rect in
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: rect.minX + bottom, y: rect.minY))
-            path.line(to: NSPoint(x: rect.maxX - bottom, y: rect.minY))
-            path.appendArc(withCenter: NSPoint(x: rect.maxX - bottom, y: rect.minY + bottom),
-                           radius: bottom, startAngle: 270, endAngle: 360)
-            path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - top))
-            path.appendArc(withCenter: NSPoint(x: rect.maxX - top, y: rect.maxY - top),
-                           radius: top, startAngle: 0, endAngle: 90)
-            path.line(to: NSPoint(x: rect.minX + top, y: rect.maxY))
-            path.appendArc(withCenter: NSPoint(x: rect.minX + top, y: rect.maxY - top),
-                           radius: top, startAngle: 90, endAngle: 180)
-            path.line(to: NSPoint(x: rect.minX, y: rect.minY + bottom))
-            path.appendArc(withCenter: NSPoint(x: rect.minX + bottom, y: rect.minY + bottom),
-                           radius: bottom, startAngle: 180, endAngle: 270)
-            path.close()
             NSColor.black.setFill()
-            path.fill()
+            ClassicChrome.windowSilhouette(in: rect).fill()
             return true
         }
         image.capInsets = NSEdgeInsets(top: top, left: top, bottom: bottom, right: top)

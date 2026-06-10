@@ -7,7 +7,9 @@ import UniformTypeIdentifiers
 // in sync with the current selection.
 public final class DocumentWindowController: NSWindowController, NSWindowDelegate, NSMenuItemValidation {
 
-    private let editor: EditorController
+    // Internal so the app-global floating palettes can act on whichever document
+    // window is currently main.
+    let editor: EditorController
     private let toolbar = ToolbarView(frame: .zero)
     private let ruler = LucerneRulerView()
     private let scrollView = NSScrollView()
@@ -160,7 +162,14 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         toolbar.syncFromSelection()
         ruler.refresh()
         showStatus(nil)
+        // Open palettes highlight the front document's current face/style; let
+        // them track this window's caret while it's the active one.
+        if window?.isMainWindow == true { FloatingPalette.syncOpenPalettes() }
     }
+
+    /// A floating palette applied formatting to this window's document — refresh
+    /// the bars to match.
+    func paletteDidApplyFormatting() { syncUI() }
 
     /// Show a transient hint, or (when `hint` is nil) the default "what you're
     /// doing" status: current paragraph style and page count.
