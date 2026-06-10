@@ -122,11 +122,11 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   floating-window glyph in the arrow well, re-worded hover help — and clicking
   it summons the palette instead of spawning a second one
 - [x] **Classic palette chrome** — the palette is a borderless panel drawn in the
-  app's own chrome rather than a stock titled window: the shared ClassicWindow
-  silhouette (same top/bottom corner radii as the document windows), a
-  **half-height title bar** with engraved lettering and a classic square close
-  box (replacing the popover's clear-button-style close), gradient body, and a
-  hairline border
+  app's own chrome rather than a stock titled window: the ClassicWindow
+  silhouette with a tighter top radius for the small panel, a **half-height
+  title bar** with engraved lettering and a small red close dot (the standard
+  close button at palette scale, replacing the popover's clear-button-style
+  close), gradient body, and a hairline border
 - [x] **Palettes don't steal focus** — non-activating utility panel
   (`becomesKeyOnlyIfNeeded`): clicking rows applies to the document without
   taking key status; only typing in the filter field claims the keyboard, and

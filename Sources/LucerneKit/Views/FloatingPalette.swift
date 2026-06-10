@@ -273,17 +273,21 @@ final class ClassicPaletteWindow: NSPanel {
 
 // MARK: - Palette chrome
 
-/// Draws the palette's classic shell: the shared ClassicWindow silhouette
-/// (standard top corners over gently rounded bottom ones — the same radii as
-/// the document windows), a half-height title bar in the bar gradient with
-/// engraved lettering and a classic square close box, the panel-gradient body,
-/// and a hairline window border. Palettes hide when the app deactivates, so the
-/// chrome always draws at full (active) strength.
+/// Draws the palette's classic shell: the ClassicWindow silhouette with a
+/// tighter top radius (a small panel reads better with less sweep), a
+/// half-height title bar in the bar gradient with engraved lettering and a
+/// small red close dot — the standard close button at palette scale — the
+/// panel-gradient body, and a hairline window border. Palettes hide when the
+/// app deactivates, so the chrome always draws at full (active) strength.
 final class PaletteChromeView: NSView {
 
     /// Half the standard title bar — the classic cue that this isn't a document
     /// window.
     static let titleBarHeight: CGFloat = 16
+
+    /// Tighter than the document windows' top radius; the bottom keeps the
+    /// shared gentle rounding.
+    private static let topCornerRadius: CGFloat = 6
 
     var onClose: (() -> Void)?
     private let title: String
@@ -317,11 +321,11 @@ final class PaletteChromeView: NSView {
 
     private var closeBoxRect: NSRect {
         let bar = titleBarRect
-        return NSRect(x: 6, y: bar.minY + ((bar.height - 11) / 2).rounded(), width: 11, height: 11)
+        return NSRect(x: 6, y: bar.minY + ((bar.height - 9) / 2).rounded(), width: 9, height: 9)
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let silhouette = ClassicChrome.windowSilhouette(in: bounds)
+        let silhouette = ClassicChrome.windowSilhouette(in: bounds, top: Self.topCornerRadius)
         NSGraphicsContext.saveGraphicsState()
         silhouette.addClip()
 
@@ -337,7 +341,8 @@ final class PaletteChromeView: NSView {
         NSGraphicsContext.restoreGraphicsState()
 
         NSColor(calibratedWhite: 0.45, alpha: 1).setStroke()
-        let border = ClassicChrome.windowSilhouette(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+        let border = ClassicChrome.windowSilhouette(in: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                                    top: Self.topCornerRadius)
         border.lineWidth = 1
         border.stroke()
 
@@ -353,13 +358,16 @@ final class PaletteChromeView: NSView {
     }
 
     private func drawCloseBox() {
-        let box = closeBoxRect
-        ClassicChrome.bezelGradient(closeBoxPressed ? .pressed : .normal, active: true)
-            .draw(in: box.insetBy(dx: 1, dy: 1), angle: 90)
-        ClassicChrome.bezelBorder(true).setStroke()
-        let outline = NSBezierPath(rect: box.insetBy(dx: 0.5, dy: 0.5))
-        outline.lineWidth = 1
-        outline.stroke()
+        // The standard red close button at palette scale (9 pt vs the usual 12),
+        // darkening while pressed like the real one.
+        let circle = NSBezierPath(ovalIn: closeBoxRect.insetBy(dx: 0.5, dy: 0.5))
+        (closeBoxPressed
+            ? NSColor(calibratedRed: 0.78, green: 0.27, blue: 0.25, alpha: 1)
+            : NSColor(calibratedRed: 1.00, green: 0.37, blue: 0.34, alpha: 1)).setFill()
+        circle.fill()
+        NSColor(calibratedRed: 0.88, green: 0.27, blue: 0.24, alpha: 1).setStroke()
+        circle.lineWidth = 1
+        circle.stroke()
     }
 
     // MARK: - Mouse: close box tracking + title-bar dragging
@@ -373,7 +381,7 @@ final class PaletteChromeView: NSView {
         }
     }
 
-    /// Classic close-box behavior: sunken while the mouse is inside, fires on
+    /// Close-button tracking: darkened while the mouse is inside, fires on
     /// release inside.
     private func trackCloseBox(with event: NSEvent) {
         let hitRect = closeBoxRect.insetBy(dx: -3, dy: -3)
