@@ -7,7 +7,7 @@ final class AboutWindowController: NSWindowController {
     /// Version shown when the bundle's Info.plist can't be read — chiefly an unbundled
     /// `swift run`. The bundled app prefers `CFBundleShortVersionString` (stamped from
     /// the release tag); this constant is kept in step by `Scripts/release.sh`.
-    static let fallbackVersion = "0.2.0"
+    static let fallbackVersion = "0.3.0"
 
     convenience init() {
         let window = NSWindow(
