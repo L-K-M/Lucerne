@@ -70,6 +70,12 @@ public enum LuceArchive {
 
         var images: [String: Data] = [:]
         for entry in entries where entry.name.hasPrefix(imagesPrefix) && !entry.name.hasSuffix("/") {
+            // Accept only flat, well-formed names ("images/<file>"). Today these
+            // names are just dictionary keys, but a hostile archive could carry
+            // "images/../../x" — reject the zip-slip shape now so a future
+            // "extract images" feature can't be caught out by it.
+            let filename = (entry.name as NSString).lastPathComponent
+            guard !filename.isEmpty, entry.name == imagesPrefix + filename else { continue }
             images[entry.name] = entry.data
         }
 
