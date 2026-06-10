@@ -518,9 +518,11 @@ final class ClassicChooserControl: ClassicPopUp {
             return super.drawArrowWellGlyph(cx: cx, cy: cy, active: active)
         }
         // A miniature floating window: an outlined pane under a filled title bar.
+        // 8 pt square so it centers crisply in the well with the same side
+        // margins as the chevrons (a wider box crowds the control's right edge).
         let color = ClassicChrome.arrowColor(active)
-        let frame = NSRect(x: (cx - 5).rounded() + 0.5, y: (cy - 4.5).rounded() + 0.5,
-                           width: 10, height: 9)
+        let frame = NSRect(x: (cx - 4.5).rounded() + 0.5, y: (cy - 4.5).rounded() + 0.5,
+                           width: 8, height: 8)
         color.setStroke()
         let outline = NSBezierPath(rect: frame)
         outline.lineWidth = 1
