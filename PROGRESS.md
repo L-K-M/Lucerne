@@ -112,6 +112,35 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## Design feedback (round 15)
+- [x] **App-global floating palettes** — the torn-off Typefaces window grew into a
+  proper classic palette (`Views/FloatingPalette.swift`): one per kind for the
+  whole app, floating above every document, applying each pick to whichever
+  document window is *main* (switch windows and its list/selection re-syncs, and
+  the highlight tracks the caret). While one floats, the matching chooser on
+  every window's format bar draws "engaged elsewhere" — sunken bezel, a tiny
+  floating-window glyph in the arrow well, re-worded hover help — and clicking
+  it summons the palette instead of spawning a second one
+- [x] **Classic palette chrome** — the palette is a borderless panel drawn in the
+  app's own chrome rather than a stock titled window: the ClassicWindow
+  silhouette with a tighter top radius for the small panel, a **half-height
+  title bar** with engraved lettering and a small red close dot (the standard
+  close button at palette scale, replacing the popover's clear-button-style
+  close), gradient body, and a hairline border
+- [x] **Palettes don't steal focus** — non-activating utility panel
+  (`becomesKeyOnlyIfNeeded`): clicking rows applies to the document without
+  taking key status; only typing in the filter field claims the keyboard, and
+  Return/Esc hand it straight back to the page. Palettes hide when the app
+  deactivates, like classic floating windows
+- [x] **Styles tear off too** — the paragraph-style pop-up became the same try-on
+  picker as typefaces (each style listed as its own specimen, live preview on
+  the selected paragraphs, one undo per attached session) and drags off into a
+  global Styles palette
+- [x] Under the hood: `FontPickerPopover` generalized into `TryOnPopover` +
+  `PickerListView` (one specimen-list UI shared by popovers and palettes), and
+  `EditorController.beginFontPreview/endFontPreview` into
+  `beginFormatPreview/endFormatPreview(commit:actionName:)`
+
 ## Design feedback (round 14)
 - [x] **New windows size to their screen** — `initialLayout` now scales the window
   *and* zoom to the display: it enlarges past 100% (capped 160%) on roomy screens

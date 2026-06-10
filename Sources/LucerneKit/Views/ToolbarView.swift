@@ -20,9 +20,13 @@ public final class ToolbarView: NSView {
     private let styleRoles = DefaultDocuments.styleRoleOrder
     private let styleNames: [String]
 
-    private let stylePopup = ClassicPopUp(width: 112)
+    private static let tryOnHint = "↑↓ try on your letter  ·  Return keep  ·  Esc revert  ·  drag off to float"
+
+    private let styleControl = ClassicChooserControl(width: 112)
+    private let stylePicker = TryOnPopover(hint: ToolbarView.tryOnHint)
     private let fontControl = ClassicChooserControl(width: 146)
-    private let fontPicker = FontPickerPopover()
+    private let fontPicker = TryOnPopover(hint: ToolbarView.tryOnHint)
+    private var paletteObserver: NSObjectProtocol?
     private let sizeField = ClassicSizeField(
         presets: ["9", "10", "11", "12", "14", "18", "24", "36", "48", "72"], width: 46)
     private let formatControl = ClassicSegmentedControl(
@@ -53,6 +57,10 @@ public final class ToolbarView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    deinit {
+        if let paletteObserver { NotificationCenter.default.removeObserver(paletteObserver) }
+    }
+
     public override func draw(_ dirtyRect: NSRect) {
         let active = ClassicChrome.active(for: self)
         ClassicChrome.gradient(top: active ? 0.965 : 0.975,
@@ -69,8 +77,8 @@ public final class ToolbarView: NSView {
     public var preferredContentWidth: CGFloat { stack.fittingSize.width }
 
     private func build() {
-        stylePopup.addItems(withTitles: styleNames)
-        stylePopup.target = self; stylePopup.action = #selector(styleChanged)
+        styleControl.title = styleNames.first ?? "Body"
+        styleControl.onPresent = { [weak self] in self?.presentStylePicker() }
 
         fontControl.onPresent = { [weak self] in self?.presentFontPicker() }
 
@@ -83,8 +91,16 @@ public final class ToolbarView: NSView {
         lineSpacingPopup.addItems(withTitles: lineSpacings.map(\.0))
         lineSpacingPopup.target = self; lineSpacingPopup.action = #selector(lineSpacingChanged)
 
+        // Keep the choosers honest about the app-global palettes: while one
+        // floats, the matching control on EVERY window draws "engaged elsewhere"
+        // and summons it rather than spawning a second.
+        paletteObserver = NotificationCenter.default.addObserver(
+            forName: FloatingPalette.visibilityDidChangeNotification, object: nil,
+            queue: .main) { [weak self] _ in self?.paletteVisibilityChanged() }
+        paletteVisibilityChanged()   // a window opened while palettes already float
+
         stack = NSStackView(views: [
-            stylePopup, separator(),
+            styleControl, separator(),
             fontControl, sizeField, separator(),
             formatControl, separator(),
             colorWell, separator(),
@@ -110,9 +126,15 @@ public final class ToolbarView: NSView {
     private func separator() -> NSView { EtchedSeparatorView(frame: .zero) }
 
     private func registerHelp() {
+        let styleHelp = FloatingPalette.styles.isOpen
+            ? "Styles live in the floating palette — click to bring it to the front"
+            : "Paragraph style — try styles live on your letter: ↑↓ to browse, Return to keep, Esc to revert"
+        let fontHelp = FloatingPalette.typefaces.isOpen
+            ? "Typefaces live in the floating palette — click to bring it to the front"
+            : "Typeface — try faces live on your letter: ↑↓ to browse, Return to keep, Esc to revert"
         let entries: [(NSView, String)] = [
-            (stylePopup, "Paragraph style — apply a named style (Body, Heading 1, …) to the selected paragraphs"),
-            (fontControl, "Typeface — try faces live on your letter: ↑↓ to browse, Return to keep, Esc to revert"),
+            (styleControl, styleHelp),
+            (fontControl, fontHelp),
             (sizeField, "Font size in points for the selected text"),
             (formatControl, "Bold (⌘B), Italic (⌘I), Underline (⌘U)"),
             (colorWell, "Text color for the selection"),
@@ -121,6 +143,14 @@ public final class ToolbarView: NSView {
         ]
         helpItems = entries
         for (view, help) in entries { view.toolTip = help }
+    }
+
+    /// A palette opened or closed somewhere: flip the matching chooser between
+    /// "opens the picker" and "lives in the palette" (and re-word its help).
+    private func paletteVisibilityChanged() {
+        fontControl.representsOpenPalette = FloatingPalette.typefaces.isOpen
+        styleControl.representsOpenPalette = FloatingPalette.styles.isOpen
+        registerHelp()
     }
 
     // MARK: - Hover help
@@ -151,31 +181,56 @@ public final class ToolbarView: NSView {
 
     // MARK: - Actions
 
-    @objc private func styleChanged() {
-        let index = stylePopup.indexOfSelectedItem
-        guard styleRoles.indices.contains(index) else { return }
-        editor?.applyStyleRole(styleRoles[index])
-        returnFocusToPage()
-    }
-    /// Opens the font try-on picker: a popover that previews each highlighted
-    /// family on the document live, committing or reverting as one undo step. Drag
-    /// it off the control to tear it into a floating palette that stays open; in
-    /// that mode each pick is its own committed edit.
+    /// Opens the typeface try-on picker: a popover that previews each highlighted
+    /// family on the document live, committing or reverting as one undo step.
+    /// Drag it off the control to tear it into the app-global floating Typefaces
+    /// palette; while that palette is open, the control summons it instead.
     private func presentFontPicker() {
+        guard FloatingPalette.typefaces.isOpen == false else {
+            FloatingPalette.typefaces.bringToFront()
+            return
+        }
         guard let editor, !fontPicker.isActive else { return }
         let current = (editor.currentAttributes()[.font] as? NSFont)?.familyName
-        editor.beginFontPreview()
-        fontPicker.present(from: fontControl, current: current) { [weak self] family in
-            self?.editor?.previewFontFamily(family)
-            self?.fontControl.title = family
-        } onApply: { [weak self] family in
-            self?.editor?.setFontFamily(family)
-            self?.fontControl.title = family
+        editor.beginFormatPreview()
+        fontPicker.present(from: fontControl, palette: .typefaces,
+                           items: FloatingPalette.typefaceItems(), currentID: current,
+                           specimenFont: FloatingPalette.typefaceSpecimenFont) { [weak self] item in
+            self?.editor?.setFontFamily(item.id)
+            self?.fontControl.title = item.title
         } onDetach: { [weak self] in
-            self?.editor?.endFontPreview(commit: true)
+            self?.editor?.endFormatPreview(commit: true, actionName: "Font")
         } onFinish: { [weak self] commit in
             guard let self else { return }
-            self.editor?.endFontPreview(commit: commit)
+            self.editor?.endFormatPreview(commit: commit, actionName: "Font")
+            self.syncFromSelection()
+            self.returnFocusToPage()
+        }
+    }
+
+    /// The paragraph-style twin of presentFontPicker: each style listed as its
+    /// own specimen, previewed live on the selected paragraphs, and tearable
+    /// into the global Styles palette.
+    private func presentStylePicker() {
+        guard FloatingPalette.styles.isOpen == false else {
+            FloatingPalette.styles.bringToFront()
+            return
+        }
+        guard let editor, !stylePicker.isActive else { return }
+        editor.beginFormatPreview()
+        stylePicker.present(from: styleControl, palette: .styles,
+                            items: FloatingPalette.styleItems(styles: editor.model.styles),
+                            currentID: editor.currentStyleRole(),
+                            specimenFont: { [weak self] item in
+            FloatingPalette.styleSpecimenFont(role: item.id, styles: self?.editor?.model.styles)
+        }) { [weak self] item in
+            self?.editor?.applyStyleRole(item.id)
+            self?.styleControl.title = item.title
+        } onDetach: { [weak self] in
+            self?.editor?.endFormatPreview(commit: true, actionName: "Apply Style")
+        } onFinish: { [weak self] commit in
+            guard let self else { return }
+            self.editor?.endFormatPreview(commit: commit, actionName: "Apply Style")
             self.syncFromSelection()
             self.returnFocusToPage()
         }
@@ -217,8 +272,12 @@ public final class ToolbarView: NSView {
 
     public func syncFromSelection() {
         guard let editor else { return }
-        if let role = editor.currentStyleRole(), let index = styleRoles.firstIndex(of: role) {
-            stylePopup.selectItem(at: index)
+        if let role = editor.currentStyleRole() {
+            // Prefer the document's own style names (files can customise them);
+            // fall back to the default table, then the raw role.
+            styleControl.title = editor.model.styles[role]?.name
+                ?? styleRoles.firstIndex(of: role).map { styleNames[$0] }
+                ?? role
         }
 
         let attrs = editor.currentAttributes()
