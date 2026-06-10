@@ -56,7 +56,12 @@ public enum LuceArchive {
     // MARK: - Read
 
     public static func read(_ data: Data) throws -> Contents {
-        let entries = try MiniZip.entries(from: data)
+        // Strict integrity for the authoritative content (document.json, images/);
+        // a bit-rotted recovery entry (content.md, history/*) is dropped rather
+        // than blocking the whole document — those exist for best-effort recovery.
+        let entries = try MiniZip.entries(from: data, droppingCorruptEntriesWhere: { name in
+            name != documentEntryName && !name.hasPrefix(imagesPrefix)
+        })
 
         guard let documentEntry = entries.first(where: { $0.name == documentEntryName }) else {
             throw ArchiveError.missingDocument
