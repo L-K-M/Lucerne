@@ -1,4 +1,5 @@
 import AppKit
+import LucerneKit
 
 /// Drop-in "is there a newer release on GitHub?" checker.
 ///
@@ -132,9 +133,13 @@ final class UpdateChecker: ObservableObject {
                 self.lastCheckDate = Date()
                 self.defaults.set(self.lastCheckDate, forKey: self.key("lastCheck"))
 
-                guard let remote = SemanticVersion(release.tagName),
-                      let current = SemanticVersion(self.configuration.currentVersion) else {
+                guard let current = SemanticVersion(self.configuration.currentVersion) else {
                     if userInitiated { self.presentUpToDate() }
+                    return
+                }
+                guard let remote = SemanticVersion(release.tagName) else {
+                    // Don't claim "up to date" about a release we couldn't interpret.
+                    if userInitiated { self.presentUnrecognizedRelease(release.tagName) }
                     return
                 }
                 if remote > current {
@@ -207,6 +212,16 @@ final class UpdateChecker: ObservableObject {
         let alert = NSAlert()
         alert.messageText = "You're up to date"
         alert.informativeText = "\(configuration.appName) \(configuration.currentVersion) is the latest version."
+        alert.addButton(withTitle: "OK")
+        _ = runModal(alert)
+    }
+
+    @MainActor
+    private func presentUnrecognizedRelease(_ tagName: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't check for updates"
+        alert.informativeText = "The latest release is tagged “\(tagName)”, which doesn't look like a version number."
         alert.addButton(withTitle: "OK")
         _ = runModal(alert)
     }

@@ -3,7 +3,14 @@ import Foundation
 /// Downloads a release asset into the user's Downloads folder, picking a
 /// non-colliding filename. Reusable across apps — depends only on Foundation.
 struct UpdateDownloader {
-    var session: URLSession = .shared
+    /// A session with a resource timeout, so a stalled download eventually fails
+    /// (and the caller's release-page fallback kicks in) instead of hanging forever.
+    var session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30          // per chunk of progress
+        configuration.timeoutIntervalForResource = 15 * 60    // whole-file ceiling
+        return URLSession(configuration: configuration)
+    }()
     var fileManager: FileManager = .default
 
     /// Downloads `asset` to `~/Downloads`, returning the saved file URL.
