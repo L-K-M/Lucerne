@@ -119,7 +119,7 @@ on these views.
 | `Sources/LucerneKit/Model/` | Codable `document.json` model + Markdown export |
 | `Sources/LucerneKit/Text/` | model ⇆ `NSAttributedString` bridge (`.lucerne*` attributes) |
 | `Sources/LucerneKit/Layout/` | page metrics, pagination, exclusion paths |
-| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, navigator, status bar, sheets, floating images |
+| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, navigator, status bar, sheets, floating images, try-on pickers + app-global floating palettes |
 | `Sources/LucerneKit/IO/` | `MiniZip`, `.luce` archive read/write, version history, `NSDocument`, printing |
 | `Sources/LucerneKit/Document/` | `EditorController` + window controller tying model↔views together |
 | `Sources/LucerneKit/Support/` | small AppKit helpers (color↔hex, image↔data, geometry bridge) |
