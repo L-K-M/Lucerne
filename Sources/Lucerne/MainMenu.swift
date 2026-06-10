@@ -103,19 +103,25 @@ enum MainMenu {
             add(menu, "Delete", "delete:", key: "")
             add(menu, "Select All", "selectAll:", key: "a")
             menu.addItem(.separator())
+            // Lucerne's own Find panel: the legacy NSTextView find panel was never
+            // enabled on the page text views, and it can't navigate the one-text-
+            // view-per-page layout anyway (a match may lie in another page's
+            // container). These route to DocumentWindowController.
             let find = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
             let findMenu = NSMenu(title: "Find")
-            let findAction = #selector(NSTextView.performFindPanelAction(_:))
-            let findItem = findMenu.addItem(withTitle: "Find…", action: findAction, keyEquivalent: "f")
-            findItem.tag = 1   // NSFindPanelActionShowFindPanel
-            findMenu.addItem(withTitle: "Find Next", action: findAction, keyEquivalent: "g").tag = 2
-            findMenu.addItem(withTitle: "Find Previous", action: findAction, keyEquivalent: "G").tag = 3
+            add(findMenu, "Find…", "lucerneShowFindPanel:", key: "f")
+            add(findMenu, "Find Next", "lucerneFindNext:", key: "g")
+            add(findMenu, "Find Previous", "lucerneFindPrevious:", key: "G")
             find.submenu = findMenu
             menu.addItem(find)
             let spelling = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")
             let spellingMenu = NSMenu(title: "Spelling and Grammar")
             spellingMenu.addItem(withTitle: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
             spellingMenu.addItem(withTitle: "Check Document Now", action: #selector(NSText.checkSpelling(_:)), keyEquivalent: ";")
+            spellingMenu.addItem(.separator())
+            spellingMenu.addItem(withTitle: "Check Spelling While Typing",
+                                 action: #selector(NSTextView.toggleContinuousSpellChecking(_:)),
+                                 keyEquivalent: "")
             spelling.submenu = spellingMenu
             menu.addItem(spelling)
         }
@@ -209,6 +215,8 @@ enum MainMenu {
             add(menu, "Zoom In", "lucerneZoomIn:", key: "+")
             add(menu, "Zoom Out", "lucerneZoomOut:", key: "-")
             add(menu, "Actual Size", "lucerneActualSize:", key: "0")
+            add(menu, "Fit Page", "lucerneZoomToFitPage:", key: "0", modifiers: [.command, .shift])
+            add(menu, "Fit Width", "lucerneZoomToFitWidth:")
         }
     }
 

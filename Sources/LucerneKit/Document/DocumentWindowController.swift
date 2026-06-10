@@ -13,6 +13,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     private let scrollView = NSScrollView()
     private let statusBar = StatusBarView(frame: .zero)
     private let navigator = NavigatorView(frame: .zero)
+    private lazy var findPanel = FindPanelController(editor: editor)
 
     public init(editor: EditorController) {
         self.editor = editor
@@ -174,7 +175,26 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             return "Image selected — drag to move · drag a corner to resize (⇧ for free aspect) · ⌫ to delete"
         }
         let styleName = editor.currentStyleRole().flatMap { editor.model.styles[$0]?.name } ?? "Body"
-        return "\(styleName)  ·  \(pageText)"
+        let words = wordCount()
+        let wordText = words == 1 ? "1 word" : "\(words) words"
+        return "\(styleName)  ·  \(pageText)  ·  \(wordText)"
+    }
+
+    // The classic Document Info statistic, kept live in the status bar. Counting
+    // is O(text), so it's cached by length: selection-only changes (clicks, arrow
+    // keys) reuse the cached count and only edits recount.
+    private var cachedWordCount: (length: Int, words: Int) = (-1, 0)
+
+    private func wordCount() -> Int {
+        let ns = editor.textStorage.string as NSString
+        if cachedWordCount.length == ns.length { return cachedWordCount.words }
+        var count = 0
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: [.byWords, .substringNotRequired]) { _, _, _, _ in
+            count += 1
+        }
+        cachedWordCount = (ns.length, count)
+        return count
     }
 
     public func windowDidResize(_ notification: Notification) {
@@ -228,11 +248,35 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     @objc func lucerneStandoffIncrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: 4) }
     @objc func lucerneStandoffDecrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: -4) }
 
+    // MARK: - Find
+
+    @objc func lucerneShowFindPanel(_ sender: Any?) { findPanel.showPanel() }
+    @objc func lucerneFindNext(_ sender: Any?) { findPanel.findNext() }
+    @objc func lucerneFindPrevious(_ sender: Any?) { findPanel.findPrevious() }
+
     // MARK: - Zoom
 
     @objc func lucerneZoomIn(_ sender: Any?) { setMagnification(scrollView.magnification * 1.25) }
     @objc func lucerneZoomOut(_ sender: Any?) { setMagnification(scrollView.magnification / 1.25) }
     @objc func lucerneActualSize(_ sender: Any?) { setMagnification(1) }
+    @objc func lucerneZoomToFitPage(_ sender: Any?) { setMagnification(fitZoom(wholePage: true)) }
+    @objc func lucerneZoomToFitWidth(_ sender: Any?) { setMagnification(fitZoom(wholePage: false)) }
+
+    /// The magnification at which the page fits the viewport (whole page, or width
+    /// only), framed by the canvas's gray insets. The clip view's frame is in
+    /// window points; the canvas — page *and* insets, layoutPages always reserves
+    /// page + insets — is drawn scaled by the magnification, so the largest
+    /// scrollbar-free magnification is visible / (page + insets).
+    private func fitZoom(wholePage: Bool) -> CGFloat {
+        let page = editor.pageMetrics.pageSize
+        guard page.width > 0, page.height > 0 else { return 1 }
+        let canvas = editor.canvasView
+        let visible = scrollView.contentView.frame.size
+        let fitWidth = visible.width / (page.width + 2 * canvas.sideInset)
+        guard wholePage else { return fitWidth }
+        let fitHeight = visible.height / (page.height + canvas.topInset + canvas.bottomInset)
+        return min(fitWidth, fitHeight)
+    }
 
     private func setMagnification(_ value: CGFloat) {
         scrollView.magnification = min(max(value, scrollView.minMagnification), scrollView.maxMagnification)
