@@ -137,7 +137,8 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 ## Design feedback (round 16)
 - [x] **Menu icons on the high-traffic commands** — a restrained set of template
   SF Symbols now leads the most-used items (New, Open…, Save…, Export as PDF…,
-  Print…, Find…, Bold/Italic/Underline, Insert ▸ Image…/Table…). Added via a
+  Print…, Find…, Bold/Italic/Underline, Format ▸ Style Library…, Insert ▸
+  Image…/Table…). Added via a
   `symbol:` argument on `MainMenu.add`; template images take the menu's text
   color, so they read in light and dark menus. The rest of the menus stay
   icon-free so they don't turn into icon soup.

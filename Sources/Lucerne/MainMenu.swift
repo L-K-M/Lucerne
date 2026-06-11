@@ -173,7 +173,7 @@ enum MainMenu {
             stylesMenu.delegate = StyleMenuDelegate.shared
             styles.submenu = stylesMenu
             menu.addItem(styles)
-            add(menu, "Style Library…", "lucerneShowStyleLibrary:")
+            add(menu, "Style Library…", "lucerneShowStyleLibrary:", symbol: "paintpalette")
 
             let table = NSMenuItem(title: "Table", action: nil, keyEquivalent: "")
             let tableMenu = NSMenu(title: "Table")
