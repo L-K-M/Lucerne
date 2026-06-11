@@ -1,24 +1,44 @@
 import AppKit
 
-/// One row of a try-on picker or floating palette: a stable identity (a font
-/// family name or a paragraph-style role) plus the title shown for it.
+/// One row of a try-on picker, floating palette, or the Style Library window: a
+/// stable identity (a font family name or a paragraph-style key) plus the title
+/// shown for it. `dimmed` rows draw in secondary gray (the palette's library
+/// section); a `separator` row is an unselectable section caption.
 struct PickerItem: Equatable {
     let id: String
     let title: String
+    var dimmed: Bool = false
+    var isSeparator: Bool = false
+
+    static func separator(_ title: String) -> PickerItem {
+        PickerItem(id: "separator:\(title)", title: title, dimmed: true, isSeparator: true)
+    }
 }
 
-/// The shared specimen-list UI used by the attached try-on popovers and the
-/// floating palettes: a filter field over a one-column table whose rows draw in
-/// a per-item specimen font (the list is the specimen book), with a hint line
-/// underneath. Moving the selection — clicks, ↑↓ from the filter field, or
-/// filtering itself — reports through `onPick` without dismissing anything;
-/// Return/double-click and Esc report through `onCommit`/`onCancel`.
+/// The shared specimen-list UI used by the attached try-on popovers, the floating
+/// palettes, and the Style Library window: a filter field over a one-column table
+/// whose rows draw in a per-item specimen font (the list is the specimen book),
+/// with a hint line underneath. Moving the selection — clicks, ↑↓ from the filter
+/// field, or filtering itself — reports through `onPick` without dismissing
+/// anything; Return and Esc report through `onCommit`/`onCancel`.
+///
+/// Optional extras (off by default so the popovers stay lean):
+///   • `onEdit` — rows grow a small pencil well (shown on hover), and a
+///     double-click edits instead of committing (STYLES.md §6.1).
+///   • `allowsReordering` + `onReorder` — rows can be dragged to reorder (the
+///     Style Library window; disabled while a filter is active).
 final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
 
     /// Selection landed on an item by user action (click, arrows, filter).
     var onPick: ((PickerItem) -> Void)?
     var onCommit: (() -> Void)?
     var onCancel: (() -> Void)?
+    /// When set, rows show an edit well and double-click means "edit".
+    var onEdit: ((PickerItem) -> Void)?
+    /// Drag-to-reorder (only meaningful with no separators and no filter).
+    var allowsReordering = false
+    /// The full item list in its new order, after a drag.
+    var onReorder: (([PickerItem]) -> Void)?
     /// Resolves the font a row is drawn in — lazily, per visible row, so listing
     /// every installed family doesn't load every installed font up front.
     var specimenFont: (PickerItem) -> NSFont = { _ in .systemFont(ofSize: 13) }
@@ -30,8 +50,12 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
     private let searchField = NSSearchField()
     private let tableView = KeyCommandTableView()
     private let scroll = NSScrollView()
+    private let hintLabel: NSTextField
+
+    private static let reorderType = NSPasteboard.PasteboardType("ch.lkmc.lucerne.picker-row")
 
     init(hint: String) {
+        hintLabel = NSTextField(labelWithString: hint)
         super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 400))
 
         searchField.placeholderString = "Filter"
@@ -50,6 +74,7 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
         tableView.doubleAction = #selector(rowDoubleClicked)
         tableView.onCommit = { [weak self] in self?.onCommit?() }
         tableView.onCancel = { [weak self] in self?.onCancel?() }
+        tableView.registerForDraggedTypes([Self.reorderType])
 
         scroll.documentView = tableView
         scroll.hasVerticalScroller = true
@@ -57,7 +82,6 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
         scroll.drawsBackground = true
         scroll.backgroundColor = .white
 
-        let hintLabel = NSTextField(labelWithString: hint)
         hintLabel.font = NSFont.systemFont(ofSize: 10)
         hintLabel.textColor = NSColor(calibratedWhite: 0.45, alpha: 1)
         hintLabel.alignment = .center
@@ -84,6 +108,8 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    func setHint(_ hint: String) { hintLabel.stringValue = hint }
+
     override func draw(_ dirtyRect: NSRect) {
         // Hairline rules above and below the list, so the white well reads as
         // inset on the palette's gradient body.
@@ -96,7 +122,9 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
     // MARK: - Items & selection
 
     var selectedItem: PickerItem? {
-        filtered.indices.contains(tableView.selectedRow) ? filtered[tableView.selectedRow] : nil
+        guard filtered.indices.contains(tableView.selectedRow) else { return nil }
+        let item = filtered[tableView.selectedRow]
+        return item.isSeparator ? nil : item
     }
 
     func setItems(_ newItems: [PickerItem]) {
@@ -139,8 +167,14 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
     private func step(_ delta: Int) {
         guard !filtered.isEmpty else { return }
         let current = tableView.selectedRow
-        let next = current < 0 ? (delta > 0 ? 0 : filtered.count - 1)
+        var next = current < 0 ? (delta > 0 ? 0 : filtered.count - 1)
                                : max(0, min(filtered.count - 1, current + delta))
+        // Skip section captions (stopping at the list edge if only captions remain).
+        while filtered.indices.contains(next), filtered[next].isSeparator {
+            let stepped = next + (delta > 0 ? 1 : -1)
+            guard filtered.indices.contains(stepped) else { return }
+            next = stepped
+        }
         selectRow(next, pick: true)
     }
 
@@ -149,8 +183,16 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
         onPick?(item)
     }
 
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        filtered.indices.contains(row) && !filtered[row].isSeparator
+    }
+
     @objc private func rowDoubleClicked() {
-        onCommit?()
+        if let onEdit, let item = selectedItem {
+            onEdit(item)
+        } else {
+            onCommit?()
+        }
     }
 
     // MARK: - Search field: live filter; arrows steer the list without leaving it
@@ -158,7 +200,7 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
     private func refilter(preserving id: String?) {
         let query = searchField.stringValue.trimmingCharacters(in: .whitespaces)
         filtered = query.isEmpty ? items
-            : items.filter { $0.title.localizedCaseInsensitiveContains(query) }
+            : items.filter { !$0.isSeparator && $0.title.localizedCaseInsensitiveContains(query) }
         tableView.reloadData()
         if let id, let row = filtered.firstIndex(where: { $0.id == id }) {
             selectRow(row, pick: false)
@@ -194,18 +236,180 @@ final class PickerListView: NSView, NSTableViewDataSource, NSTableViewDelegate, 
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let id = NSUserInterfaceItemIdentifier("cell")
-        let field = (tableView.makeView(withIdentifier: id, owner: self) as? NSTextField) ?? {
-            let f = NSTextField(labelWithString: "")
-            f.identifier = id
-            f.lineBreakMode = .byTruncatingTail
-            return f
+        let cell = (tableView.makeView(withIdentifier: id, owner: self) as? PickerRowView) ?? {
+            let v = PickerRowView()
+            v.identifier = id
+            return v
         }()
         let item = filtered[row]
-        field.stringValue = item.title
-        // Each row shown in its own face — the list is the specimen book.
-        field.font = specimenFont(item)
-        field.toolTip = item.title
-        return field
+        cell.configure(item: item,
+                       font: item.isSeparator ? .systemFont(ofSize: 9, weight: .medium) : specimenFont(item),
+                       showsEditWell: onEdit != nil && !item.isSeparator)
+        cell.onEdit = { [weak self] in
+            guard let self else { return }
+            self.select(id: item.id)
+            self.onEdit?(item)
+        }
+        return cell
+    }
+
+    // MARK: - Drag to reorder (the Style Library window)
+
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        guard allowsReordering, searchField.stringValue.isEmpty,
+              filtered.indices.contains(row), !filtered[row].isSeparator else { return nil }
+        let item = NSPasteboardItem()
+        item.setString(String(row), forType: Self.reorderType)
+        return item
+    }
+
+    func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo,
+                   proposedRow row: Int, proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+        guard allowsReordering, searchField.stringValue.isEmpty,
+              info.draggingSource as? NSTableView === tableView else { return [] }
+        tableView.setDropRow(row, dropOperation: .above)
+        return .move
+    }
+
+    func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo,
+                   row: Int, dropOperation: NSTableView.DropOperation) -> Bool {
+        guard allowsReordering,
+              let string = info.draggingPasteboard.string(forType: Self.reorderType),
+              let from = Int(string), items.indices.contains(from) else { return false }
+        var to = max(0, min(row, items.count))
+        let moved = items.remove(at: from)
+        if to > from { to -= 1 }
+        items.insert(moved, at: to)
+        refilter(preserving: moved.id)
+        onReorder?(items)
+        return true
+    }
+}
+
+// MARK: - Row view (specimen label + optional edit well)
+
+/// A list row: the specimen label, plus — when the list is editable — a small
+/// classic edit well (a pencil in a bezel) shown while the pointer is over the
+/// row (STYLES.md §6.1).
+private final class PickerRowView: NSView {
+
+    var onEdit: (() -> Void)?
+
+    private let label = NSTextField(labelWithString: "")
+    private let editWell = PickerEditWell()
+    private var showsEditWell = false
+    private var editWellWidth: NSLayoutConstraint!
+
+    init() {
+        super.init(frame: .zero)
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        editWell.translatesAutoresizingMaskIntoConstraints = false
+        editWell.isHidden = true
+        addSubview(label)
+        addSubview(editWell)
+        editWellWidth = editWell.widthAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: editWell.leadingAnchor, constant: -4),
+            editWell.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            editWell.centerYAnchor.constraint(equalTo: centerYAnchor),
+            editWellWidth,
+            editWell.heightAnchor.constraint(equalToConstant: 16)
+        ])
+        editWell.target = self
+        editWell.action = #selector(editPressed)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func configure(item: PickerItem, font: NSFont, showsEditWell: Bool) {
+        label.stringValue = item.isSeparator ? item.title.uppercased() : item.title
+        label.font = font
+        label.textColor = item.dimmed ? NSColor(calibratedWhite: 0.45, alpha: 1) : .labelColor
+        label.toolTip = item.title
+        self.showsEditWell = showsEditWell
+        // Reserve the well's width only in editable lists, so the popovers'
+        // specimen labels keep their full row.
+        editWellWidth.constant = showsEditWell ? 19 : 0
+        editWell.isHidden = true
+        updateTrackingAreas()
+    }
+
+    @objc private func editPressed() { onEdit?() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        guard showsEditWell else { return }
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if showsEditWell { editWell.isHidden = false }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        editWell.isHidden = true
+    }
+}
+
+/// The hand-drawn pencil well: a miniature classic bezel with a pencil glyph,
+/// at row scale.
+private final class PickerEditWell: NSControl {
+
+    private var isPressed = false
+
+    init() { super.init(frame: .zero) }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var needsPanelToBecomeKey: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        needsDisplay = true
+        if inside { sendAction(action, to: target) }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let active = ClassicChrome.active(for: self)
+        let outline = ClassicChrome.bezelOutline(in: bounds, radius: 3)
+        NSGraphicsContext.saveGraphicsState()
+        outline.addClip()
+        ClassicChrome.bezelGradient(isPressed ? .pressed : .normal, active: active).draw(in: bounds, angle: 90)
+        NSGraphicsContext.restoreGraphicsState()
+        ClassicChrome.bezelBorder(active).setStroke()
+        outline.lineWidth = 1
+        outline.stroke()
+
+        // The pencil: a slanted shaft with a small nib triangle at its point.
+        let color = ClassicChrome.glyphColor(active)
+        color.setStroke()
+        let shaft = NSBezierPath()
+        shaft.move(to: NSPoint(x: bounds.midX - 1.5, y: bounds.midY - 1.5))
+        shaft.line(to: NSPoint(x: bounds.midX + 3.5, y: bounds.midY + 3.5))
+        shaft.lineWidth = 2
+        shaft.stroke()
+        color.setFill()
+        let nib = NSBezierPath()
+        nib.move(to: NSPoint(x: bounds.midX - 3.5, y: bounds.midY - 3.5))
+        nib.line(to: NSPoint(x: bounds.midX - 1.0, y: bounds.midY - 1.0))
+        nib.line(to: NSPoint(x: bounds.midX - 3.0, y: bounds.midY - 1.5))
+        nib.close()
+        nib.fill()
     }
 }
 

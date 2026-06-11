@@ -21,11 +21,17 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     public override init() {
         super.init()
         hasUndoManager = true
+        // A NEW document's stylesheet is the built-in defaults overlaid by the
+        // user's style library (STYLES.md S6) — copy-on-use: the library is
+        // copied in here and never referenced again, so the file stays
+        // self-contained. Opening an existing file replaces pendingModel wholesale.
+        pendingModel.styles = StyleLibrary.shared.seededStyles()
     }
 
     /// Used for the first-launch demo document (see AppDelegate).
     public func loadSampleContent() {
         pendingModel = DefaultDocuments.sampleLetter()
+        pendingModel.styles = StyleLibrary.shared.seededStyles()
     }
 
     // Keep the classic, predictable save UX: the unsaved-changes dot in the close

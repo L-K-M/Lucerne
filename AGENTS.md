@@ -119,8 +119,8 @@ on these views.
 | `Sources/LucerneKit/Model/` | Codable `document.json` model + Markdown export |
 | `Sources/LucerneKit/Text/` | model ⇆ `NSAttributedString` bridge (`.lucerne*` attributes) |
 | `Sources/LucerneKit/Layout/` | page metrics, pagination, exclusion paths |
-| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, navigator, status bar, sheets, floating images, try-on pickers + app-global floating palettes |
-| `Sources/LucerneKit/IO/` | `MiniZip`, `.luce` archive read/write, version history, `NSDocument`, printing |
+| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, navigator, status bar, sheets, floating images, try-on pickers + app-global floating palettes, the style editor panel + Style Library window |
+| `Sources/LucerneKit/IO/` | `MiniZip`, `.luce` archive read/write, version history, the global style library (`styles.json`), `NSDocument`, printing |
 | `Sources/LucerneKit/Document/` | `EditorController` + window controller tying model↔views together |
 | `Sources/LucerneKit/Support/` | small AppKit helpers (color↔hex, image↔data, geometry bridge) |
 
@@ -157,6 +157,10 @@ on these views.
   carried as a custom attribute (`.lucerneStyleRole`) so they survive round-trips
   instead of being guessed from font size.
 - Custom attributed-string keys live in `Text/LucerneAttributes.swift`.
+- **Style definitions are baked into the storage at apply time.** Editing a
+  definition must re-apply it (`EditorController.applyStylesheetChange`, the S3
+  engine in STYLES.md) — never mutate `model.styles` for an in-use role without
+  it, or the next save pins the old look as overrides on every paragraph.
 - Prefer small, testable free functions for math; keep AppKit out of `Model/`.
 
 ## Gotchas / known limitations (keep this honest)

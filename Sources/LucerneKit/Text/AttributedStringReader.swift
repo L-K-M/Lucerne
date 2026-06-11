@@ -138,8 +138,11 @@ public enum AttributedStringReader {
         let size = Double(font.pointSize)
         if abs(size - (styleDef.size ?? 12)) > eps { run.size = size }
 
-        if let underline = attrs[.underlineStyle] as? Int, underline != 0 {
-            run.underline = true
+        // Stored only when it differs from the style (style-level underline is an
+        // additive field; for styles without it this is the old "true only" rule).
+        let underlined = ((attrs[.underlineStyle] as? Int) ?? 0) != 0
+        if underlined != (styleDef.underline ?? false) {
+            run.underline = underlined
         }
 
         if let color = attrs[.foregroundColor] as? NSColor {
@@ -187,7 +190,7 @@ public enum AttributedStringReader {
         let right = ps.tailIndent < 0 ? Double(-ps.tailIndent) : 0
         let leftOverride = differs(left, styleDef.leftIndent ?? 0) ? left : nil
         let firstOverride = differs(firstExtra, styleDef.firstLineIndent ?? 0) ? firstExtra : nil
-        let rightOverride = differs(right, 0) ? right : nil
+        let rightOverride = differs(right, styleDef.rightIndent ?? 0) ? right : nil
         if leftOverride != nil || firstOverride != nil || rightOverride != nil {
             p.indent = IndentModel(left: leftOverride, right: rightOverride, firstLine: firstOverride)
         }

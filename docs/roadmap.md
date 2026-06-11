@@ -98,8 +98,9 @@ companion to tables.
   (objects that move with their text); only page-anchored placement is wired into
   the UI so far.
 - **DOCX lossy export.** RTF export exists; DOCX is the next interchange target.
-- **Document inspector & preferences.** A panel for page size / margins / styles,
-  and app-level preferences.
+- **Document inspector & preferences.** A panel for page size / margins, and
+  richer app-level preferences. (Paragraph styles got their own editor, palette
+  integration, and global library — see `STYLES.md`.)
 
 ## Architectural through-line
 

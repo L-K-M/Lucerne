@@ -57,6 +57,28 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [x] Alignment (left/center/right/justified)
 - [x] Line spacing & paragraph spacing
 - [x] Named paragraph styles (Body, Heading 1/2, List Item, Block Quote)
+- [x] **User-editable stylesheet** (STYLES.md) — every chooser (toolbar, palette,
+  menus, context menu, ⌃⌘1–9) is driven by the *document's* styles in their
+  `order`; New Style from Selection / Redefine from Selection / Duplicate /
+  Delete (restyles users as Body); redefinition re-applies through the
+  reader/builder round-trip so direct formatting survives without override bloat
+- [x] **Style editor panel** — one modeless classic palette (edit wells on
+  palette rows, double-click, Format ▸ Style Settings…): live re-apply, specimen,
+  blast-radius line, capture-from-selection, coalesced undo, and the library
+  strip (Add to / Update / Use Library Copy, with the open-letters offer)
+- [x] **Global style library** — `~/Library/Application Support/Lucerne/styles.json`
+  seeds new documents (copy-on-use; documents stay self-contained); dedicated
+  Style Library window (Format ▸ Style Library…) with reorder/duplicate/delete
+  and Import/Export Stylesheet (same JSON dialect); style-level `underline` /
+  `rightIndent` / `order` added to the format (additive, still v1); the
+  library IS the new-document stylesheet (WYSIWYG — contents and order; an
+  emptied library falls back to the built-in defaults, a missing body is
+  materialized); first run seeds a complete starter stylesheet — the classic
+  five mirrored, Heading 3 (completing the 24/18/14 ramp), Title, Subtitle,
+  Code (Menlo, with a new additive `code` Markdown hint → indented block),
+  Pull Quote, Caption, Fine Print; `h4` is a recognized heading hint (export +
+  navigator + ToC), and the style editor opens beside the Style Library on
+  first open
 
 ### Rulers & tabs
 - [x] Horizontal ruler view

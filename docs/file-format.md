@@ -103,6 +103,10 @@ top-left, y increasing downward**.
   run (e.g. `"italic": true`). Keeps the file small and legible.
 - **`markdown` per style** is the export hint that makes `content.md` faithful
   rather than guessed — the exporter reads it, never infers from size/weight.
+- **Styles are user-extensible.** Role keys are opaque identifiers (`name` is
+  the display label), and a document may define any number of styles beyond the
+  defaults. Optional style members `underline`, `rightIndent`, and `order` (a
+  presentational list-ordering hint) are additive — see the spec, §5.1.
 - **Two anchor modes share one object list.** `"page"` objects carry `page` + a
   page-relative `frame` (free placement). `"paragraph"` objects carry
   `anchorParagraph` + `offset` and move with the text.

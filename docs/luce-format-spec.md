@@ -163,23 +163,31 @@ paragraph references via its `style` member (§6).
 A writer **SHOULD** define a `"body"` role and **MUST** define every role
 referenced by any paragraph's `style`.
 
+Role keys are **opaque identifiers** chosen by the writer; `name` is the
+display label. Writers **MAY** define any number of roles beyond the customary
+defaults (user-defined styles), and readers **MUST NOT** attach semantics to
+the key string itself.
+
 ### 5.1 Style definition object
 
 | Member | Type | Presence | Default | Notes |
 |---|---|---|---|---|
 | `name` | string | REQUIRED | — | Human-readable name shown in UI (e.g. "Heading 1"). |
-| `markdown` | string | REQUIRED | — | Markdown export hint (§8). One of `"p"`, `"h1"`, `"h2"`, `"h3"`, `"li"`, `"blockquote"`. |
+| `markdown` | string | REQUIRED | — | Markdown export hint (§8). One of `"p"`, `"h1"`, `"h2"`, `"h3"`, `"h4"`, `"li"`, `"blockquote"`, `"code"`. Heading hints also place the style in outline features (navigator, generated ToC). |
 | `font` | string | optional | `"Helvetica"` | Font family (or PostScript) name. |
 | `size` | number | optional | `12` | Font size in points. |
 | `bold` | boolean | optional | `false` | |
 | `italic` | boolean | optional | `false` | |
+| `underline` | boolean | optional | `false` | Style-level underline; a run's `underline` (§6.2) overrides it. |
 | `lineSpacing` | number | optional | single | Line-height **multiple** (e.g. `1.2` = 120%). |
 | `spaceBefore` | number | optional | `0` | Space above the paragraph, points. |
 | `spaceAfter` | number | optional | `0` | Space below the paragraph, points. |
 | `leftIndent` | number | optional | `0` | Left indent of the paragraph, points. |
 | `firstLineIndent` | number | optional | `0` | First-line indent **relative to** `leftIndent`, points. |
+| `rightIndent` | number | optional | `0` | Right indent, points, measured inward from the right margin. |
 | `alignment` | string | optional | natural | `"left"`, `"center"`, `"right"`, or `"justified"`. |
 | `color` | string | optional | `"#000000"` | Text color (§6.3). |
+| `order` | number | optional | — | UI ordering hint for style lists (ascending). Presentational; readers **MAY** ignore it. |
 
 - A reader encountering a `markdown` value it does not recognize **MUST** treat it
   as `"p"` for export purposes.
@@ -229,7 +237,7 @@ A **run** is a maximal span of text sharing the same inline formatting.
 | `text` | string | REQUIRED | The run's characters. MAY be empty (only for an empty paragraph). |
 | `bold` | boolean | optional | Overrides the style's `bold`. |
 | `italic` | boolean | optional | Overrides the style's `italic`. |
-| `underline` | boolean | optional | Underline. Default `false`. |
+| `underline` | boolean | optional | Overrides the style's `underline` (absent ⇒ the style's value, default `false`). |
 | `font` | string | optional | Overrides the style's `font`. |
 | `size` | number | optional | Overrides the style's `size` (points). |
 | `color` | string | optional | Overrides the style's `color` (§6.3). |
@@ -270,7 +278,9 @@ taking the first present:
 3. The paragraph's **style role** definition (§5).
 4. The **hard default** (§5.1 / §5 fallback).
 
-`underline` has no style-level field; absent means not underlined.
+`underline` resolves like the other run fields: the run's value, else the
+style's `underline`, else not underlined. (The style-level field is additive;
+files written before it simply omit it.)
 
 ### 6.7 Table cells
 
@@ -350,7 +360,8 @@ derivation so tools can produce comparable output.
 1. Each body paragraph becomes one Markdown block; blocks are separated by one
    blank line; the file ends with a trailing newline.
 2. The block prefix is chosen by the paragraph's style `markdown` hint:
-   `h1` → `# `, `h2` → `## `, `h3` → `### `, `li` → `- `, `blockquote` → `> `,
+   `h1` → `# `, `h2` → `## `, `h3` → `### `, `h4` → `#### `, `li` → `- `,
+   `blockquote` → `> `, `code` → four leading spaces (an indented code block),
    and `p` (or anything else) → no prefix.
 3. Within a paragraph, each run's text is emitted with emphasis markers from its
    *effective* bold/italic: bold → `**…**`, italic → `*…*`, both → `***…***`.
@@ -460,13 +471,16 @@ prose in §7 is authoritative over the schema here).
         "size": { "type": "number", "exclusiveMinimum": 0 },
         "bold": { "type": "boolean" },
         "italic": { "type": "boolean" },
+        "underline": { "type": "boolean" },
         "lineSpacing": { "type": "number", "exclusiveMinimum": 0 },
         "spaceBefore": { "type": "number" },
         "spaceAfter": { "type": "number" },
         "leftIndent": { "type": "number" },
         "firstLineIndent": { "type": "number" },
+        "rightIndent": { "type": "number" },
         "alignment": { "enum": ["left", "center", "right", "justified"] },
-        "color": { "$ref": "#/$defs/color" }
+        "color": { "$ref": "#/$defs/color" },
+        "order": { "type": "number" }
       }
     },
     "paragraph": {
@@ -661,13 +675,14 @@ absent from the Markdown — they live in `document.json`.)
 | effective `size` | `12` |
 | effective `color` | `"#000000"` |
 | style `lineSpacing` | single (1.0) |
-| style `spaceBefore`/`spaceAfter`, indents | `0` |
+| style `spaceBefore`/`spaceAfter`, indents (incl. `rightIndent`) | `0` |
+| style `order` | absent (UI hint; lists fall back to the classic role order) |
 
 | Enumeration | Allowed values |
 |---|---|
 | `page.size` | `"A4"`, `"Letter"`, `"custom"` (advisory) |
 | `alignment` / paragraph `align` | `"left"`, `"center"`, `"right"`, `"justified"` |
-| style `markdown` | `"p"`, `"h1"`, `"h2"`, `"h3"`, `"li"`, `"blockquote"` |
+| style `markdown` | `"p"`, `"h1"`, `"h2"`, `"h3"`, `"h4"`, `"li"`, `"blockquote"`, `"code"` |
 | tab `type` | `"left"`, `"center"`, `"right"`, `"decimal"` |
 | object `anchor` | `"page"`, `"paragraph"` |
 | object `wrap` | `"none"`, `"rectangular"`, `"irregular"` |

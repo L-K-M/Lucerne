@@ -84,6 +84,9 @@ enum MainMenu {
             add(menu, "Export as PDF…", "exportPDF:")
             add(menu, "Export as RTF…  (lossy)", "exportRTF:")
             menu.addItem(.separator())
+            add(menu, "Import Stylesheet…", "lucerneImportStylesheet:")
+            add(menu, "Export Stylesheet…", "lucerneExportStylesheet:")
+            menu.addItem(.separator())
             add(menu, "Document Setup…", "lucerneDocumentSetup:")
             add(menu, "Page Setup…", "runPageLayout:", key: "p", modifiers: [.command, .shift])
             add(menu, "Print…", "printDocument:", key: "p")
@@ -152,16 +155,13 @@ enum MainMenu {
             menu.addItem(text)
 
             let styles = NSMenuItem(title: "Paragraph Style", action: nil, keyEquivalent: "")
+            // Rebuilt from the FRONT DOCUMENT's stylesheet on every open (and on
+            // key-equivalent resolution) — documents define their own styles now.
             let stylesMenu = NSMenu(title: "Paragraph Style")
-            let defs = DefaultDocuments.defaultStyles()
-            for (index, role) in DefaultDocuments.styleRoleOrder.enumerated() {
-                let name = defs[role]?.name ?? role
-                let key = index < 9 ? "\(index + 1)" : ""
-                add(stylesMenu, name, "lucerneApplyStyle:", key: key,
-                    modifiers: [.command, .control], represented: role)
-            }
+            stylesMenu.delegate = StyleMenuDelegate.shared
             styles.submenu = stylesMenu
             menu.addItem(styles)
+            add(menu, "Style Library…", "lucerneShowStyleLibrary:")
 
             let table = NSMenuItem(title: "Table", action: nil, keyEquivalent: "")
             let tableMenu = NSMenu(title: "Table")

@@ -249,6 +249,75 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         if let role = sender.representedObject as? String { editor.applyStyleRole(role); syncUI() }
     }
 
+    // MARK: - Styles (STYLES.md §5–§6)
+
+    @objc func lucerneNewStyleFromSelection(_ sender: Any?) {
+        let key = editor.newStyleFromSelection()
+        syncUI()
+        StyleEditorPanel.shared.open(key: key, library: false, focusName: true)
+    }
+
+    @objc func lucerneRedefineStyleFromSelection(_ sender: Any?) {
+        editor.redefineCurrentStyleFromSelection()
+        syncUI()
+    }
+
+    @objc func lucerneStyleSettings(_ sender: Any?) {
+        guard let role = editor.currentStyleRole() ?? editor.model.orderedStyleRoles.first else { return }
+        StyleEditorPanel.shared.open(key: role, library: false)
+    }
+
+    @objc func lucerneSaveStyleToLibrary(_ sender: Any?) {
+        guard let role = editor.currentStyleRole(),
+              let def = editor.model.styles[role] else { return }
+        StyleLibrary.shared.saveStyle(def, forKey: role)
+    }
+
+    /// The document-scoped face of the S6 interchange: writes this letter's
+    /// stylesheet as a `lucerne-styles` JSON file.
+    @objc func lucerneExportStylesheet(_ sender: Any?) {
+        guard let window else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        let stem = ((document as? NSDocument)?.displayName ?? "Lucerne") as NSString
+        panel.nameFieldStringValue = "\(stem.deletingPathExtension) Styles.json"
+        let styles = editor.model.styles
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try StyleLibrary.encode(styles).write(to: url)
+            } catch {
+                NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
+            }
+        }
+    }
+
+    /// Merges a stylesheet file into this letter (S7: by key; same key with a
+    /// different look is a redefinition and re-applies). One undo group.
+    @objc func lucerneImportStylesheet(_ sender: Any?) {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url, let self else { return }
+            do {
+                let imported = try StyleLibrary.decode(try Data(contentsOf: url))
+                let undo = (self.document as? NSDocument)?.undoManager
+                undo?.beginUndoGrouping()
+                for key in LucerneDocumentModel.orderedStyleRoles(in: imported) {
+                    guard let def = imported[key] else { continue }
+                    self.editor.addOrReplaceStyle(def, forKey: key, actionName: "Import Stylesheet")
+                }
+                undo?.endUndoGrouping()
+                undo?.setActionName("Import Stylesheet")
+                self.syncUI()
+            } catch {
+                NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
+            }
+        }
+    }
+
     @objc func lucerneInsertImage(_ sender: Any?) { presentInsertImagePanel() }
     @objc func lucerneInsertPageBreak(_ sender: Any?) { editor.insertPageBreak(); syncUI() }
     @objc func lucerneDeleteImage(_ sender: Any?) { editor.deleteSelectedImage() }
@@ -403,6 +472,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         case #selector(lucerneApplyStyle(_:)):
             menuItem.state = (menuItem.representedObject as? String) == editor.currentStyleRole() ? .on : .off
             return true
+        case #selector(lucerneRedefineStyleFromSelection(_:)),
+             #selector(lucerneSaveStyleToLibrary(_:)):
+            // Both fold the caret's style; they need a resolvable current role.
+            return editor.currentStyleRole().flatMap { editor.model.styles[$0] } != nil
         case #selector(lucerneAlignLeft(_:)), #selector(lucerneAlignCenter(_:)),
              #selector(lucerneAlignRight(_:)), #selector(lucerneAlignJustify(_:)):
             menuItem.state = alignmentState(for: menuItem.action) ? .on : .off

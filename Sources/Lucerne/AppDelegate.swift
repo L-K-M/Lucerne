@@ -8,6 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // A brand-new style library starts with the curated starter collection
+        // (STYLES.md S6). Before the menu and before any document exists, so
+        // the very first letter already seeds from it.
+        StyleLibrary.shared.seedStarterLibraryIfNeeded()
         NSApp.mainMenu = MainMenu.build()
     }
 
@@ -105,6 +109,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - Style Library
+
+    // On the app delegate (the responder chain's end) so Format ▸ Style Library…
+    // works with no documents open — the library is app-level, not per-document.
+    @objc func lucerneShowStyleLibrary(_ sender: Any?) {
+        StyleLibraryWindowController.shared.show()
     }
 
     // MARK: - Updates

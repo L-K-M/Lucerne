@@ -45,8 +45,10 @@ public enum MarkdownExporter {
         case "h1": return "# " + inline
         case "h2": return "## " + inline
         case "h3": return "### " + inline
+        case "h4": return "#### " + inline
         case "li": return "- " + inline
         case "blockquote": return "> " + inline
+        case "code": return "    " + inline      // indented code block
         default:   return inline                 // "p" and anything unknown
         }
     }
