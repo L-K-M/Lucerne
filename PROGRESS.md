@@ -57,6 +57,20 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [x] Alignment (left/center/right/justified)
 - [x] Line spacing & paragraph spacing
 - [x] Named paragraph styles (Body, Heading 1/2, List Item, Block Quote)
+- [x] **User-editable stylesheet** (STYLES.md) — every chooser (toolbar, palette,
+  menus, context menu, ⌃⌘1–9) is driven by the *document's* styles in their
+  `order`; New Style from Selection / Redefine from Selection / Duplicate /
+  Delete (restyles users as Body); redefinition re-applies through the
+  reader/builder round-trip so direct formatting survives without override bloat
+- [x] **Style editor panel** — one modeless classic palette (edit wells on
+  palette rows, double-click, Format ▸ Style Settings…): live re-apply, specimen,
+  blast-radius line, capture-from-selection, coalesced undo, and the library
+  strip (Add to / Update / Use Library Copy, with the open-letters offer)
+- [x] **Global style library** — `~/Library/Application Support/Lucerne/styles.json`
+  seeds new documents (copy-on-use; documents stay self-contained); dedicated
+  Style Library window (Format ▸ Style Library…) with reorder/duplicate/delete
+  and Import/Export Stylesheet (same JSON dialect); style-level `underline` /
+  `rightIndent` / `order` added to the format (additive, still v1)
 
 ### Rulers & tabs
 - [x] Horizontal ruler view

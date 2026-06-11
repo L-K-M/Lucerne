@@ -12,6 +12,11 @@ people should be able to create global styles and document-specific styles; and
 once a document uses a style, it must be persisted in the document so it
 transfers to other computers.*
 
+> **Status:** Phases 1–3 (§9) are implemented — see `PROGRESS.md` for the
+> feature checklist. Phase 4 remains future work. Small deviations from this
+> design made during implementation are corrected inline below (the edit well
+> shows on hover; reordering lives in the Style Library window for now).
+
 ---
 
 ## 1. Where styles stand today
@@ -200,8 +205,9 @@ to the style definition — additive, ignorable by other readers, self-contained
 per document (no second top-level list to keep in sync with the map). The UI
 sorts by `(order, name)`; a model helper `orderedStyleRoles` encapsulates the
 fallback for older files (the classic five in their traditional order, then
-anything else by name). New styles get `max(order) + 1`; the style editor allows
-reordering. The ⌃⌘1…⌃⌘9 shortcuts follow the first nine styles in order, so a
+anything else by name). New styles get `max(order) + 1`; reordering is by
+dragging rows in the Style Library window (§7) — document-local reordering can
+follow later. The ⌃⌘1…⌃⌘9 shortcuts follow the first nine styles in order, so a
 user can promote their favorites.
 
 ### S6 — The library is a plain JSON file, and doubles as the interchange format
@@ -315,8 +321,8 @@ Keeping to the classic-chrome idiom the app already has:
 - **Styles palette** (`FloatingPalette`): the list stays the specimen book it
   is today — sorted per S5, sourced from the front document — and each row
   gains a small **edit well** at its right edge (a pencil glyph in the classic
-  engraved style, shown on hover and on the selected row; rows are plain labels
-  today and become a small custom view). Clicking the row applies the style, as
+  engraved style, shown while the pointer is over the row; rows are plain
+  labels today and become a small custom view). Clicking the row applies the style, as
   now; the well — or a double-click — opens the style editor (§6). A thin
   classic footer bar holds **New…, Duplicate, Delete**; *New…* opens the editor
   on a fresh style seeded from the caret paragraph's effective formatting, so
@@ -514,9 +520,9 @@ documents were open — and it fails the S8 test: a surface that silently
 changes what it acts on *is* a mode, and modes lie.) So the library gets a
 dedicated window with a dedicated menu entry.
 
-- **Opened from Format ▸ Style Library…** — the menu bar has no Window menu
-  today, and Format is where every other style verb lives. One instance; a
-  small titled window in the app's classic chrome. Unlike the palettes it is a
+- **Opened from Format ▸ Style Library…** — next to the other style verbs (the
+  Window menu lists windows, not app-level libraries). One instance; a small
+  titled window in the app's classic chrome. Unlike the palettes it is a
   *manager you summon deliberately*: normal window level (it can sit behind
   document windows), closable, independent of any document.
 - **Content**: the same specimen-book list the palette uses, showing the
