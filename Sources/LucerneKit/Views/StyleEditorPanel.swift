@@ -307,7 +307,8 @@ final class StyleEditorPanel: NSObject {
         chrome?.title = titleText(for: def)
         refreshStrip(def: def)
         refreshDynamicLabels()
-        if case .document? = target {
+        // `target` here is the guard-let-unwrapped local (non-optional).
+        if case .document = target {
             captureButton.isEnabled = true
         } else {
             captureButton.isEnabled = false
