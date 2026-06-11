@@ -95,14 +95,42 @@ public final class StyleLibrary {
         save(library)
     }
 
+    // MARK: - First run (S6): a starter collection instead of an empty shelf
+
+    /// Seeds a brand-new library — **no file on disk yet** — with the curated
+    /// starter collection, so the Style Library window's first impression is a
+    /// stocked shelf, not an empty box. A library the user emptied by hand
+    /// stays empty (its file exists), and — true to the escape hatch — deleting
+    /// `styles.json` brings the starter set back. Call once at app launch,
+    /// before any document is created.
+    public func seedStarterLibraryIfNeeded() {
+        guard !FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        save(DefaultDocuments.starterLibraryStyles())
+    }
+
     // MARK: - Seeding new documents (S6)
 
     /// The stylesheet a new document starts with: the built-in defaults overlaid
-    /// by the library — the library wins on key collisions, so redefining `body`
-    /// there restyles all future letters. Existing documents are never touched.
+    /// by the library. The library wins on key collisions — redefining `body`
+    /// there restyles all future letters, though it keeps the core position so
+    /// ⌃⌘1–⌃⌘5 stay put — and library-only styles are appended **after** the
+    /// core set in their library order. Existing documents are never touched.
     public func seededStyles(base: [String: ParagraphStyleDef]
                                 = DefaultDocuments.defaultStyles()) -> [String: ParagraphStyleDef] {
-        StyleLibrary.overlay(base: base, library: load())
+        let library = load()
+        var merged = base
+        var nextOrder = (base.values.compactMap(\.order).max() ?? Double(base.count - 1)) + 1
+        for key in LucerneDocumentModel.orderedStyleRoles(in: library) {
+            guard var def = library[key] else { continue }
+            if base[key] == nil {
+                def.order = nextOrder
+                nextOrder += 1
+            } else {
+                def.order = base[key]?.order
+            }
+            merged[key] = def
+        }
+        return merged
     }
 
     public static func overlay(base: [String: ParagraphStyleDef],

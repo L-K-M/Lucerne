@@ -232,12 +232,24 @@ inspectable, hand-editable, diffable, and trivially copied to another Mac (which
 exists). Decoding reuses `ParagraphStyleDef` as-is. A missing or corrupt file
 degrades silently to the built-in defaults.
 
-The library starts **empty**; the effective stylesheet for a new document is
-*built-in defaults overlaid by the library*. The alternative — materializing the
-defaults into the library on first run so users see everything in one place —
-was considered and rejected: it orphans a stale copy of the defaults (app
-updates to the default stylesheet would never reach existing users) and invites
-"I deleted Body from the library" states that need special-casing.
+A brand-new library starts with a **curated starter collection** — a letter
+kit (Letterhead, Sender Address, Date Line, Salutation, Letter Body, Closing,
+a Snell Roundhand Signature, Postscript) plus document styles (Section, Pull
+Quote, Caption, Fine Print, Typewriter), all in faces that ship with macOS —
+so the Style Library window's first impression is a stocked shelf, not an
+empty box (`DefaultDocuments.starterLibraryStyles()`). Seeding happens only
+when **no library file exists yet**: a library the user emptied by hand stays
+empty, and — true to the escape hatch — deleting `styles.json` brings the
+starter set back.
+
+What is deliberately **not** materialized into the library is the core five
+themselves: the starter keys are disjoint from `body`/`heading1`/…, which stay
+app-owned, so improvements to the defaults keep reaching every user and
+deleting any starter style is always harmless. The effective stylesheet for a
+new document is *built-in defaults overlaid by the library*, with one
+normalization: a same-key redefinition keeps the core slot (⌃⌘1 stays Body),
+and library-only styles are appended **after** the core set in their library
+order.
 
 Because the file shape is self-describing, the same format serves **File ▸
 Export Stylesheet… / Import Stylesheet…** for sharing styles between people and
@@ -545,8 +557,9 @@ dedicated window with a dedicated menu entry.
   of the built-in default, and deleting it restores that default for new
   letters.
 - **Empty state**: a short hint — "Your Library is empty. Save a style from a
-  letter (*Save to Library*), or create one here (*New…*)." — so the first
-  visit teaches the round-trip.
+  letter (*Save to Library*), or create one here (*New…*)." Reachable only by
+  deliberately emptying the library (a fresh install starts with the starter
+  collection, S6), so it teaches the way back in rather than greeting newcomers.
 - **Undo**: the window's own undo manager, best-effort, per §6.3. And true to
   the escape hatch, the library file itself stays editable in any text editor.
 

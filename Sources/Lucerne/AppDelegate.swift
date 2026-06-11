@@ -8,6 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // A brand-new style library starts with the curated starter collection
+        // (STYLES.md S6). Before the menu and before any document exists, so
+        // the very first letter already seeds from it.
+        StyleLibrary.shared.seedStarterLibraryIfNeeded()
         NSApp.mainMenu = MainMenu.build()
     }
 

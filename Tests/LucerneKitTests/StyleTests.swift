@@ -288,6 +288,62 @@ final class StyleLibraryTests: XCTestCase {
     }
 }
 
+final class StarterLibraryTests: XCTestCase {
+
+    private func temporaryLibrary() -> StyleLibrary {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("styles.json")
+        return StyleLibrary(fileURL: url)
+    }
+
+    func testStarterStylesAreWellFormedAndDisjointFromTheCoreFive() {
+        let starter = DefaultDocuments.starterLibraryStyles()
+        XCTAssertGreaterThanOrEqual(starter.count, 10)
+        let coreKeys = Set(DefaultDocuments.defaultStyles().keys)
+        XCTAssertTrue(coreKeys.isDisjoint(with: Set(starter.keys)),
+                      "the starter set must not shadow the app-owned core roles")
+        let validHints: Set<String> = ["p", "h1", "h2", "h3", "li", "blockquote"]
+        for (key, def) in starter {
+            XCTAssertTrue(validHints.contains(def.markdown), "\(key) has hint \(def.markdown)")
+            XCTAssertNotNil(def.order, "\(key) needs a stable library position")
+            XCTAssertFalse(def.name.isEmpty)
+        }
+        XCTAssertEqual(Set(starter.values.map(\.name)).count, starter.count,
+                       "display names must be unique")
+    }
+
+    func testSeedHappensOnlyWhenNoFileExists() {
+        let library = temporaryLibrary()
+        library.seedStarterLibraryIfNeeded()
+        XCTAssertEqual(library.load(), DefaultDocuments.starterLibraryStyles())
+
+        // Emptying the library leaves its file behind — re-seeding must not
+        // resurrect the starter set against the user's wishes.
+        library.save([:])
+        library.seedStarterLibraryIfNeeded()
+        XCTAssertTrue(library.load().isEmpty, "an emptied library stays empty")
+    }
+
+    func testSeededDocumentsAppendLibraryStylesAfterTheCoreFive() {
+        let library = temporaryLibrary()
+        library.save([
+            "zeta": ParagraphStyleDef(name: "Zeta", order: 1, markdown: "p"),
+            "alpha": ParagraphStyleDef(name: "Alpha", order: 0, markdown: "p"),
+            "body": ParagraphStyleDef(name: "Body", font: "Palatino", order: 42, markdown: "p")
+        ])
+        let seeded = library.seededStyles()
+        let roles = LucerneDocumentModel.orderedStyleRoles(in: seeded)
+        XCTAssertEqual(Array(roles.prefix(5)),
+                       ["body", "heading1", "heading2", "listItem", "quote"],
+                       "a body redefinition keeps the core position (⌃⌘1 stays Body)")
+        XCTAssertEqual(Array(roles.suffix(2)), ["alpha", "zeta"],
+                       "library-only styles append after the core set, in library order")
+        XCTAssertEqual(seeded["body"]?.font, "Palatino", "the redefinition itself applies")
+        XCTAssertEqual(seeded["body"]?.order, 0, "its order is normalized to the core slot")
+    }
+}
+
 final class StyleSnapshotSafetyTests: XCTestCase {
 
     /// A paragraph whose role has no definition (dangling after a hand-edit or
