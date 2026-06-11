@@ -134,6 +134,25 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   persisted as a `toc` paragraph style; re-run to update
 - [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
 
+## Design feedback (round 16)
+- [x] **Menu icons on the high-traffic commands** — a restrained set of template
+  SF Symbols now leads the most-used items (New, Open…, Save…, Export as PDF…,
+  Print…, Find…, Bold/Italic/Underline, Format ▸ Style Library…, Insert ▸
+  Image…/Table…). Added via a
+  `symbol:` argument on `MainMenu.add`; template images take the menu's text
+  color, so they read in light and dark menus. The rest of the menus stay
+  icon-free so they don't turn into icon soup.
+- [x] **Menu cleanup** — dropped **Insert ▸ Page Number**: it didn't insert
+  anything at the caret, it just set a centered `{page}` footer — a strict subset
+  of **Insert ▸ Header & Footer…** right below it (which still offers it, plus
+  "Page x of y", other zones, and a start number). Also tidied the RTF export
+  label and removed a dead local in the File menu.
+- [x] **Bigger, better-spaced welcome screen** — the start window grew (480×648),
+  with a larger app icon (112pt), a stronger title (30pt), a wider ornamental
+  rule, roomier buttons (248×24) in New / Open / Sample order, and a taller,
+  alternating-row recents well. The column pins to the top with a `<=` bottom so
+  it floats free without over-constraining the panel.
+
 ## Design feedback (round 15)
 - [x] **App-global floating palettes** — the torn-off Typefaces window grew into a
   proper classic palette (`Views/FloatingPalette.swift`): one per kind for the
