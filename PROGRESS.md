@@ -70,13 +70,15 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   seeds new documents (copy-on-use; documents stay self-contained); dedicated
   Style Library window (Format ▸ Style Library…) with reorder/duplicate/delete
   and Import/Export Stylesheet (same JSON dialect); style-level `underline` /
-  `rightIndent` / `order` added to the format (additive, still v1); first run
-  seeds a curated starter collection of repeatedly-useful styles — Body (a
-  mirror of the core default, the handle for restyling future letters), Title,
-  Subtitle, Heading 3 (completing the 24/18/14 heading ramp), Code (Menlo,
-  with a new additive `code` Markdown hint → indented block), Pull Quote,
-  Caption, Fine Print; `h4` is a recognized heading hint (export + navigator +
-  ToC), and the style editor opens beside the Style Library on first open
+  `rightIndent` / `order` added to the format (additive, still v1); the
+  library IS the new-document stylesheet (WYSIWYG — contents and order; an
+  emptied library falls back to the built-in defaults, a missing body is
+  materialized); first run seeds a complete starter stylesheet — the classic
+  five mirrored, Heading 3 (completing the 24/18/14 ramp), Title, Subtitle,
+  Code (Menlo, with a new additive `code` Markdown hint → indented block),
+  Pull Quote, Caption, Fine Print; `h4` is a recognized heading hint (export +
+  navigator + ToC), and the style editor opens beside the Style Library on
+  first open
 
 ### Rulers & tabs
 - [x] Horizontal ruler view

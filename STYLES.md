@@ -135,9 +135,11 @@ different labels.
 
 The global library participates at exactly three moments:
 
-1. **New document** — the library is overlaid onto the built-in defaults to form
-   the new document's stylesheet (library wins on key collisions, so redefining
-   `body` in the library restyles all *future* letters).
+1. **New document** — the library *is* the new document's stylesheet: what the
+   Style Library window shows (contents and order) is what a new letter starts
+   with, so redefining `body` there restyles all *future* letters. Guard
+   rails: an emptied library falls back to the built-in defaults, and a
+   missing `body` is materialized from them (S6).
 2. **Explicit import** — "Add Library Style to Document" copies a definition in.
 3. **Explicit export** — "Save Style to Library" copies a definition out.
 
@@ -233,31 +235,32 @@ inspectable, hand-editable, diffable, and trivially copied to another Mac (which
 exists). Decoding reuses `ParagraphStyleDef` as-is. A missing or corrupt file
 degrades silently to the built-in defaults.
 
-A brand-new library starts with a **curated starter collection**
-(`DefaultDocuments.starterLibraryStyles()`), so the Style Library window's
-first impression is a stocked shelf, not an empty box. The bar for inclusion
-is that a style earns its place by being *applied repeatedly*: Body (an exact
-mirror of the core default — the discoverable handle for "restyle all my
-future letters", inert until edited and harmless to delete), Title and
-Subtitle, a **Heading 3** completing the core heading ramp (24/18/14 pt, and
-it joins the navigator and ToC via its `h3` hint), **Code** (Menlo, with a
-`code` export hint the Markdown lane renders as an indented block — the
-additive-hint extension point the spec was designed for), Pull Quote, Caption,
-and Fine Print. An earlier cut shipped one-off letter furniture — Salutation,
-Closing, Postscript, a script Signature — pretty, but nobody switches
-paragraph style for a one-line P.S., so it was cut for exactly that reason.
-Seeding happens only when **no library file exists yet**: a library the user
-emptied by hand stays empty, and — true to the escape hatch — deleting
-`styles.json` brings the starter set back.
+**What the Library window shows is exactly what a new letter starts with** —
+contents and order alike; nothing is mixed in behind the scenes. (Two earlier
+cuts did otherwise: first an empty library overlaid onto invisible built-in
+defaults, then a partial starter set overlaid the same way. In practice that
+meant a new document grew styles that appeared nowhere in the Library — spooky
+in precisely the way this design forbids — so the overlay was replaced by this
+WYSIWYG rule.) Two guard rails keep it safe: an emptied or missing library
+falls back to the built-in defaults, and a library without `body` has it
+materialized from them, since `body` is the format's fallback anchor. The
+accepted cost: the library's copies of the classic five are user-owned, so
+future improvements to the app's defaults reach existing libraries only via
+the escape hatch — delete `styles.json` to re-seed.
 
-What is deliberately **not** materialized into the library is the core five
-themselves: the starter keys are disjoint from `body`/`heading1`/…, which stay
-app-owned, so improvements to the defaults keep reaching every user and
-deleting any starter style is always harmless. The effective stylesheet for a
-new document is *built-in defaults overlaid by the library*, with one
-normalization: a same-key redefinition keeps the core slot (⌃⌘1 stays Body),
-and library-only styles are appended **after** the core set in their library
-order.
+A brand-new library is therefore seeded with a **complete starter stylesheet**
+(`DefaultDocuments.starterLibraryStyles()`): the classic five as exact visual
+mirrors of the app defaults, plus additions that earn their place by being
+*applied repeatedly* — a **Heading 3** completing the heading ramp (24/18/14
+pt on adjacent ⌃⌘2–⌃⌘4 slots; heading hints join the navigator and ToC),
+Title and Subtitle, **Code** (Menlo, with a `code` export hint the Markdown
+lane renders as an indented block — the additive-hint extension point the
+spec was designed for), Pull Quote, Caption, and Fine Print. An earlier cut
+shipped one-off letter furniture — Salutation, Closing, Postscript, a script
+Signature — pretty, but nobody switches paragraph style for a one-line P.S.,
+so it was cut for exactly that reason. Seeding happens only when **no library
+file exists yet**: a library the user emptied by hand stays empty, and
+deleting `styles.json` brings the starter set back.
 
 Because the file shape is self-describing, the same format serves **File ▸
 Export Stylesheet… / Import Stylesheet…** for sharing styles between people and

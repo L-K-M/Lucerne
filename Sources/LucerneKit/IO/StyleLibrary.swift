@@ -110,34 +110,23 @@ public final class StyleLibrary {
 
     // MARK: - Seeding new documents (S6)
 
-    /// The stylesheet a new document starts with: the built-in defaults overlaid
-    /// by the library. The library wins on key collisions — redefining `body`
-    /// there restyles all future letters, though it keeps the core position so
-    /// ⌃⌘1–⌃⌘5 stay put — and library-only styles are appended **after** the
-    /// core set in their library order. Existing documents are never touched.
+    /// The stylesheet a new document starts with — **exactly the library**:
+    /// what the Style Library window shows (and the order it shows it in) is
+    /// what a new letter gets, nothing mixed in behind the scenes. Two guard
+    /// rails: an emptied or missing library falls back to the built-in
+    /// defaults, and a library without `body` has it materialized from them
+    /// (`body` is the format's fallback anchor). Existing documents are never
+    /// touched.
     public func seededStyles(base: [String: ParagraphStyleDef]
                                 = DefaultDocuments.defaultStyles()) -> [String: ParagraphStyleDef] {
-        let library = load()
-        var merged = base
-        var nextOrder = (base.values.compactMap(\.order).max() ?? Double(base.count - 1)) + 1
-        for key in LucerneDocumentModel.orderedStyleRoles(in: library) {
-            guard var def = library[key] else { continue }
-            if base[key] == nil {
-                def.order = nextOrder
-                nextOrder += 1
-            } else {
-                def.order = base[key]?.order
-            }
-            merged[key] = def
+        var library = load()
+        guard !library.isEmpty else { return base }
+        if library[LucerneDocumentModel.defaultStyleRole] == nil {
+            var body = base[LucerneDocumentModel.defaultStyleRole] ?? .fallbackBody
+            body.order = (library.values.compactMap(\.order).min() ?? 0) - 1
+            library[LucerneDocumentModel.defaultStyleRole] = body
         }
-        return merged
-    }
-
-    public static func overlay(base: [String: ParagraphStyleDef],
-                               library: [String: ParagraphStyleDef]) -> [String: ParagraphStyleDef] {
-        var merged = base
-        for (key, def) in library { merged[key] = def }
-        return merged
+        return library
     }
 
     // MARK: - Interchange (Import / Export Stylesheet…)

@@ -239,28 +239,6 @@ final class StyleLibraryTests: XCTestCase {
         XCTAssertEqual(try StyleLibrary.decode(good).count, 1)
     }
 
-    func testOverlayLibraryWinsAndAdds() {
-        let base = DefaultDocuments.defaultStyles()
-        var palatinoBody = base["body"]!
-        palatinoBody.font = "Palatino"
-        let library = [
-            "body": palatinoBody,
-            "legal": ParagraphStyleDef(name: "Legalese", size: 9, order: 9, markdown: "p")
-        ]
-        let merged = StyleLibrary.overlay(base: base, library: library)
-        XCTAssertEqual(merged["body"]?.font, "Palatino", "the library redefines body for new letters")
-        XCTAssertEqual(merged["legal"]?.name, "Legalese", "library-only styles are added")
-        XCTAssertEqual(merged["heading1"], base["heading1"], "untouched defaults remain")
-    }
-
-    func testSeededStylesUseTheLibraryOverlay() {
-        let library = temporaryLibrary()
-        library.save(["legal": ParagraphStyleDef(name: "Legalese", size: 9, markdown: "p")])
-        let seeded = library.seededStyles()
-        XCTAssertNotNil(seeded["body"])
-        XCTAssertEqual(seeded["legal"]?.name, "Legalese")
-    }
-
     func testSaveStylePreservesLibraryOrderOnUpdateAndAppendsNew() {
         let library = temporaryLibrary()
         library.save(["a": ParagraphStyleDef(name: "A", order: 3, markdown: "p")])
@@ -297,20 +275,20 @@ final class StarterLibraryTests: XCTestCase {
         return StyleLibrary(fileURL: url)
     }
 
-    func testStarterStylesAreWellFormedAndDontForkTheCoreRoles() {
+    func testStarterStylesAreACompleteStylesheetMirroringTheCoreRoles() {
         let starter = DefaultDocuments.starterLibraryStyles()
-        XCTAssertGreaterThanOrEqual(starter.count, 6)
+        XCTAssertGreaterThanOrEqual(starter.count, 10)
 
-        // Core keys stay app-owned, with ONE deliberate exception: a `body`
-        // entry is allowed if (and only if) it is visually identical to the
-        // core default at seed time — a handle for "restyle my future
-        // letters", never a silent fork.
-        let coreKeys = Set(DefaultDocuments.defaultStyles().keys)
-        let overlap = coreKeys.intersection(Set(starter.keys))
-        XCTAssertEqual(overlap, ["body"], "only body may be mirrored into the library")
-        let coreBody = DefaultDocuments.defaultStyles()["body"]!
-        XCTAssertTrue(starter["body"]!.visuallyEquals(coreBody),
-                      "the seeded body must match the app default exactly")
+        // The library IS the new-letter stylesheet (S6), so it carries the
+        // classic five — as exact visual mirrors of the app defaults at seed
+        // time, never silent forks.
+        for (key, def) in DefaultDocuments.defaultStyles() {
+            guard let mirrored = starter[key] else {
+                return XCTFail("\(key) must be in the starter library")
+            }
+            XCTAssertTrue(mirrored.visuallyEquals(def),
+                          "\(key) must match the app default at seed time")
+        }
 
         let validHints: Set<String> = ["p", "h1", "h2", "h3", "h4", "li", "blockquote", "code"]
         for (key, def) in starter {
@@ -320,9 +298,12 @@ final class StarterLibraryTests: XCTestCase {
         }
         XCTAssertEqual(Set(starter.values.map(\.name)).count, starter.count,
                        "display names must be unique")
-        // The headline members: the missing heading level and a code style.
+
+        // The heading ramp walks ⌃⌘2–⌃⌘4 in descending sizes.
+        let roles = LucerneDocumentModel.orderedStyleRoles(in: starter)
+        XCTAssertEqual(Array(roles.prefix(4)), ["body", "heading1", "heading2", "heading3"])
         XCTAssertEqual(starter["heading3"]?.markdown, "h3",
-                       "Heading 3 completes the navigator/ToC heading ramp")
+                       "Heading 3 joins the navigator/ToC heading ramp")
         XCTAssertEqual(starter["code"]?.font, "Menlo")
         XCTAssertEqual(starter["code"]?.markdown, "code")
     }
@@ -354,22 +335,31 @@ final class StarterLibraryTests: XCTestCase {
         XCTAssertTrue(library.load().isEmpty, "an emptied library stays empty")
     }
 
-    func testSeededDocumentsAppendLibraryStylesAfterTheCoreFive() {
+    func testSeededDocumentsGetExactlyTheLibrary() {
         let library = temporaryLibrary()
         library.save([
-            "zeta": ParagraphStyleDef(name: "Zeta", order: 1, markdown: "p"),
-            "alpha": ParagraphStyleDef(name: "Alpha", order: 0, markdown: "p"),
-            "body": ParagraphStyleDef(name: "Body", font: "Palatino", order: 42, markdown: "p")
+            "body": ParagraphStyleDef(name: "Body", font: "Palatino", size: 12, order: 1, markdown: "p"),
+            "fancy": ParagraphStyleDef(name: "Fancy", order: 0, markdown: "p")
         ])
         let seeded = library.seededStyles()
-        let roles = LucerneDocumentModel.orderedStyleRoles(in: seeded)
-        XCTAssertEqual(Array(roles.prefix(5)),
-                       ["body", "heading1", "heading2", "listItem", "quote"],
-                       "a body redefinition keeps the core position (⌃⌘1 stays Body)")
-        XCTAssertEqual(Array(roles.suffix(2)), ["alpha", "zeta"],
-                       "library-only styles append after the core set, in library order")
-        XCTAssertEqual(seeded["body"]?.font, "Palatino", "the redefinition itself applies")
-        XCTAssertEqual(seeded["body"]?.order, 0, "its order is normalized to the core slot")
+        XCTAssertEqual(seeded, library.load(),
+                       "what the Library window shows is what a new letter gets — nothing more")
+        XCTAssertEqual(LucerneDocumentModel.orderedStyleRoles(in: seeded), ["fancy", "body"],
+                       "the library's own order carries into new letters")
+    }
+
+    func testEmptiedLibraryFallsBackToBuiltInDefaults() {
+        let library = temporaryLibrary()
+        library.save([:])
+        XCTAssertEqual(library.seededStyles(), DefaultDocuments.defaultStyles())
+    }
+
+    func testMissingBodyIsMaterializedFirst() {
+        let library = temporaryLibrary()
+        library.save(["fancy": ParagraphStyleDef(name: "Fancy", order: 0, markdown: "p")])
+        let seeded = library.seededStyles()
+        XCTAssertNotNil(seeded["body"], "body is the format's fallback anchor and must exist")
+        XCTAssertEqual(LucerneDocumentModel.orderedStyleRoles(in: seeded).first, "body")
     }
 }
 

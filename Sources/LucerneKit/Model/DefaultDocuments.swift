@@ -33,49 +33,48 @@ public enum DefaultDocuments {
     /// orders instead.
     public static let styleRoleOrder = ["body", "heading1", "heading2", "listItem", "quote"]
 
-    /// The curated starter collection a brand-new style library is seeded with
-    /// (STYLES.md S6). The bar for inclusion: a style earns its place by being
-    /// *applied repeatedly* — heading levels, code, captions — not by labelling
-    /// a one-off line (an earlier cut shipped Salutation/Closing/Postscript
-    /// furniture; nobody switches paragraph style for a one-line P.S.).
-    ///
-    /// Keys are disjoint from `defaultStyles()` with ONE deliberate exception:
-    /// `body` is included as an exact copy of the core default, so the library
-    /// presents a complete set and — more usefully — editing Body *in the
-    /// library* is the discoverable way to restyle all future letters. Because
-    /// it is identical at seed time it changes nothing until the user touches
-    /// it, and deleting it just falls back to the app default (the overlay).
+    /// The starter collection a brand-new style library is seeded with
+    /// (STYLES.md S6). Because **the library IS the stylesheet new letters
+    /// start with** — what the Style Library window shows is exactly what a
+    /// new document gets, contents and order alike — this is a *complete*
+    /// stylesheet: the classic five (exact visual mirrors of `defaultStyles()`,
+    /// never silent forks) plus the additions that earn their place by being
+    /// applied repeatedly. Headings sit on adjacent positions so ⌃⌘2–⌃⌘4 walk
+    /// the ramp (24 / 18 / 14 pt; all heading hints join the navigator + ToC).
     public static func starterLibraryStyles() -> [String: ParagraphStyleDef] {
-        var body = defaultStyles()["body"] ?? .fallbackBody
-        body.order = 0
-        return [
-            "body": body,
-            "title": ParagraphStyleDef(
-                name: "Title", font: "Helvetica", size: 30, bold: true,
-                spaceAfter: 6, alignment: "center", order: 1, markdown: "h1"),
-            "subtitle": ParagraphStyleDef(
-                name: "Subtitle", font: "Helvetica", size: 15,
-                spaceAfter: 18, alignment: "center", color: "#444444", order: 2, markdown: "p"),
-            // Completes the heading ramp the core five stop short of:
-            // 24 / 18 / 14 pt, all bold — and h3 joins the navigator + ToC.
-            "heading3": ParagraphStyleDef(
-                name: "Heading 3", font: "Helvetica", size: 14, bold: true,
-                spaceBefore: 12, spaceAfter: 4, order: 3, markdown: "h3"),
-            "code": ParagraphStyleDef(
-                name: "Code", font: "Menlo", size: 11,
-                lineSpacing: 1.2, leftIndent: 18, order: 4, markdown: "code"),
-            "pullQuote": ParagraphStyleDef(
-                name: "Pull Quote", font: "Helvetica", size: 16, italic: true,
-                spaceBefore: 12, spaceAfter: 12, leftIndent: 36, rightIndent: 36,
-                alignment: "center", color: "#333333", order: 5, markdown: "blockquote"),
-            "caption": ParagraphStyleDef(
-                name: "Caption", font: "Helvetica", size: 10, italic: true,
-                spaceBefore: 4, spaceAfter: 12, alignment: "center", color: "#555555",
-                order: 6, markdown: "p"),
-            "finePrint": ParagraphStyleDef(
-                name: "Fine Print", font: "Helvetica", size: 9,
-                lineSpacing: 1.15, color: "#666666", order: 7, markdown: "p")
-        ]
+        // The classic five, mirrored with their library positions…
+        var styles = defaultStyles()
+        styles["body"]?.order = 0
+        styles["heading1"]?.order = 1
+        styles["heading2"]?.order = 2
+        styles["listItem"]?.order = 6
+        styles["quote"]?.order = 7
+
+        // …plus the additions.
+        styles["heading3"] = ParagraphStyleDef(
+            name: "Heading 3", font: "Helvetica", size: 14, bold: true,
+            spaceBefore: 12, spaceAfter: 4, order: 3, markdown: "h3")
+        styles["title"] = ParagraphStyleDef(
+            name: "Title", font: "Helvetica", size: 30, bold: true,
+            spaceAfter: 6, alignment: "center", order: 4, markdown: "h1")
+        styles["subtitle"] = ParagraphStyleDef(
+            name: "Subtitle", font: "Helvetica", size: 15,
+            spaceAfter: 18, alignment: "center", color: "#444444", order: 5, markdown: "p")
+        styles["code"] = ParagraphStyleDef(
+            name: "Code", font: "Menlo", size: 11,
+            lineSpacing: 1.2, leftIndent: 18, order: 8, markdown: "code")
+        styles["pullQuote"] = ParagraphStyleDef(
+            name: "Pull Quote", font: "Helvetica", size: 16, italic: true,
+            spaceBefore: 12, spaceAfter: 12, leftIndent: 36, rightIndent: 36,
+            alignment: "center", color: "#333333", order: 9, markdown: "blockquote")
+        styles["caption"] = ParagraphStyleDef(
+            name: "Caption", font: "Helvetica", size: 10, italic: true,
+            spaceBefore: 4, spaceAfter: 12, alignment: "center", color: "#555555",
+            order: 10, markdown: "p")
+        styles["finePrint"] = ParagraphStyleDef(
+            name: "Fine Print", font: "Helvetica", size: 9,
+            lineSpacing: 1.15, color: "#666666", order: 11, markdown: "p")
+        return styles
     }
 
     /// A blank document with a single empty Body paragraph (File ▸ New).
