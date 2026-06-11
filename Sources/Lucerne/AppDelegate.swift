@@ -107,6 +107,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: - Style Library
+
+    // On the app delegate (the responder chain's end) so Format ▸ Style Library…
+    // works with no documents open — the library is app-level, not per-document.
+    @objc func lucerneShowStyleLibrary(_ sender: Any?) {
+        StyleLibraryWindowController.shared.show()
+    }
+
     // MARK: - Updates
 
     @objc func checkForUpdates(_ sender: Any?) {

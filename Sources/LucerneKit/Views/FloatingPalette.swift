@@ -89,8 +89,9 @@ final class FloatingPalette: NSObject {
 
     private func ensurePanel() -> ClassicPaletteWindow {
         if let panel { return panel }
+        let footerHeight: CGFloat = kind == .styles ? 30 : 0
         let panel = ClassicPaletteWindow(
-            contentSize: NSSize(width: 280, height: 400 + PaletteChromeView.titleBarHeight))
+            contentSize: NSSize(width: 280, height: 400 + footerHeight + PaletteChromeView.titleBarHeight))
         let chrome = PaletteChromeView(title: paletteTitle)
         chrome.onClose = { [weak self] in self?.close() }
         panel.contentView = chrome
@@ -99,14 +100,115 @@ final class FloatingPalette: NSObject {
             self?.specimenFont(for: item) ?? .systemFont(ofSize: 13)
         }
         list.onPick = { [weak self] item in self?.apply(item) }
-        // Return / double-click / Esc in a palette just hand the keyboard back to
-        // the page — picks were already committed as they happened.
+        // Return / Esc in a palette just hand the keyboard back to the page —
+        // picks were already committed as they happened.
         list.onCommit = { [weak self] in self?.returnFocusToDocument() }
         list.onCancel = { [weak self] in self?.returnFocusToDocument() }
-        chrome.embedContent(list)
+
+        if kind == .styles {
+            // The styles palette is editable (STYLES.md §5): per-row edit wells
+            // (double-click edits too), and a New… / Duplicate / Delete footer.
+            list.onEdit = { [weak self] item in self?.editStyle(item) }
+            let container = NSView()
+            let footer = buildStylesFooter()
+            for view in [list, footer] {
+                view.translatesAutoresizingMaskIntoConstraints = false
+                container.addSubview(view)
+            }
+            NSLayoutConstraint.activate([
+                list.topAnchor.constraint(equalTo: container.topAnchor),
+                list.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                list.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                footer.topAnchor.constraint(equalTo: list.bottomAnchor),
+                footer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                footer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                footer.heightAnchor.constraint(equalToConstant: footerHeight),
+                footer.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            ])
+            chrome.embedContent(container)
+        } else {
+            chrome.embedContent(list)
+        }
 
         self.panel = panel
         return panel
+    }
+
+    private func buildStylesFooter() -> NSView {
+        let newButton = ClassicButton(title: "New…")
+        newButton.target = self
+        newButton.action = #selector(newStylePressed)
+        let duplicateButton = ClassicButton(title: "Duplicate")
+        duplicateButton.target = self
+        duplicateButton.action = #selector(duplicateStylePressed)
+        let deleteButton = ClassicButton(title: "Delete")
+        deleteButton.target = self
+        deleteButton.action = #selector(deleteStylePressed)
+        let stack = NSStackView(views: [newButton, duplicateButton, deleteButton])
+        stack.orientation = .horizontal
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let footer = NSView()
+        footer.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 8),
+            stack.centerYAnchor.constraint(equalTo: footer.centerYAnchor)
+        ])
+        return footer
+    }
+
+    // MARK: - Styles palette: edit / new / duplicate / delete (STYLES.md §5)
+
+    /// "library:" prefixes mark the dimmed library-only section of the styles
+    /// palette; a plain id is a role of the front document's stylesheet.
+    private static let libraryItemPrefix = "library:"
+
+    private static func libraryKey(of item: PickerItem) -> String? {
+        item.id.hasPrefix(libraryItemPrefix) ? String(item.id.dropFirst(libraryItemPrefix.count)) : nil
+    }
+
+    private func editStyle(_ item: PickerItem) {
+        if let key = Self.libraryKey(of: item) {
+            StyleEditorPanel.shared.open(key: key, library: true)
+        } else {
+            StyleEditorPanel.shared.open(key: item.id, library: false)
+        }
+    }
+
+    @objc private func newStylePressed() {
+        guard let wc = Self.activeDocumentWindowController() else { return }
+        let key = wc.editor.newStyleFromSelection()
+        wc.paletteDidApplyFormatting()
+        refreshFromActiveDocument(selecting: key)
+        StyleEditorPanel.shared.open(key: key, library: false, focusName: true)
+    }
+
+    @objc private func duplicateStylePressed() {
+        guard let wc = Self.activeDocumentWindowController(),
+              let item = list.selectedItem, Self.libraryKey(of: item) == nil,
+              let key = wc.editor.duplicateStyle(item.id) else { return }
+        refreshFromActiveDocument(selecting: key)
+        StyleEditorPanel.shared.open(key: key, library: false, focusName: true)
+    }
+
+    @objc private func deleteStylePressed() {
+        guard let wc = Self.activeDocumentWindowController(),
+              let item = list.selectedItem, Self.libraryKey(of: item) == nil,
+              let def = wc.editor.model.styles[item.id] else { return }
+        guard item.id != LucerneDocumentModel.defaultStyleRole else { return }   // body anchors the format
+        let count = wc.editor.paragraphCount(withStyleRole: item.id)
+        let alert = NSAlert()
+        alert.messageText = "Delete the style “\(def.name)”?"
+        alert.informativeText = count == 0
+            ? "No paragraphs in this letter use it."
+            : (count == 1 ? "1 paragraph uses it and will be restyled as Body."
+                          : "\(count) paragraphs use it and will be restyled as Body.")
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        wc.editor.deleteStyle(item.id)
+        wc.paletteDidApplyFormatting()
+        refreshFromActiveDocument()
     }
 
     // MARK: - The document a palette acts on
@@ -128,6 +230,7 @@ final class FloatingPalette: NSObject {
         for palette in [typefaces, styles] where palette.isOpen {
             palette.refreshFromActiveDocument()
         }
+        StyleEditorPanel.shared.noteSelectionChanged()
     }
 
     /// Re-targets the palette at the current main document: styles re-resolve
@@ -141,10 +244,18 @@ final class FloatingPalette: NSObject {
         case .typefaces:
             newItems = list.items.isEmpty ? Self.typefaceItems() : list.items
         case .styles:
-            newItems = Self.styleItems(styles: wc?.editor.model.styles)
+            // With no letter open the palette goes inert — it does NOT turn into
+            // the library (that has its own window, STYLES.md §7).
+            newItems = wc == nil
+                ? []
+                : Self.styleItems(styles: wc?.editor.model.styles, includeLibrary: true)
         }
         if newItems != list.items { list.setItems(newItems) }
         list.select(id: preferredID ?? currentID(of: wc?.editor))
+        if kind == .styles {
+            list.setHint(wc == nil ? "No letter open — Format ▸ Style Library… edits your library"
+                                   : "Applies to the front document")
+        }
     }
 
     private func currentID(of editor: EditorController?) -> String? {
@@ -160,8 +271,19 @@ final class FloatingPalette: NSObject {
     private func apply(_ item: PickerItem) {
         guard let wc = Self.activeDocumentWindowController() else { return }
         switch kind {
-        case .typefaces: wc.editor.setFontFamily(item.id)
-        case .styles: wc.editor.applyStyleRole(item.id)
+        case .typefaces:
+            wc.editor.setFontFamily(item.id)
+        case .styles:
+            if let key = Self.libraryKey(of: item) {
+                // Picking a library-only style copies it into the document and
+                // applies it — copy-on-use (S2) made tangible.
+                guard let def = StyleLibrary.shared.load()[key] else { return }
+                wc.editor.addOrReplaceStyle(def, forKey: key, actionName: "Add Library Style")
+                wc.editor.applyStyleRole(key)
+                refreshFromActiveDocument(selecting: key)
+            } else {
+                wc.editor.applyStyleRole(item.id)
+            }
         }
         // Put the caret back on the page so a caret-only change (typing
         // attributes) is immediately usable — without moving key status.
@@ -208,11 +330,28 @@ final class FloatingPalette: NSObject {
             ?? NSFont.systemFont(ofSize: 13)
     }
 
-    static func styleItems(styles: [String: ParagraphStyleDef]?) -> [PickerItem] {
+    /// The front document's styles in their list order (STYLES.md S5), plus —
+    /// for the floating palette — a dimmed "Library" section of styles the
+    /// document doesn't define yet (picking one copies it in).
+    static func styleItems(styles: [String: ParagraphStyleDef]?,
+                           includeLibrary: Bool = false) -> [PickerItem] {
         let table = styles ?? DefaultDocuments.defaultStyles()
-        return DefaultDocuments.styleRoleOrder.map {
+        var items = LucerneDocumentModel.orderedStyleRoles(in: table).map {
             PickerItem(id: $0, title: table[$0]?.name ?? $0)
         }
+        if includeLibrary {
+            let library = StyleLibrary.shared.load()
+            let extras = LucerneDocumentModel.orderedStyleRoles(in: library)
+                .filter { table[$0] == nil }
+            if !extras.isEmpty {
+                items.append(.separator("Library"))
+                items += extras.map {
+                    PickerItem(id: libraryItemPrefix + $0,
+                               title: library[$0]?.name ?? $0, dimmed: true)
+                }
+            }
+        }
+        return items
     }
 
     /// Each style row is its own specimen: the style's face and traits, at a
@@ -229,6 +368,9 @@ final class FloatingPalette: NSObject {
         case .typefaces:
             return Self.typefaceSpecimenFont(for: item)
         case .styles:
+            if let key = Self.libraryKey(of: item) {
+                return Self.styleSpecimenFont(role: key, styles: StyleLibrary.shared.load())
+            }
             return Self.styleSpecimenFont(
                 role: item.id,
                 styles: Self.activeDocumentWindowController()?.editor.model.styles)
@@ -243,6 +385,12 @@ final class FloatingPalette: NSObject {
 /// document, floating above document windows, and hidden while the app is
 /// inactive — the classic utility-palette contract.
 final class ClassicPaletteWindow: NSPanel {
+
+    /// A panel-local undo manager (the style editor's "best-effort" stack for
+    /// library-target edits, STYLES.md §6.3). nil routes ⌘Z as usual.
+    var paletteUndoManager: UndoManager?
+
+    override var undoManager: UndoManager? { paletteUndoManager ?? super.undoManager }
 
     init(contentSize: NSSize) {
         super.init(contentRect: NSRect(origin: .zero, size: contentSize),
@@ -290,7 +438,9 @@ final class PaletteChromeView: NSView {
     private static let topCornerRadius: CGFloat = 6
 
     var onClose: (() -> Void)?
-    private let title: String
+    var title: String {
+        didSet { needsDisplay = true }
+    }
     private var closeBoxPressed = false
 
     init(title: String) {

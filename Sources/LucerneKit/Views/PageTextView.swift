@@ -50,8 +50,9 @@ public final class PageTextView: NSTextView {
 
         let styleItem = NSMenuItem(title: "Paragraph Style", action: nil, keyEquivalent: "")
         let styleMenu = NSMenu(title: "Paragraph Style")
-        let defs = DefaultDocuments.defaultStyles()
-        for role in DefaultDocuments.styleRoleOrder {
+        // The document's own stylesheet, in its list order — not a hardcoded set.
+        let defs = editor?.model.styles ?? DefaultDocuments.defaultStyles()
+        for role in LucerneDocumentModel.orderedStyleRoles(in: defs) {
             styleMenu.addItem(item(defs[role]?.name ?? role,
                                    #selector(DocumentWindowController.lucerneApplyStyle(_:)), represented: role))
         }

@@ -17,9 +17,6 @@ public final class ToolbarView: NSView {
     /// The bar's designed height; the window controller lays it out at this.
     public static let barHeight: CGFloat = 34
 
-    private let styleRoles = DefaultDocuments.styleRoleOrder
-    private let styleNames: [String]
-
     private static let tryOnHint = "↑↓ try on your letter  ·  Return keep  ·  Esc revert  ·  drag off to float"
 
     private let styleControl = ClassicChooserControl(width: 112)
@@ -48,8 +45,6 @@ public final class ToolbarView: NSView {
     private let lineSpacings: [(String, CGFloat)] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)]
 
     public override init(frame frameRect: NSRect) {
-        let styles = DefaultDocuments.defaultStyles()
-        styleNames = DefaultDocuments.styleRoleOrder.map { styles[$0]?.name ?? $0 }
         super.init(frame: frameRect)
         build()
     }
@@ -77,7 +72,7 @@ public final class ToolbarView: NSView {
     public var preferredContentWidth: CGFloat { stack.fittingSize.width }
 
     private func build() {
-        styleControl.title = styleNames.first ?? "Body"
+        styleControl.title = "Body"
         styleControl.onPresent = { [weak self] in self?.presentStylePicker() }
 
         fontControl.onPresent = { [weak self] in self?.presentFontPicker() }
@@ -273,11 +268,9 @@ public final class ToolbarView: NSView {
     public func syncFromSelection() {
         guard let editor else { return }
         if let role = editor.currentStyleRole() {
-            // Prefer the document's own style names (files can customise them);
-            // fall back to the default table, then the raw role.
-            styleControl.title = editor.model.styles[role]?.name
-                ?? styleRoles.firstIndex(of: role).map { styleNames[$0] }
-                ?? role
+            // The document's stylesheet is the source of names; a dangling role
+            // (no definition) shows its raw key until the save path heals it.
+            styleControl.title = editor.model.styles[role]?.name ?? role
         }
 
         let attrs = editor.currentAttributes()
