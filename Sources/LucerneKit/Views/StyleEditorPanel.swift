@@ -81,8 +81,8 @@ final class StyleEditorPanel: NSObject {
 
     private static let exportChoices: [(title: String, markdown: String)] = [
         ("Paragraph", "p"), ("Heading 1", "h1"), ("Heading 2", "h2"),
-        ("Heading 3", "h3"), ("List item", "li"), ("Quotation", "blockquote"),
-        ("Code", "code")
+        ("Heading 3", "h3"), ("Heading 4", "h4"), ("List item", "li"),
+        ("Quotation", "blockquote"), ("Code", "code")
     ]
 
     private override init() {
@@ -99,11 +99,42 @@ final class StyleEditorPanel: NSObject {
         let panel = ensurePanel()
         installObservers()
         reloadFromTarget()
+        if !panel.isVisible { positionForFirstOpen(panel) }
         panel.orderFront(nil)
         if focusName {
             panel.makeKey()
             panel.makeFirstResponder(nameField)
         }
+    }
+
+    /// Where the panel lands when it is not already on screen: beside the Style
+    /// Library window when that is visible (the natural pairing — browse on the
+    /// left, edit on the right), else tucked into the front letter's top-right,
+    /// else screen center. While it is open, the user's placement is respected.
+    private func positionForFirstOpen(_ panel: NSWindow) {
+        let gap: CGFloat = 12
+        let size = panel.frame.size
+        let anchorWindow = StyleLibraryWindowController.visibleWindow()
+            ?? FloatingPalette.activeDocumentWindowController()?.window
+        let screen = (anchorWindow?.screen ?? NSScreen.main)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        var topLeft: NSPoint
+        if let library = StyleLibraryWindowController.visibleWindow() {
+            topLeft = NSPoint(x: library.frame.maxX + gap, y: library.frame.maxY)
+            if topLeft.x + size.width > screen.maxX {
+                topLeft.x = library.frame.minX - gap - size.width   // no room right → left
+            }
+        } else if let document = FloatingPalette.activeDocumentWindowController()?.window {
+            topLeft = NSPoint(x: document.frame.maxX - size.width - 24,
+                              y: document.frame.maxY - 36)
+        } else {
+            topLeft = NSPoint(x: screen.midX - size.width / 2,
+                              y: screen.midY + size.height / 2)
+        }
+        topLeft.x = max(screen.minX + 8, min(topLeft.x, screen.maxX - size.width - 8))
+        topLeft.y = max(screen.minY + size.height + 8, min(topLeft.y, screen.maxY - 8))
+        panel.setFrameTopLeftPoint(topLeft)
     }
 
     func close() {

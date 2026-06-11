@@ -71,10 +71,12 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   Style Library window (Format ▸ Style Library…) with reorder/duplicate/delete
   and Import/Export Stylesheet (same JSON dialect); style-level `underline` /
   `rightIndent` / `order` added to the format (additive, still v1); first run
-  seeds a curated starter collection of repeatedly-useful styles — Title,
+  seeds a curated starter collection of repeatedly-useful styles — Body (a
+  mirror of the core default, the handle for restyling future letters), Title,
   Subtitle, Heading 3 (completing the 24/18/14 heading ramp), Code (Menlo,
   with a new additive `code` Markdown hint → indented block), Pull Quote,
-  Caption, Fine Print — keys disjoint from the app-owned core five
+  Caption, Fine Print; `h4` is a recognized heading hint (export + navigator +
+  ToC), and the style editor opens beside the Style Library on first open
 
 ### Rulers & tabs
 - [x] Horizontal ruler view

@@ -15,6 +15,17 @@ public final class StyleLibraryWindowController: NSWindowController, NSWindowDel
 
     public static let shared = StyleLibraryWindowController()
 
+    /// Whether the singleton has ever been created — so callers (the style
+    /// editor's first-open placement) can ask about the window without
+    /// instantiating it as a side effect.
+    private static var hasBeenCreated = false
+
+    /// The Library window, if it is currently on screen.
+    static func visibleWindow() -> NSWindow? {
+        guard hasBeenCreated, let window = shared.window, window.isVisible else { return nil }
+        return window
+    }
+
     private let list = PickerListView(hint: "Drag to reorder — new letters start with these styles")
     private let emptyLabel = NSTextField(wrappingLabelWithString:
         "Your Library is empty.\nSave a style from a letter (Save to Library), or create one here (New…).")
@@ -29,6 +40,7 @@ public final class StyleLibraryWindowController: NSWindowController, NSWindowDel
         window.appearance = NSAppearance(named: .aqua)
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        Self.hasBeenCreated = true
         window.delegate = self
         buildContent()
         window.center()

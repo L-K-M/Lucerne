@@ -190,12 +190,13 @@ The same snapshot-rebuild trick powers two more commands almost for free:
 
 A style's behavior — Markdown block type, heading-navigator membership, ToC
 inclusion — already keys off `markdown`. The style editor exposes it as a simple
-popup ("Exports as: Paragraph / Heading 1 / Heading 2 / Heading 3 / List item /
-Quotation"), defaulting to Paragraph for new styles. This buys a pleasant
-emergent behavior: a user-created "Chapter" style with hint `h1` automatically
-appears in the navigator and the generated ToC, with zero new plumbing. (Note
-the spec already allows `h3`, which the default stylesheet doesn't use — custom
-styles can claim it today.)
+popup ("Exports as: Paragraph / Heading 1–4 / List item / Quotation / Code"),
+defaulting to Paragraph for new styles. This buys a pleasant emergent behavior:
+a user-created "Chapter" style with hint `h1` automatically appears in the
+navigator and the generated ToC, with zero new plumbing — **"Exports as" is the
+whole mapping**: any style whose hint is a heading level joins the outline
+features at that depth, regardless of its name or look. (`h4` and `code` were
+added as additive hints — exactly the extension point the spec reserved.)
 
 ### S5 — Explicit ordering
 
@@ -235,7 +236,9 @@ degrades silently to the built-in defaults.
 A brand-new library starts with a **curated starter collection**
 (`DefaultDocuments.starterLibraryStyles()`), so the Style Library window's
 first impression is a stocked shelf, not an empty box. The bar for inclusion
-is that a style earns its place by being *applied repeatedly*: Title and
+is that a style earns its place by being *applied repeatedly*: Body (an exact
+mirror of the core default — the discoverable handle for "restyle all my
+future letters", inert until edited and harmless to delete), Title and
 Subtitle, a **Heading 3** completing the core heading ramp (24/18/14 pt, and
 it joins the navigator and ToC via its `h3` hint), **Code** (Menlo, with a
 `code` export hint the Markdown lane renders as an indented block — the
@@ -399,7 +402,10 @@ field already does (`becomesKeyOnlyIfNeeded` on `ClassicPaletteWindow`).
    opening the editor on a *library* definition (title "— Library").
 
 All four retarget the existing panel if it is already open, exactly like the
-palettes.
+palettes. When it is *not* yet on screen, it lands beside the Style Library
+window if that is visible (browse on the left, edit on the right), else tucked
+into the front letter's top-right; once open, the user's placement is
+respected.
 
 ### 6.2 Anatomy
 

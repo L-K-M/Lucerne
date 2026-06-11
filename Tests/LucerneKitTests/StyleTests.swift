@@ -297,13 +297,22 @@ final class StarterLibraryTests: XCTestCase {
         return StyleLibrary(fileURL: url)
     }
 
-    func testStarterStylesAreWellFormedAndDisjointFromTheCoreFive() {
+    func testStarterStylesAreWellFormedAndDontForkTheCoreRoles() {
         let starter = DefaultDocuments.starterLibraryStyles()
         XCTAssertGreaterThanOrEqual(starter.count, 6)
+
+        // Core keys stay app-owned, with ONE deliberate exception: a `body`
+        // entry is allowed if (and only if) it is visually identical to the
+        // core default at seed time — a handle for "restyle my future
+        // letters", never a silent fork.
         let coreKeys = Set(DefaultDocuments.defaultStyles().keys)
-        XCTAssertTrue(coreKeys.isDisjoint(with: Set(starter.keys)),
-                      "the starter set must not shadow the app-owned core roles")
-        let validHints: Set<String> = ["p", "h1", "h2", "h3", "li", "blockquote", "code"]
+        let overlap = coreKeys.intersection(Set(starter.keys))
+        XCTAssertEqual(overlap, ["body"], "only body may be mirrored into the library")
+        let coreBody = DefaultDocuments.defaultStyles()["body"]!
+        XCTAssertTrue(starter["body"]!.visuallyEquals(coreBody),
+                      "the seeded body must match the app default exactly")
+
+        let validHints: Set<String> = ["p", "h1", "h2", "h3", "h4", "li", "blockquote", "code"]
         for (key, def) in starter {
             XCTAssertTrue(validHints.contains(def.markdown), "\(key) has hint \(def.markdown)")
             XCTAssertNotNil(def.order, "\(key) needs a stable library position")
@@ -318,11 +327,18 @@ final class StarterLibraryTests: XCTestCase {
         XCTAssertEqual(starter["code"]?.markdown, "code")
     }
 
-    func testCodeHintExportsAsIndentedBlock() {
+    func testCodeAndH4HintsExport() {
         var model = DefaultDocuments.empty()
         model.styles["code"] = ParagraphStyleDef(name: "Code", font: "Menlo", markdown: "code")
-        model.body = [Paragraph(id: "p", style: "code", runs: [Run(text: "let x = 1")])]
-        XCTAssertTrue(MarkdownExporter.export(model).contains("    let x = 1"),
+        model.styles["heading4"] = ParagraphStyleDef(name: "Heading 4", size: 12, bold: true, markdown: "h4")
+        model.body = [
+            Paragraph(id: "p1", style: "heading4", runs: [Run(text: "Deep heading")]),
+            Paragraph(id: "p2", style: "code", runs: [Run(text: "let x = 1")])
+        ]
+        let md = MarkdownExporter.export(model)
+        XCTAssertTrue(md.contains("#### Deep heading"),
+                      "an h4-hinted style exports as a level-4 heading")
+        XCTAssertTrue(md.contains("    let x = 1"),
                       "a code-hinted paragraph exports as an indented code block")
     }
 

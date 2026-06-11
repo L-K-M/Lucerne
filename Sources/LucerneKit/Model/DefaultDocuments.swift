@@ -38,37 +38,43 @@ public enum DefaultDocuments {
     /// *applied repeatedly* — heading levels, code, captions — not by labelling
     /// a one-off line (an earlier cut shipped Salutation/Closing/Postscript
     /// furniture; nobody switches paragraph style for a one-line P.S.).
-    /// Deliberately **disjoint from `defaultStyles()`'s keys**: the core five
-    /// stay app-owned so default improvements keep reaching users, and deleting
-    /// any of these is always harmless. Orders are local to the library;
-    /// seeding appends them after the core set (`StyleLibrary.seededStyles`).
+    ///
+    /// Keys are disjoint from `defaultStyles()` with ONE deliberate exception:
+    /// `body` is included as an exact copy of the core default, so the library
+    /// presents a complete set and — more usefully — editing Body *in the
+    /// library* is the discoverable way to restyle all future letters. Because
+    /// it is identical at seed time it changes nothing until the user touches
+    /// it, and deleting it just falls back to the app default (the overlay).
     public static func starterLibraryStyles() -> [String: ParagraphStyleDef] {
-        [
+        var body = defaultStyles()["body"] ?? .fallbackBody
+        body.order = 0
+        return [
+            "body": body,
             "title": ParagraphStyleDef(
                 name: "Title", font: "Helvetica", size: 30, bold: true,
-                spaceAfter: 6, alignment: "center", order: 0, markdown: "h1"),
+                spaceAfter: 6, alignment: "center", order: 1, markdown: "h1"),
             "subtitle": ParagraphStyleDef(
                 name: "Subtitle", font: "Helvetica", size: 15,
-                spaceAfter: 18, alignment: "center", color: "#444444", order: 1, markdown: "p"),
+                spaceAfter: 18, alignment: "center", color: "#444444", order: 2, markdown: "p"),
             // Completes the heading ramp the core five stop short of:
             // 24 / 18 / 14 pt, all bold — and h3 joins the navigator + ToC.
             "heading3": ParagraphStyleDef(
                 name: "Heading 3", font: "Helvetica", size: 14, bold: true,
-                spaceBefore: 12, spaceAfter: 4, order: 2, markdown: "h3"),
+                spaceBefore: 12, spaceAfter: 4, order: 3, markdown: "h3"),
             "code": ParagraphStyleDef(
                 name: "Code", font: "Menlo", size: 11,
-                lineSpacing: 1.2, leftIndent: 18, order: 3, markdown: "code"),
+                lineSpacing: 1.2, leftIndent: 18, order: 4, markdown: "code"),
             "pullQuote": ParagraphStyleDef(
                 name: "Pull Quote", font: "Helvetica", size: 16, italic: true,
                 spaceBefore: 12, spaceAfter: 12, leftIndent: 36, rightIndent: 36,
-                alignment: "center", color: "#333333", order: 4, markdown: "blockquote"),
+                alignment: "center", color: "#333333", order: 5, markdown: "blockquote"),
             "caption": ParagraphStyleDef(
                 name: "Caption", font: "Helvetica", size: 10, italic: true,
                 spaceBefore: 4, spaceAfter: 12, alignment: "center", color: "#555555",
-                order: 5, markdown: "p"),
+                order: 6, markdown: "p"),
             "finePrint": ParagraphStyleDef(
                 name: "Fine Print", font: "Helvetica", size: 9,
-                lineSpacing: 1.15, color: "#666666", order: 6, markdown: "p")
+                lineSpacing: 1.15, color: "#666666", order: 7, markdown: "p")
         ]
     }
 

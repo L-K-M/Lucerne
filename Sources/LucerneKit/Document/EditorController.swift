@@ -1669,11 +1669,15 @@ public final class EditorController: NSObject {
         return items
     }
 
+    /// The mapping that puts a style into the navigator and the printed ToC: any
+    /// style whose `markdown` hint is a heading level participates at that depth
+    /// — pick "Heading 1…4" in the editor's "Exports as" popup.
     private func headingLevel(for role: String) -> Int? {
         switch model.styles[role]?.markdown {
         case "h1": return 1
         case "h2": return 2
         case "h3": return 3
+        case "h4": return 4
         default: return nil
         }
     }
