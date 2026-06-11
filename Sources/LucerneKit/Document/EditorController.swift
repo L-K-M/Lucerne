@@ -93,6 +93,16 @@ public final class EditorController: NSObject {
     public func snapshotModel() -> LucerneDocumentModel {
         var snapshot = model
         snapshot.body = AttributedStringReader.paragraphs(from: textStorage, styles: model.styles)
+        // Spec §5: a writer MUST define every role a paragraph references. A role
+        // can dangle (e.g. undoing a style's creation while text still names it,
+        // or a hand-edited file); materialize a body-based definition rather than
+        // write a non-conformant file.
+        for paragraph in snapshot.body where snapshot.styles[paragraph.style] == nil {
+            var def = snapshot.styles[LucerneDocumentModel.defaultStyleRole] ?? .fallbackBody
+            def.name = paragraph.style
+            def.order = nil
+            snapshot.styles[paragraph.style] = def
+        }
         return snapshot
     }
 
@@ -1215,6 +1225,268 @@ public final class EditorController: NSObject {
             return storage.attributes(at: loc, effectiveRange: nil)
         }
         return tv.typingAttributes
+    }
+
+    // MARK: - Stylesheet editing (the styles engine — STYLES.md S3)
+
+    /// The heart of editable styles: change the style table, then *re-apply* it
+    /// to the live text. The storage is first read back through the bridge with
+    /// the OLD stylesheet — the per-paragraph/run diffs against the old
+    /// definitions are exactly the user's direct formatting, which must survive —
+    /// then rebuilt with the new one. Because the text itself is untouched, the
+    /// rebuilt attributes line up range-for-range and the caret/selection
+    /// survive. Tables, page-break flags, and tabs ride along because this *is*
+    /// the normal load path.
+    private func applyStylesheetChange(mutateStyles: (inout [String: ParagraphStyleDef]) -> Void,
+                                       mutateBody: ((inout [Paragraph]) -> Void)? = nil) {
+        var body = AttributedStringReader.paragraphs(from: textStorage, styles: model.styles)
+        mutateStyles(&model.styles)
+        mutateBody?(&body)
+
+        if textStorage.length > 0 {
+            var temp = model
+            temp.body = body
+            temp.objects = []
+            let rebuilt = AttributedStringBuilder.attributedString(for: temp)
+            if rebuilt.string == textStorage.string {
+                textStorage.beginEditing()
+                rebuilt.enumerateAttributes(in: NSRange(location: 0, length: rebuilt.length),
+                                            options: []) { attrs, range, _ in
+                    textStorage.setAttributes(attrs, range: range)
+                }
+                textStorage.endEditing()
+            } else {
+                // Defensive: the reader/builder round-trip preserves text, so
+                // this branch should be unreachable — but never lose characters.
+                textStorage.setAttributedString(rebuilt)
+            }
+        }
+        refreshTypingAttributesAfterStyleChange()
+        relayoutText(syncImages: false)
+        document?.editorDidChange()
+        selectionObserver?(self)
+    }
+
+    /// A caret-only document (or an empty paragraph the caret sits in) types in
+    /// its style's look via typing attributes; refresh them after a definition
+    /// changes so the next character picks up the new look.
+    private func refreshTypingAttributesAfterStyleChange() {
+        guard let tv = activeTextView ?? pages.first?.textView else { return }
+        guard let role = tv.typingAttributes[.lucerneStyleRole] as? String else { return }
+        let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
+        tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
+    }
+
+    /// Redefines a style and restyles every paragraph using it, preserving direct
+    /// formatting (S3). Undo restores the previous definition *through the same
+    /// engine* — not a text snapshot — so text typed after the redefinition
+    /// survives an undo of it.
+    public func redefineStyle(_ key: String, to def: ParagraphStyleDef,
+                              actionName: String = "Edit Style", registerUndo: Bool = true) {
+        let old = model.styles[key]
+        guard old != def else { return }
+        applyStylesheetChange(mutateStyles: { $0[key] = def })
+        guard registerUndo else { return }
+        registerStyleRedefinitionUndo(key: key, restoring: old, actionName: actionName)
+    }
+
+    /// The style editor's coalescing hook (STYLES.md §6.3): after a run of live
+    /// `registerUndo: false` tweaks, register the single step back to where the
+    /// editing session began. `restoring: nil` means the key did not exist.
+    public func registerStyleRedefinitionUndo(key: String, restoring old: ParagraphStyleDef?,
+                                              actionName: String = "Edit Style") {
+        guard model.styles[key] != old, let undo = document?.editorUndoManager else { return }
+        undo.registerUndo(withTarget: self) { target in
+            if let old {
+                target.redefineStyle(key, to: old, actionName: actionName)
+            } else {
+                target.removeStyleDefinition(key, actionName: actionName)
+            }
+        }
+        undo.setActionName(actionName)
+    }
+
+    /// Adds a new style under a fresh (or explicit) opaque key — keys are
+    /// identity, names are labels (S1). Returns the key.
+    @discardableResult
+    public func addStyle(_ def: ParagraphStyleDef, key explicitKey: String? = nil,
+                         actionName: String = "New Style") -> String {
+        var def = def
+        if def.order == nil { def.order = model.nextStyleOrder() }
+        let key = explicitKey ?? IDGenerator.next("style")
+        let old = model.styles[key]
+        model.styles[key] = def
+        if let undo = document?.editorUndoManager {
+            undo.registerUndo(withTarget: self) { target in
+                if let old {
+                    target.redefineStyle(key, to: old, actionName: actionName)
+                } else {
+                    target.removeStyleDefinition(key, actionName: actionName)
+                }
+            }
+            undo.setActionName(actionName)
+        }
+        document?.editorDidChange()
+        selectionObserver?(self)
+        return key
+    }
+
+    /// Copies a definition in under a known key (a library import, paste, …):
+    /// replacing an existing key is a real redefinition (S7) and re-applies; the
+    /// document's own list position is kept.
+    @discardableResult
+    public func addOrReplaceStyle(_ def: ParagraphStyleDef, forKey key: String,
+                                  actionName: String = "Add Style") -> String {
+        var def = def
+        if let existing = model.styles[key] {
+            def.order = existing.order
+            redefineStyle(key, to: def, actionName: actionName)
+        } else {
+            def.order = nil   // addStyle assigns "after everything else"
+            addStyle(def, key: key, actionName: actionName)
+        }
+        return key
+    }
+
+    /// Removes a definition outright (the undo path of `addStyle`). Paragraphs
+    /// still naming the role fall back to Body on screen, and `snapshotModel()`
+    /// re-materializes a definition if any remain at save time.
+    private func removeStyleDefinition(_ key: String, actionName: String) {
+        guard let old = model.styles[key] else { return }
+        applyStylesheetChange(mutateStyles: { $0[key] = nil })
+        if let undo = document?.editorUndoManager {
+            undo.registerUndo(withTarget: self) { target in
+                _ = target.addStyle(old, key: key, actionName: actionName)
+            }
+            undo.setActionName(actionName)
+        }
+    }
+
+    /// Deletes a style; paragraphs using it are restyled as Body, keeping their
+    /// run-level direct formatting (STYLES.md S3). `body` itself cannot be
+    /// deleted — it is the format's fallback anchor.
+    public func deleteStyle(_ key: String, actionName: String = "Delete Style") {
+        guard key != LucerneDocumentModel.defaultStyleRole,
+              let old = model.styles[key] else { return }
+        let beforeText = textStorage.copy() as! NSAttributedString
+        applyStylesheetChange(mutateStyles: { $0[key] = nil },
+                              mutateBody: { body in
+            for index in body.indices where body[index].style == key {
+                body[index].style = LucerneDocumentModel.defaultStyleRole
+            }
+        })
+        if let undo = document?.editorUndoManager {
+            undo.registerUndo(withTarget: self) { target in
+                target.restoreDeletedStyle(key, def: old, text: beforeText, actionName: actionName)
+            }
+            undo.setActionName(actionName)
+        }
+    }
+
+    private func restoreDeletedStyle(_ key: String, def: ParagraphStyleDef,
+                                     text: NSAttributedString, actionName: String) {
+        model.styles[key] = def
+        textStorage.setAttributedString(text)
+        refreshTypingAttributesAfterStyleChange()
+        relayoutText(syncImages: false)
+        document?.editorDidChange()
+        selectionObserver?(self)
+        if let undo = document?.editorUndoManager {
+            undo.registerUndo(withTarget: self) { $0.deleteStyle(key, actionName: actionName) }
+            undo.setActionName(actionName)
+        }
+    }
+
+    /// The caret paragraph's *effective* formatting folded into `base` — the
+    /// "Capture from Selection" / "Redefine from Selection" source. `name`,
+    /// `markdown`, and `order` stay as in `base`.
+    public func capturedStyleFromSelection(basedOn base: ParagraphStyleDef) -> ParagraphStyleDef {
+        var def = base
+        let attrs = currentAttributes()
+        if let font = attrs[.font] as? NSFont {
+            def.font = font.familyName ?? font.fontName
+            def.size = Double(font.pointSize)
+            def.bold = FontResolver.isBold(font)
+            def.italic = FontResolver.isItalic(font)
+        }
+        def.underline = ((attrs[.underlineStyle] as? Int) ?? 0) != 0
+        if let color = attrs[.foregroundColor] as? NSColor {
+            def.color = color.lucerneHexString
+        }
+        if let ps = selectedParagraphStyle() {
+            def.alignment = AttributedStringBuilder.alignmentString(from: ps.alignment) ?? def.alignment
+            def.lineSpacing = ps.lineHeightMultiple > 0 ? Double(ps.lineHeightMultiple) : nil
+            def.spaceBefore = Double(ps.paragraphSpacingBefore)
+            def.spaceAfter = Double(ps.paragraphSpacing)
+            def.leftIndent = Double(ps.headIndent)
+            def.firstLineIndent = Double(ps.firstLineHeadIndent - ps.headIndent)
+            def.rightIndent = ps.tailIndent < 0 ? Double(-ps.tailIndent) : 0
+        }
+        return def
+    }
+
+    /// The classic two-second restyle: fold the caret paragraph's look back into
+    /// its own style definition and restyle everything using it.
+    public func redefineCurrentStyleFromSelection() {
+        guard let role = currentStyleRole(), let current = model.styles[role] else { return }
+        redefineStyle(role, to: capturedStyleFromSelection(basedOn: current),
+                      actionName: "Redefine Style")
+    }
+
+    /// "New Style from Selection": a fresh style captured from the caret
+    /// paragraph's effective formatting, applied to the selection. Returns the
+    /// new key (the caller typically opens the style editor on it to name it).
+    @discardableResult
+    public func newStyleFromSelection() -> String {
+        let baseRole = currentStyleRole() ?? LucerneDocumentModel.defaultStyleRole
+        let base = model.resolvedStyle(for: baseRole)
+        var def = capturedStyleFromSelection(basedOn: base)
+        def.name = uniqueStyleName(from: "Untitled Style")
+        def.markdown = "p"
+        def.order = nil
+        let key = addStyle(def, actionName: "New Style")
+        applyStyleRole(key)
+        return key
+    }
+
+    /// Duplicates an existing style ("Name 2", "Name 3", …). Returns the new key.
+    @discardableResult
+    public func duplicateStyle(_ key: String) -> String? {
+        guard var def = model.styles[key] else { return nil }
+        def.name = uniqueStyleName(from: def.name)
+        def.order = nil
+        return addStyle(def, actionName: "Duplicate Style")
+    }
+
+    private func uniqueStyleName(from base: String) -> String {
+        let names = Set(model.styles.values.map(\.name))
+        if !names.contains(base) { return base }
+        var counter = 2
+        while names.contains("\(base) \(counter)") { counter += 1 }
+        return "\(base) \(counter)"
+    }
+
+    /// How many paragraphs carry a style role — the editor panel's blast-radius
+    /// line ("Restyles 14 paragraphs in this letter").
+    public func paragraphCount(withStyleRole role: String) -> Int {
+        guard textStorage.length > 0 else {
+            let caretRole = activeTextView?.typingAttributes[.lucerneStyleRole] as? String
+            return caretRole == role ? 1 : 0
+        }
+        let ns = textStorage.string as NSString
+        var count = 0
+        var location = 0
+        while location < ns.length {
+            var start = 0, end = 0, contentsEnd = 0
+            ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                 for: NSRange(location: location, length: 0))
+            if (textStorage.attribute(.lucerneStyleRole, at: start, effectiveRange: nil) as? String) == role {
+                count += 1
+            }
+            if end == location { break }
+            location = end
+        }
+        return count
     }
 
     public var hasSelectedImage: Bool { selectedImageView != nil }

@@ -5,28 +5,32 @@ import Foundation
 public enum DefaultDocuments {
 
     /// The standard ClarisWorks-ish stylesheet: Body, two headings, a list item,
-    /// and a block quote. Each role carries its markdown export hint (D3).
+    /// and a block quote. Each role carries its markdown export hint (D3) and an
+    /// explicit `order` so the UI lists are stable (STYLES.md S5).
     public static func defaultStyles() -> [String: ParagraphStyleDef] {
         [
             "body": ParagraphStyleDef(
                 name: "Body", font: "Helvetica", size: 12,
-                lineSpacing: 1.2, spaceAfter: 6, markdown: "p"),
+                lineSpacing: 1.2, spaceAfter: 6, order: 0, markdown: "p"),
             "heading1": ParagraphStyleDef(
                 name: "Heading 1", font: "Helvetica", size: 24, bold: true,
-                spaceBefore: 18, spaceAfter: 8, markdown: "h1"),
+                spaceBefore: 18, spaceAfter: 8, order: 1, markdown: "h1"),
             "heading2": ParagraphStyleDef(
                 name: "Heading 2", font: "Helvetica", size: 18, bold: true,
-                spaceBefore: 14, spaceAfter: 6, markdown: "h2"),
+                spaceBefore: 14, spaceAfter: 6, order: 2, markdown: "h2"),
             "listItem": ParagraphStyleDef(
                 name: "List Item", font: "Helvetica", size: 12,
-                leftIndent: 24, markdown: "li"),
+                leftIndent: 24, order: 3, markdown: "li"),
             "quote": ParagraphStyleDef(
                 name: "Block Quote", font: "Helvetica", size: 12, italic: true,
-                leftIndent: 36, markdown: "blockquote")
+                leftIndent: 36, order: 4, markdown: "blockquote")
         ]
     }
 
-    /// The order styles should appear in UI menus (dictionaries are unordered).
+    /// The traditional menu order of the classic five roles. Files that predate
+    /// the per-style `order` member sort by this (see
+    /// `LucerneDocumentModel.orderedStyleRoles`); new documents carry explicit
+    /// orders instead.
     public static let styleRoleOrder = ["body", "heading1", "heading2", "listItem", "quote"]
 
     /// A blank document with a single empty Body paragraph (File ▸ New).

@@ -57,6 +57,38 @@ public struct LucerneDocumentModel: Codable, Equatable {
             ?? styles[LucerneDocumentModel.defaultStyleRole]
             ?? ParagraphStyleDef.fallbackBody
     }
+
+    /// The document's style roles in UI order (STYLES.md S5): explicit `order`
+    /// values ascending first, then — for files that predate `order` — the
+    /// classic five roles in their traditional order, then everything else by
+    /// display name.
+    public var orderedStyleRoles: [String] { Self.orderedStyleRoles(in: styles) }
+
+    public static func orderedStyleRoles(in styles: [String: ParagraphStyleDef]) -> [String] {
+        func rank(_ key: String) -> (order: Double, legacy: Int, name: String) {
+            if let order = styles[key]?.order { return (order, -1, "") }
+            if let index = DefaultDocuments.styleRoleOrder.firstIndex(of: key) {
+                return (.greatestFiniteMagnitude, index, "")
+            }
+            return (.greatestFiniteMagnitude, DefaultDocuments.styleRoleOrder.count,
+                    styles[key]?.name ?? key)
+        }
+        return styles.keys.sorted { a, b in
+            let ra = rank(a), rb = rank(b)
+            if ra.order != rb.order { return ra.order < rb.order }
+            if ra.legacy != rb.legacy { return ra.legacy < rb.legacy }
+            switch ra.name.localizedCaseInsensitiveCompare(rb.name) {
+            case .orderedAscending: return true
+            case .orderedDescending: return false
+            case .orderedSame: return a < b   // deterministic tiebreak
+            }
+        }
+    }
+
+    /// The `order` a newly created style should get: after everything else.
+    public func nextStyleOrder() -> Double {
+        (styles.values.compactMap(\.order).max() ?? Double(styles.count - 1)) + 1
+    }
 }
 
 // MARK: - Header / footer (page furniture)
@@ -112,13 +144,16 @@ public struct ParagraphStyleDef: Codable, Equatable {
     public var size: Double?
     public var bold: Bool?
     public var italic: Bool?
+    public var underline: Bool?         // style-level underline; a run's overrides it
     public var lineSpacing: Double?     // line-height multiple (1.2 == 120%)
     public var spaceBefore: Double?     // points before paragraph
     public var spaceAfter: Double?      // points after paragraph
     public var leftIndent: Double?
     public var firstLineIndent: Double?
+    public var rightIndent: Double?     // points inward from the right margin
     public var alignment: String?       // "left"|"center"|"right"|"justified"
     public var color: String?           // hex, e.g. "#1a1a1a"
+    public var order: Double?           // UI list position (ascending); presentational
     public var markdown: String         // "p"|"h1"|"h2"|"li"|"blockquote"
 
     public init(name: String,
@@ -126,27 +161,43 @@ public struct ParagraphStyleDef: Codable, Equatable {
                 size: Double? = nil,
                 bold: Bool? = nil,
                 italic: Bool? = nil,
+                underline: Bool? = nil,
                 lineSpacing: Double? = nil,
                 spaceBefore: Double? = nil,
                 spaceAfter: Double? = nil,
                 leftIndent: Double? = nil,
                 firstLineIndent: Double? = nil,
+                rightIndent: Double? = nil,
                 alignment: String? = nil,
                 color: String? = nil,
+                order: Double? = nil,
                 markdown: String) {
         self.name = name
         self.font = font
         self.size = size
         self.bold = bold
         self.italic = italic
+        self.underline = underline
         self.lineSpacing = lineSpacing
         self.spaceBefore = spaceBefore
         self.spaceAfter = spaceAfter
         self.leftIndent = leftIndent
         self.firstLineIndent = firstLineIndent
+        self.rightIndent = rightIndent
         self.alignment = alignment
         self.color = color
+        self.order = order
         self.markdown = markdown
+    }
+
+    /// Whether two definitions look the same on the page — everything except the
+    /// presentational `order`. The editor's library strip compares with this so
+    /// merely reordering a list doesn't read as "differs from your Library".
+    public func visuallyEquals(_ other: ParagraphStyleDef) -> Bool {
+        var a = self, b = other
+        a.order = nil
+        b.order = nil
+        return a == b
     }
 
     /// Last-resort body style used only when a file is missing its style table.

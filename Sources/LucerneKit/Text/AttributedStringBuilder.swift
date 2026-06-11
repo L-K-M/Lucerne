@@ -82,7 +82,7 @@ public enum AttributedStringBuilder {
             .lucerneStyleRole: role,
             .lucerneParagraphID: paragraphID
         ]
-        if run.underline ?? false {
+        if run.underline ?? style.underline ?? false {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
         return attrs
@@ -153,7 +153,7 @@ public enum AttributedStringBuilder {
 
         let left = CGFloat(paragraph.indent?.left ?? style.leftIndent ?? 0)
         let firstExtra = CGFloat(paragraph.indent?.firstLine ?? style.firstLineIndent ?? 0)
-        let right = CGFloat(paragraph.indent?.right ?? 0)
+        let right = CGFloat(paragraph.indent?.right ?? style.rightIndent ?? 0)
         ps.headIndent = left
         ps.firstLineHeadIndent = left + firstExtra
         ps.tailIndent = right > 0 ? -right : 0      // negative == inset from the right edge
