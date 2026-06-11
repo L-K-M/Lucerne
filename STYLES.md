@@ -3,8 +3,8 @@
 Design notes for making paragraph styles user-extensible and editable, with both
 app-global and document-local styles. This document surveys where styles stand
 today, states the goals, makes the design decisions (S1–S8, in the spirit of the
-plan's D1–D4), specifies the style editor in detail (§6), and lays out a phased
-implementation plan. Nothing here is
+plan's D1–D4), specifies the style editor (§6) and the Style Library window
+(§7) in detail, and lays out a phased implementation plan. Nothing here is
 implemented yet; this is the thinking that should precede the code.
 
 The brief, in one sentence: *styles should be extensible and easily editable;
@@ -90,12 +90,13 @@ Goals, mapped to the brief:
    classic two-second workflow — format a paragraph by hand, then *Redefine
    "Body" from Selection* — stays as the fast path.
 3. **Global styles** — an app-level style library that seeds new documents and
-   can be copied into existing ones.
+   can be copied into existing ones, with a dedicated Style Library window
+   (§7) as its explicit home.
 4. **Document portability** — a `.luce` file remains fully self-contained; the
    library is never *referenced* by a document, only *copied into* it.
 5. **Format stability** — everything stays `formatVersion: 1` (additive only).
 
-Non-goals for the first iteration (§8 Phase 4 sketches how each could come
+Non-goals for the first iteration (§9 Phase 4 sketches how each could come
 later):
 
 - **Character styles** (named run styles). Runs already carry ad-hoc bold /
@@ -250,7 +251,7 @@ All paths that copy definitions across boundaries use the same rule, compared by
     role is in use.
   - *document → library save:* replace, behind a confirmation ("update the
     library's 'Body'?").
-  - *paste / future fragment import (§7):* keep both — assign the incoming style
+  - *paste / future fragment import (§8):* keep both — assign the incoming style
     a fresh key. Generated keys are unique only per document, so two documents'
     `style-3` may be unrelated; comparing definitions, never trusting keys
     across documents, is what keeps this safe.
@@ -323,16 +324,20 @@ Keeping to the classic-chrome idiom the app already has:
   document's styles, a hairline-ruled **Library** section lists library-only
   styles, dimmed: *picking one copies it into the document and applies it* —
   copy-on-use (S2) made tangible. A key defined in both places appears once, as
-  the document's row.
+  the document's row. (This section is the quick *use one now* path; seeing and
+  managing the whole library happens in the Style Library window, §7.)
 - **The style editor** — the heart of the feature; specified in §6.
+- **The Style Library window** — the explicit home of the global library, with
+  its own menu entry; specified in §7.
 - **Menu commands** (Format ▸ Paragraph Style ▸): the dynamic style list (⌃⌘1–9
   by order), then *New Style from Selection…*, *Redefine "⟨current⟩" from
   Selection*, *Style Settings…*. The submenu and the context menu rebuild from
   the frontmost document via `menuNeedsUpdate` — which also retires the
   names-from-defaults staleness noted in §1.
-- **Library commands**: *Save "⟨style⟩" to Library* (palette footer or Format
-  menu), *Add Library Style to Document ▸* (submenu listing library styles not
-  yet in the document), and *Import / Export Stylesheet…* (File menu) for the
+- **Library commands**: *Format ▸ Style Library…* opens the dedicated Library
+  window (§7); *Save "⟨style⟩" to Library* (palette footer or Format menu);
+  *Add Library Style to Document ▸* (submenu listing library styles not yet in
+  the document); and *Import / Export Stylesheet…* (File menu) for the
   interchange file (S6).
 
 The flagship workflow this enables, end to end: select a paragraph, make it look
@@ -367,8 +372,10 @@ field already does (`becomesKeyOnlyIfNeeded` on `ClassicPaletteWindow`).
    Return/double-click = commit meaning — only the torn-off palette changes.
 3. **Format ▸ Paragraph Style ▸ Style Settings…** — opens the editor on the
    caret paragraph's style, for keyboard-first users.
+4. **The edit wells in the Style Library window** (§7) — the same gesture,
+   opening the editor on a *library* definition (title "— Library").
 
-All three retarget the existing panel if it is already open, exactly like the
+All four retarget the existing panel if it is already open, exactly like the
 palettes.
 
 ### 6.2 Anatomy
@@ -461,20 +468,26 @@ states compared by *definition*, never by key alone:
   (the title flips to "— Library"). Rare by design, deliberately off the main
   path.
 
-For a style that exists *only* in the library (§6.5), the strip inverts to the
-document's side of the relationship: "Not in this letter — **Add to This
+For a style that exists *only* in the library (reached from the palette's
+Library section, §5, or the Style Library window, §7), the strip inverts to
+the document's side of the relationship: "Not in this letter — **Add to This
 Letter**."
 
-### 6.5 Retargeting and the no-document mode
+### 6.5 Retargeting and the no-document state
 
 The editor follows the front document the way the palettes do (the
-`refreshFromActiveDocument` idiom): switch letters and it re-resolves the same
-key against the new front document — sealing the undo group — or falls back to
-the library copy when the key isn't there. With **no documents open**, the
-Styles palette lists the library and the editor edits library definitions
-directly: the palette + editor pair quietly *becomes* the library manager,
-which is why the backlog's standalone "library manager window" may never need
-to exist.
+`refreshFromActiveDocument` idiom), but it **never silently changes which copy
+it edits** — that would be a mode switch by circumstance, the thing S8 argues
+against. Switching letters re-resolves the same key against the new front
+document and seals the undo group. When the key is absent there — or the last
+letter closes — the fields go quiet (read-only) and the strip states the
+situation and the explicit ways forward: *Add to This Letter*, or *Edit the
+Library copy instead…*. Sessions that were library-targeted from the start
+(opened from the Style Library window, §7) ignore document windows entirely.
+
+With no documents open, the Styles palette likewise goes inert — its hint line
+pointing at *Format ▸ Style Library…* — rather than shape-shifting into a
+library view. Explicit library work has a dedicated home: §7.
 
 ### 6.6 Editor-specific policies
 
@@ -484,15 +497,56 @@ to exist.
   confuse menus; the Name field warns inline rather than blocking.
 - **Exports-as changes** take effect on the next outline scan (the navigator
   updates by itself) and on the next ToC regeneration — that staleness is the
-  ToC's documented refresh model (§7).
+  ToC's documented refresh model (§8).
 - **Typing in the letter mid-edit** is allowed (the panel is modeless); it
   seals the undo group and refreshes the blast-radius line, nothing more.
 - **The `toc` style** is editable like any other; its dotted leaders re-measure
-  only when the ToC is regenerated (§7).
+  only when the ToC is regenerated (§8).
 
 ---
 
-## 7. Edge cases and policies
+## 7. The Style Library window
+
+The global library deserves an explicit home, not a state the Styles palette
+slips into when the last window closes. (An earlier draft of this design did
+exactly that — palette + editor doubling as the library manager once no
+documents were open — and it fails the S8 test: a surface that silently
+changes what it acts on *is* a mode, and modes lie.) So the library gets a
+dedicated window with a dedicated menu entry.
+
+- **Opened from Format ▸ Style Library…** — the menu bar has no Window menu
+  today, and Format is where every other style verb lives. One instance; a
+  small titled window in the app's classic chrome. Unlike the palettes it is a
+  *manager you summon deliberately*: normal window level (it can sit behind
+  document windows), closable, independent of any document.
+- **Content**: the same specimen-book list the palette uses, showing the
+  library's styles each in its own face, with the same per-row edit wells; a
+  footer with **New…, Duplicate, Delete** and **Import… / Export…** (the
+  library-scoped face of the S6 interchange commands); and **Add to Letter**,
+  enabled when a front document exists and the selected style isn't already
+  identical there. Drag-to-reorder persists each definition's `order`, which
+  seeding (S6) carries into future documents.
+- **Editing**: the edit well opens *the same* style editor panel (§6),
+  targeted at the library copy — title "Legalese — Library", the specimen box
+  as the preview, the library strip inverted toward the front letter (§6.4).
+  One editor, two browsable surfaces: the Styles palette shows the front
+  document's stylesheet, the Library window shows the library, and the
+  editor's title always says which copy it is changing (S8).
+- **Deleting from the library is always safe for existing letters** — every
+  document embeds its own copies (S2), so removal only changes what future
+  documents are seeded with. For the same reason `body` is freely deletable
+  *here*, unlike in a document (§6.6): a library `body` is merely an override
+  of the built-in default, and deleting it restores that default for new
+  letters.
+- **Empty state**: a short hint — "Your Library is empty. Save a style from a
+  letter (*Save to Library*), or create one here (*New…*)." — so the first
+  visit teaches the round-trip.
+- **Undo**: the window's own undo manager, best-effort, per §6.3. And true to
+  the escape hatch, the library file itself stays editable in any text editor.
+
+---
+
+## 8. Edge cases and policies
 
 - **Unknown roles** — unchanged: the spec's fallback chain (role → `body` →
   hard default) already covers malformed or future files.
@@ -518,12 +572,13 @@ to exist.
 - **Deleting `body`** — disallowed (disabled in the UI); it is the spec's
   fallback target and the writer SHOULD always define it.
 - **Library hygiene** — the library file is read on demand (new document,
-  import menu) rather than held open; concurrent edits by a second app instance
-  are last-writer-wins, which is fine for a per-user preferences-grade file.
+  import menu, the Library window — which refreshes when it activates) rather
+  than held open; concurrent edits by a second app instance are
+  last-writer-wins, which is fine for a per-user preferences-grade file.
 
 ---
 
-## 8. Implementation plan
+## 9. Implementation plan
 
 Phased so each lands shippable and CI-verifiable on its own. Estimates follow
 the roadmap's developer-day convention (implementation only; QA loop extra).
@@ -563,7 +618,7 @@ with custom styles become first-class).
   overrides** pin the old definition; delete-style reassignment; rename
   touching nothing but `name`.
 
-### Phase 3 — the global library (~3–4 days)
+### Phase 3 — the global library (~4–5 days)
 
 - `IO/StyleLibrary.swift` (new): load/save `styles.json`, overlay rule,
   tolerant decode.
@@ -571,9 +626,11 @@ with custom styles become first-class).
   per S6.
 - Commands: Save to Library, Add Library Style to Document, Import/Export
   Stylesheet….
+- `Views/StyleLibraryWindowController.swift` (new — §7): the dedicated Library
+  window and its *Format ▸ Style Library…* menu entry, reusing the specimen
+  list and edit wells from Phase 2.
 - The editor grows its library half: the strip and its verbs, the
-  open-documents offer (§6.4), the library section in the palette (§5), and the
-  no-document library mode (§6.5).
+  open-documents offer (§6.4), and the library section in the palette (§5).
 - Tests: overlay precedence; corrupt/missing file fallback; S7 conflict matrix;
   the strip's state computation and the open-documents-offer eligibility rule
   (both pure functions over definitions — headless).
@@ -582,19 +639,15 @@ with custom styles become first-class).
 
 - **Next-paragraph style** (`next` member: Return at the end of a "Heading 1"
   paragraph starts a "Body" one) — small, classic, additive, purely behavioral.
-- **Pasteboard fragment type** carrying styles across documents (§7).
+- **Pasteboard fragment type** carrying styles across documents (§8).
 - **`basedOn` inheritance** — if ever added, *flatten on save*: write resolved
   values plus an advisory `basedOn`, so version-1 readers stay correct without a
   format bump.
 - **Character styles** — additive `characterStyles` map + run-level `style` key.
-- **A library manager window** — likely obviated: with no documents open, the
-  palette + editor already browse and edit the library (§6.5). Revisit only if
-  the library outgrows a one-panel workflow. (Until Phase 3 lands, the library
-  file is, true to the escape hatch, editable in any text editor.)
 
 ---
 
-## 9. Testing strategy
+## 10. Testing strategy
 
 Consistent with the project's Linux-authored / macOS-CI reality: everything
 above the sheet/palette layer is deliberately testable headlessly.
@@ -611,12 +664,13 @@ above the sheet/palette layer is deliberately testable headlessly.
   blast-radius count.
 - **Needs a human on a Mac**: the editor panel end to end (§6) — edit-well
   discoverability, strip wording, coalesced-undo *feel* (one ⌘Z per editing
-  session), retargeting on window switches — plus palette footer ergonomics,
-  menu rebuild timing, and the shortcuts following reorder.
+  session), retargeting on window switches — the Library window round-trip
+  (§7: new style → reorder → seed a new letter), plus palette footer
+  ergonomics, menu rebuild timing, and the shortcuts following reorder.
 
 ---
 
-## 10. Summary of the shape
+## 11. Summary of the shape
 
 The format was designed for this and needs only courtesy additions (`order`,
 `underline`). The real work is: (1) stop hardcoding the role list — let the
@@ -627,6 +681,7 @@ style editor on top of that engine — reached from an edit well on every palett
 row, always editing what you can see, with the document↔library relationship
 shown as a strip of explicit verbs rather than a mode switch; (4) add a
 copy-on-use library file that seeds new documents and doubles as the stylesheet
-interchange format. Documents stay self-contained at every step — which is the
+interchange format, with the deliberately-opened Style Library window as its
+explicit home. Documents stay self-contained at every step — which is the
 property that makes a `.luce` file safe to mail to a stranger's Mac, and the one
 thing this design refuses to trade away.
