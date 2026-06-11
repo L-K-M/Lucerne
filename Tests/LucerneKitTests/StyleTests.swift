@@ -299,11 +299,11 @@ final class StarterLibraryTests: XCTestCase {
 
     func testStarterStylesAreWellFormedAndDisjointFromTheCoreFive() {
         let starter = DefaultDocuments.starterLibraryStyles()
-        XCTAssertGreaterThanOrEqual(starter.count, 10)
+        XCTAssertGreaterThanOrEqual(starter.count, 6)
         let coreKeys = Set(DefaultDocuments.defaultStyles().keys)
         XCTAssertTrue(coreKeys.isDisjoint(with: Set(starter.keys)),
                       "the starter set must not shadow the app-owned core roles")
-        let validHints: Set<String> = ["p", "h1", "h2", "h3", "li", "blockquote"]
+        let validHints: Set<String> = ["p", "h1", "h2", "h3", "li", "blockquote", "code"]
         for (key, def) in starter {
             XCTAssertTrue(validHints.contains(def.markdown), "\(key) has hint \(def.markdown)")
             XCTAssertNotNil(def.order, "\(key) needs a stable library position")
@@ -311,6 +311,19 @@ final class StarterLibraryTests: XCTestCase {
         }
         XCTAssertEqual(Set(starter.values.map(\.name)).count, starter.count,
                        "display names must be unique")
+        // The headline members: the missing heading level and a code style.
+        XCTAssertEqual(starter["heading3"]?.markdown, "h3",
+                       "Heading 3 completes the navigator/ToC heading ramp")
+        XCTAssertEqual(starter["code"]?.font, "Menlo")
+        XCTAssertEqual(starter["code"]?.markdown, "code")
+    }
+
+    func testCodeHintExportsAsIndentedBlock() {
+        var model = DefaultDocuments.empty()
+        model.styles["code"] = ParagraphStyleDef(name: "Code", font: "Menlo", markdown: "code")
+        model.body = [Paragraph(id: "p", style: "code", runs: [Run(text: "let x = 1")])]
+        XCTAssertTrue(MarkdownExporter.export(model).contains("    let x = 1"),
+                      "a code-hinted paragraph exports as an indented code block")
     }
 
     func testSeedHappensOnlyWhenNoFileExists() {

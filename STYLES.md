@@ -232,15 +232,20 @@ inspectable, hand-editable, diffable, and trivially copied to another Mac (which
 exists). Decoding reuses `ParagraphStyleDef` as-is. A missing or corrupt file
 degrades silently to the built-in defaults.
 
-A brand-new library starts with a **curated starter collection** — a letter
-kit (Letterhead, Sender Address, Date Line, Salutation, Letter Body, Closing,
-a Snell Roundhand Signature, Postscript) plus document styles (Section, Pull
-Quote, Caption, Fine Print, Typewriter), all in faces that ship with macOS —
-so the Style Library window's first impression is a stocked shelf, not an
-empty box (`DefaultDocuments.starterLibraryStyles()`). Seeding happens only
-when **no library file exists yet**: a library the user emptied by hand stays
-empty, and — true to the escape hatch — deleting `styles.json` brings the
-starter set back.
+A brand-new library starts with a **curated starter collection**
+(`DefaultDocuments.starterLibraryStyles()`), so the Style Library window's
+first impression is a stocked shelf, not an empty box. The bar for inclusion
+is that a style earns its place by being *applied repeatedly*: Title and
+Subtitle, a **Heading 3** completing the core heading ramp (24/18/14 pt, and
+it joins the navigator and ToC via its `h3` hint), **Code** (Menlo, with a
+`code` export hint the Markdown lane renders as an indented block — the
+additive-hint extension point the spec was designed for), Pull Quote, Caption,
+and Fine Print. An earlier cut shipped one-off letter furniture — Salutation,
+Closing, Postscript, a script Signature — pretty, but nobody switches
+paragraph style for a one-line P.S., so it was cut for exactly that reason.
+Seeding happens only when **no library file exists yet**: a library the user
+emptied by hand stays empty, and — true to the escape hatch — deleting
+`styles.json` brings the starter set back.
 
 What is deliberately **not** materialized into the library is the core five
 themselves: the starter keys are disjoint from `body`/`heading1`/…, which stay

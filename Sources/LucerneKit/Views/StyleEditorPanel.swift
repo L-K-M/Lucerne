@@ -81,7 +81,8 @@ final class StyleEditorPanel: NSObject {
 
     private static let exportChoices: [(title: String, markdown: String)] = [
         ("Paragraph", "p"), ("Heading 1", "h1"), ("Heading 2", "h2"),
-        ("Heading 3", "h3"), ("List item", "li"), ("Quotation", "blockquote")
+        ("Heading 3", "h3"), ("List item", "li"), ("Quotation", "blockquote"),
+        ("Code", "code")
     ]
 
     private override init() {
@@ -576,8 +577,8 @@ final class StyleEditorPanel: NSObject {
             row("Space (pt)", [formLabel("Before"), beforeField, formLabel("After"), afterField]),
             rowWith(indentLabel, [indentLeftField, indentFirstField, indentRightField]),
             specimen,
-            row("", [captureButton]),
-            indentedNote(blastLabel)
+            centeredRow(captureButton),
+            centeredRow(blastLabel)
         ]
         let form = NSStackView(views: rows)
         form.orientation = .vertical
@@ -653,6 +654,23 @@ final class StyleEditorPanel: NSObject {
         stack.orientation = .horizontal
         stack.spacing = 6
         return stack
+    }
+
+    /// Centers a view on the form's full width (the specimen's 290 pt), so the
+    /// capture button and the blast-radius line read as a deliberate centered
+    /// pair under the specimen rather than hanging off the label column.
+    private func centeredRow(_ view: NSView) -> NSView {
+        let container = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(view)
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 290),
+            view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        return container
     }
 
     // MARK: - Observers

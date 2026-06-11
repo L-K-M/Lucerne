@@ -34,59 +34,41 @@ public enum DefaultDocuments {
     public static let styleRoleOrder = ["body", "heading1", "heading2", "listItem", "quote"]
 
     /// The curated starter collection a brand-new style library is seeded with
-    /// (STYLES.md S6) — a letter kit (Lucerne is a letters tool first) plus a
-    /// few document styles, in faces that ship with macOS (FontResolver falls
-    /// back to the system font if one is ever missing). Deliberately **disjoint
-    /// from `defaultStyles()`'s keys**: the core five stay app-owned so default
-    /// improvements keep reaching users, and deleting any of these is always
-    /// harmless. Orders are local to the library; seeding appends them after
-    /// the core set (`StyleLibrary.seededStyles`).
+    /// (STYLES.md S6). The bar for inclusion: a style earns its place by being
+    /// *applied repeatedly* — heading levels, code, captions — not by labelling
+    /// a one-off line (an earlier cut shipped Salutation/Closing/Postscript
+    /// furniture; nobody switches paragraph style for a one-line P.S.).
+    /// Deliberately **disjoint from `defaultStyles()`'s keys**: the core five
+    /// stay app-owned so default improvements keep reaching users, and deleting
+    /// any of these is always harmless. Orders are local to the library;
+    /// seeding appends them after the core set (`StyleLibrary.seededStyles`).
     public static func starterLibraryStyles() -> [String: ParagraphStyleDef] {
         [
-            // — The letter kit, top of the page to the sign-off —
-            "letterhead": ParagraphStyleDef(
-                name: "Letterhead", font: "Baskerville", size: 26,
-                spaceBefore: 6, spaceAfter: 4, alignment: "center", order: 0, markdown: "h1"),
-            "senderAddress": ParagraphStyleDef(
-                name: "Sender Address", font: "Optima", size: 10,
-                lineSpacing: 1.15, alignment: "right", color: "#444444", order: 1, markdown: "p"),
-            "dateline": ParagraphStyleDef(
-                name: "Date Line", font: "Baskerville", size: 12, italic: true,
-                spaceBefore: 12, spaceAfter: 24, alignment: "right", order: 2, markdown: "p"),
-            "salutation": ParagraphStyleDef(
-                name: "Salutation", font: "Baskerville", size: 13,
-                spaceBefore: 12, spaceAfter: 12, order: 3, markdown: "p"),
-            "letterBody": ParagraphStyleDef(
-                name: "Letter Body", font: "Baskerville", size: 13,
-                lineSpacing: 1.35, spaceAfter: 8, firstLineIndent: 18, order: 4, markdown: "p"),
-            "closing": ParagraphStyleDef(
-                name: "Closing", font: "Baskerville", size: 13,
-                spaceBefore: 16, spaceAfter: 2, order: 5, markdown: "p"),
-            "signature": ParagraphStyleDef(
-                name: "Signature", font: "Snell Roundhand", size: 22,
-                spaceAfter: 16, leftIndent: 18, order: 6, markdown: "p"),
-            "postscript": ParagraphStyleDef(
-                name: "Postscript", font: "Baskerville", size: 12, italic: true,
-                spaceBefore: 14, order: 7, markdown: "p"),
-
-            // — Document styles —
-            "section": ParagraphStyleDef(
-                name: "Section", font: "Optima", size: 13, bold: true,
-                spaceBefore: 18, spaceAfter: 6, color: "#333333", order: 8, markdown: "h3"),
+            "title": ParagraphStyleDef(
+                name: "Title", font: "Helvetica", size: 30, bold: true,
+                spaceAfter: 6, alignment: "center", order: 0, markdown: "h1"),
+            "subtitle": ParagraphStyleDef(
+                name: "Subtitle", font: "Helvetica", size: 15,
+                spaceAfter: 18, alignment: "center", color: "#444444", order: 1, markdown: "p"),
+            // Completes the heading ramp the core five stop short of:
+            // 24 / 18 / 14 pt, all bold — and h3 joins the navigator + ToC.
+            "heading3": ParagraphStyleDef(
+                name: "Heading 3", font: "Helvetica", size: 14, bold: true,
+                spaceBefore: 12, spaceAfter: 4, order: 2, markdown: "h3"),
+            "code": ParagraphStyleDef(
+                name: "Code", font: "Menlo", size: 11,
+                lineSpacing: 1.2, leftIndent: 18, order: 3, markdown: "code"),
             "pullQuote": ParagraphStyleDef(
-                name: "Pull Quote", font: "Hoefler Text", size: 16, italic: true,
-                spaceBefore: 14, spaceAfter: 14, leftIndent: 36, rightIndent: 36,
-                alignment: "center", color: "#333333", order: 9, markdown: "blockquote"),
+                name: "Pull Quote", font: "Helvetica", size: 16, italic: true,
+                spaceBefore: 12, spaceAfter: 12, leftIndent: 36, rightIndent: 36,
+                alignment: "center", color: "#333333", order: 4, markdown: "blockquote"),
             "caption": ParagraphStyleDef(
-                name: "Caption", font: "Optima", size: 10, italic: true,
+                name: "Caption", font: "Helvetica", size: 10, italic: true,
                 spaceBefore: 4, spaceAfter: 12, alignment: "center", color: "#555555",
-                order: 10, markdown: "p"),
+                order: 5, markdown: "p"),
             "finePrint": ParagraphStyleDef(
-                name: "Fine Print", font: "Optima", size: 9,
-                lineSpacing: 1.15, color: "#666666", order: 11, markdown: "p"),
-            "typewriter": ParagraphStyleDef(
-                name: "Typewriter", font: "American Typewriter", size: 12,
-                lineSpacing: 1.2, order: 12, markdown: "p")
+                name: "Fine Print", font: "Helvetica", size: 9,
+                lineSpacing: 1.15, color: "#666666", order: 6, markdown: "p")
         ]
     }
 

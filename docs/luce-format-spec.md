@@ -173,7 +173,7 @@ the key string itself.
 | Member | Type | Presence | Default | Notes |
 |---|---|---|---|---|
 | `name` | string | REQUIRED | — | Human-readable name shown in UI (e.g. "Heading 1"). |
-| `markdown` | string | REQUIRED | — | Markdown export hint (§8). One of `"p"`, `"h1"`, `"h2"`, `"h3"`, `"li"`, `"blockquote"`. |
+| `markdown` | string | REQUIRED | — | Markdown export hint (§8). One of `"p"`, `"h1"`, `"h2"`, `"h3"`, `"li"`, `"blockquote"`, `"code"`. |
 | `font` | string | optional | `"Helvetica"` | Font family (or PostScript) name. |
 | `size` | number | optional | `12` | Font size in points. |
 | `bold` | boolean | optional | `false` | |
@@ -361,7 +361,8 @@ derivation so tools can produce comparable output.
    blank line; the file ends with a trailing newline.
 2. The block prefix is chosen by the paragraph's style `markdown` hint:
    `h1` → `# `, `h2` → `## `, `h3` → `### `, `li` → `- `, `blockquote` → `> `,
-   and `p` (or anything else) → no prefix.
+   `code` → four leading spaces (an indented code block), and `p` (or anything
+   else) → no prefix.
 3. Within a paragraph, each run's text is emitted with emphasis markers from its
    *effective* bold/italic: bold → `**…**`, italic → `*…*`, both → `***…***`.
    Surrounding whitespace is moved outside the markers (so `"word "` italic emits
@@ -681,7 +682,7 @@ absent from the Markdown — they live in `document.json`.)
 |---|---|
 | `page.size` | `"A4"`, `"Letter"`, `"custom"` (advisory) |
 | `alignment` / paragraph `align` | `"left"`, `"center"`, `"right"`, `"justified"` |
-| style `markdown` | `"p"`, `"h1"`, `"h2"`, `"h3"`, `"li"`, `"blockquote"` |
+| style `markdown` | `"p"`, `"h1"`, `"h2"`, `"h3"`, `"li"`, `"blockquote"`, `"code"` |
 | tab `type` | `"left"`, `"center"`, `"right"`, `"decimal"` |
 | object `anchor` | `"page"`, `"paragraph"` |
 | object `wrap` | `"none"`, `"rectangular"`, `"irregular"` |

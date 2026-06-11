@@ -71,9 +71,10 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
   Style Library window (Format ▸ Style Library…) with reorder/duplicate/delete
   and Import/Export Stylesheet (same JSON dialect); style-level `underline` /
   `rightIndent` / `order` added to the format (additive, still v1); first run
-  seeds a curated starter collection (a letter kit — Letterhead, Date Line,
-  Salutation, Signature, Postscript, … — plus Pull Quote, Caption, Fine Print,
-  Typewriter), keys disjoint from the app-owned core five
+  seeds a curated starter collection of repeatedly-useful styles — Title,
+  Subtitle, Heading 3 (completing the 24/18/14 heading ramp), Code (Menlo,
+  with a new additive `code` Markdown hint → indented block), Pull Quote,
+  Caption, Fine Print — keys disjoint from the app-owned core five
 
 ### Rulers & tabs
 - [x] Horizontal ruler view
