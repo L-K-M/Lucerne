@@ -32,12 +32,25 @@ enum MainMenu {
     @discardableResult
     private static func add(_ menu: NSMenu, _ title: String, _ selector: String,
                             key: String = "", modifiers: NSEvent.ModifierFlags = .command,
-                            represented: Any? = nil) -> NSMenuItem {
+                            symbol: String? = nil, represented: Any? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: Selector(selector), keyEquivalent: key)
         if !key.isEmpty { item.keyEquivalentModifierMask = modifiers }
+        if let symbol { item.image = symbolImage(symbol) }
         item.representedObject = represented
         menu.addItem(item)
         return item
+    }
+
+    /// A small, template SF Symbol for a menu item's leading image. Used sparingly
+    /// — only on the handful of high-traffic commands — so the menus stay legible
+    /// rather than turning into icon soup. Template images take on the menu's own
+    /// text color, so they read correctly in both light and dark menus.
+    private static func symbolImage(_ name: String) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = true
+        return image
     }
 
     // MARK: - App
@@ -67,29 +80,28 @@ enum MainMenu {
 
     private static func makeFileMenu() -> NSMenuItem {
         submenu("File") { menu in
-            add(menu, "New", "newDocument:", key: "n")
-            let open = add(menu, "Open…", "openDocument:", key: "o")
+            add(menu, "New", "newDocument:", key: "n", symbol: "doc.badge.plus")
+            add(menu, "Open…", "openDocument:", key: "o", symbol: "folder")
             let openRecent = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
             let recentMenu = NSMenu(title: "Open Recent")
             recentMenu.addItem(withTitle: "Clear Menu", action: #selector(NSDocumentController.clearRecentDocuments(_:)), keyEquivalent: "")
             openRecent.submenu = recentMenu
             menu.addItem(openRecent)
-            _ = open
             menu.addItem(.separator())
             add(menu, "Close", "performClose:", key: "w")
-            add(menu, "Save…", "saveDocument:", key: "s")
+            add(menu, "Save…", "saveDocument:", key: "s", symbol: "square.and.arrow.down")
             add(menu, "Save As…", "saveDocumentAs:", key: "s", modifiers: [.command, .shift])
             add(menu, "Revert to Saved", "revertDocumentToSaved:")
             menu.addItem(.separator())
-            add(menu, "Export as PDF…", "exportPDF:")
-            add(menu, "Export as RTF…  (lossy)", "exportRTF:")
+            add(menu, "Export as PDF…", "exportPDF:", symbol: "arrow.up.doc")
+            add(menu, "Export as RTF… (lossy)", "exportRTF:")
             menu.addItem(.separator())
             add(menu, "Import Stylesheet…", "lucerneImportStylesheet:")
             add(menu, "Export Stylesheet…", "lucerneExportStylesheet:")
             menu.addItem(.separator())
             add(menu, "Document Setup…", "lucerneDocumentSetup:")
             add(menu, "Page Setup…", "runPageLayout:", key: "p", modifiers: [.command, .shift])
-            add(menu, "Print…", "printDocument:", key: "p")
+            add(menu, "Print…", "printDocument:", key: "p", symbol: "printer")
         }
     }
 
@@ -112,7 +124,7 @@ enum MainMenu {
             // container). These route to DocumentWindowController.
             let find = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
             let findMenu = NSMenu(title: "Find")
-            add(findMenu, "Find…", "lucerneShowFindPanel:", key: "f")
+            add(findMenu, "Find…", "lucerneShowFindPanel:", key: "f", symbol: "magnifyingglass")
             add(findMenu, "Find Next", "lucerneFindNext:", key: "g")
             add(findMenu, "Find Previous", "lucerneFindPrevious:", key: "G")
             find.submenu = findMenu
@@ -139,9 +151,9 @@ enum MainMenu {
             add(fontMenu, "Show Fonts", "orderFrontFontPanel:", key: "t")
             add(fontMenu, "Show Colors", "orderFrontColorPanel:", key: "C", modifiers: [.command, .shift])
             fontMenu.addItem(.separator())
-            add(fontMenu, "Bold", "lucerneToggleBold:", key: "b")
-            add(fontMenu, "Italic", "lucerneToggleItalic:", key: "i")
-            add(fontMenu, "Underline", "lucerneToggleUnderline:", key: "u")
+            add(fontMenu, "Bold", "lucerneToggleBold:", key: "b", symbol: "bold")
+            add(fontMenu, "Italic", "lucerneToggleItalic:", key: "i", symbol: "italic")
+            add(fontMenu, "Underline", "lucerneToggleUnderline:", key: "u", symbol: "underline")
             font.submenu = fontMenu
             menu.addItem(font)
 
@@ -186,11 +198,10 @@ enum MainMenu {
 
     private static func makeInsertMenu() -> NSMenuItem {
         submenu("Insert") { menu in
-            add(menu, "Image…", "lucerneInsertImage:", key: "i", modifiers: [.command, .shift])
+            add(menu, "Image…", "lucerneInsertImage:", key: "i", modifiers: [.command, .shift], symbol: "photo")
             add(menu, "Page Break", "lucerneInsertPageBreak:", key: "\r", modifiers: [.command, .shift])
-            add(menu, "Page Number", "lucerneInsertPageNumber:")
             add(menu, "Header & Footer…", "lucerneHeaderFooter:")
-            add(menu, "Table…", "lucerneInsertTable:")
+            add(menu, "Table…", "lucerneInsertTable:", symbol: "tablecells")
             add(menu, "Table of Contents", "lucerneTableOfContents:")
             menu.addItem(.separator())
             let wrap = NSMenuItem(title: "Image Text Wrap", action: nil, keyEquivalent: "")
