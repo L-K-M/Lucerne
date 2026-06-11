@@ -2,8 +2,9 @@
 
 Design notes for making paragraph styles user-extensible and editable, with both
 app-global and document-local styles. This document surveys where styles stand
-today, states the goals, makes the design decisions (S1–S7, in the spirit of the
-plan's D1–D4), and lays out a phased implementation plan. Nothing here is
+today, states the goals, makes the design decisions (S1–S8, in the spirit of the
+plan's D1–D4), specifies the style editor in detail (§6), and lays out a phased
+implementation plan. Nothing here is
 implemented yet; this is the thinking that should precede the code.
 
 The brief, in one sentence: *styles should be extensible and easily editable;
@@ -29,7 +30,8 @@ the spec (`docs/luce-format-spec.md` §5) already says everything the brief need
 - Role keys are arbitrary strings. A hand-edited file with a `"legalese"` style
   is **already a valid version-1 document**, and the app renders it correctly
   (the builder resolves any role; unknown roles fall back to `body`).
-- Effective values resolve run → paragraph → style → hard default (§6.6), and on
+- Effective values resolve run → paragraph → style → hard default (spec §6.6),
+  and on
   save `AttributedStringReader` stores only what *differs* from the style — so
   files stay small and intent-revealing.
 
@@ -82,16 +84,19 @@ Goals, mapped to the brief:
 1. **Extensible** — users can create new paragraph styles in a document; the UI
    (toolbar chooser, palette, menus, shortcuts) is driven by the *document's*
    stylesheet, not a hardcoded list.
-2. **Easily editable** — redefine a style and every paragraph using it follows;
-   support both a "from scratch" editor and the classic two-second workflow:
-   format a paragraph by hand, then *Redefine "Body" from Selection*.
+2. **Easily editable** — redefine a style and every paragraph using it follows.
+   A dedicated style editor opens from an edit button on every palette row and
+   can change either the document's or the library's definition (§6); the
+   classic two-second workflow — format a paragraph by hand, then *Redefine
+   "Body" from Selection* — stays as the fast path.
 3. **Global styles** — an app-level style library that seeds new documents and
    can be copied into existing ones.
 4. **Document portability** — a `.luce` file remains fully self-contained; the
    library is never *referenced* by a document, only *copied into* it.
 5. **Format stability** — everything stays `formatVersion: 1` (additive only).
 
-Non-goals for the first iteration (see §9 for how each could come later):
+Non-goals for the first iteration (§8 Phase 4 sketches how each could come
+later):
 
 - **Character styles** (named run styles). Runs already carry ad-hoc bold /
   italic / font / size / color; named character styles are an additive model
@@ -245,10 +250,41 @@ All paths that copy definitions across boundaries use the same rule, compared by
     role is in use.
   - *document → library save:* replace, behind a confirmation ("update the
     library's 'Body'?").
-  - *paste / future fragment import (§6):* keep both — assign the incoming style
+  - *paste / future fragment import (§7):* keep both — assign the incoming style
     a fresh key. Generated keys are unique only per document, so two documents'
     `style-3` may be unrelated; comparing definitions, never trusting keys
     across documents, is what keeps this safe.
+
+### S8 — The editor edits what you can see; document-vs-library is verbs, not a mode
+
+The style editor (§6) is where "global or per-document?" stops being abstract.
+The obvious answer is a scope switch at the top of the editor — *Editing: this
+letter / my Library* — and it is a trap. With "Library" selected over an open
+letter, either fiddling produces no visible change (library edits don't restyle
+documents, per S2) and the editor feels broken, or it *does* restyle the letter
+and S2's no-spooky-action guarantee dies. Modes lie about consequences; verbs
+state them.
+
+So: **the editor always edits the definition whose effect is in front of you.**
+If the front document defines the key, you are editing the document's copy,
+applied live to the letter (S3) as you adjust. If the style exists only in the
+library — or no document is open at all — you are plainly editing the library's
+copy, and the panel's title says so. The global half of the brief is delivered
+not by a mode but by an always-visible **library strip** at the bottom of the
+editor, showing the relationship (*not in Library / matches / differs*) with
+explicit verbs: *Add to Library*, *Update Library*, *Use Library Copy* (§6.4).
+
+"Which is then applied to the documents," precisely: a document-copy edit
+restyles that document immediately. *Update Library* additionally **offers** —
+never forces — the same update to other *open* documents whose copy was still
+in sync with the library. **Closed documents are never touched**: an old letter
+keeps its look until its owner opens it and pulls. The linked-styles
+alternative (documents record an `origin` and silently follow the library,
+the way Word documents follow an attached template) was considered and set
+aside: it restyles letters-of-record at a distance and drags in three-way sync
+states and reconciliation prompts, for little gain over the verb strip. The
+format could host it later additively (`origin` plus a copied-from fingerprint)
+if real usage demands it.
 
 ---
 
@@ -257,7 +293,7 @@ All paths that copy definitions across boundaries use the same rule, compared by
 | Change | Member | Notes |
 |---|---|---|
 | Style ordering | `order` (number, optional) on the style definition | Absent → legacy ordering (S5). Readers that ignore it lose only menu order. |
-| Style-level underline | `underline` (boolean, optional) on the style definition | Today underline exists only at run level (§6.6 note), so an "underlined fine print" *style* isn't expressible — a real gap once styles are editable. Additive; an older reader renders such a style un-underlined (degrades, doesn't misinterpret). |
+| Style-level underline | `underline` (boolean, optional) on the style definition | Today underline exists only at run level (spec §6.6 note), so an "underlined fine print" *style* isn't expressible — a real gap once styles are editable. Additive; an older reader renders such a style un-underlined (degrades, doesn't misinterpret). |
 | Style-level right indent | `rightIndent` (number, optional) | Optional nicety for editor completeness; paragraphs can already override `indent.right`, styles cannot express it. Same compatibility character as `underline`. |
 
 Per spec §9 these are additive (readers ignore unknown members), so
@@ -267,7 +303,7 @@ themselves* — arbitrary keys are already conformant.
 Spec touch-points when implementing: §5.1 table, Appendix A schema, Appendix C
 defaults in `docs/luce-format-spec.md`; the overview in `docs/file-format.md`;
 plus a short normative note that role keys are opaque identifiers and `name` is
-the display label (the §6.4 spirit, said explicitly for styles).
+the display label (the spirit of the spec's §6.4, said explicitly for styles).
 
 ---
 
@@ -275,15 +311,20 @@ the display label (the §6.4 spirit, said explicitly for styles).
 
 Keeping to the classic-chrome idiom the app already has:
 
-- **Styles palette** (`FloatingPalette`) grows a thin footer bar: **New…,
-  Duplicate, Edit…, Delete** at palette scale. The list itself stays the
-  specimen list it is today, sorted per S5, sourced from the active document.
-- **Style editor sheet** (new `StyleEditorSheet`, sibling of
-  `HeaderFooterSheet`): name field; "Exports as" popup (S4); face / size / bold
-  / italic / underline / color; line spacing, space before/after; left / first /
-  right indents; alignment; a live specimen line; and a **"Capture from
-  selection"** button that fills the fields from the caret paragraph's effective
-  formatting.
+- **Styles palette** (`FloatingPalette`): the list stays the specimen book it
+  is today — sorted per S5, sourced from the front document — and each row
+  gains a small **edit well** at its right edge (a pencil glyph in the classic
+  engraved style, shown on hover and on the selected row; rows are plain labels
+  today and become a small custom view). Clicking the row applies the style, as
+  now; the well — or a double-click — opens the style editor (§6). A thin
+  classic footer bar holds **New…, Duplicate, Delete**; *New…* opens the editor
+  on a fresh style seeded from the caret paragraph's effective formatting, so
+  it is the same act as the menu's *New Style from Selection…*. Below the
+  document's styles, a hairline-ruled **Library** section lists library-only
+  styles, dimmed: *picking one copies it into the document and applies it* —
+  copy-on-use (S2) made tangible. A key defined in both places appears once, as
+  the document's row.
+- **The style editor** — the heart of the feature; specified in §6.
 - **Menu commands** (Format ▸ Paragraph Style ▸): the dynamic style list (⌃⌘1–9
   by order), then *New Style from Selection…*, *Redefine "⟨current⟩" from
   Selection*, *Style Settings…*. The submenu and the context menu rebuild from
@@ -298,11 +339,160 @@ The flagship workflow this enables, end to end: select a paragraph, make it look
 right with the ordinary toolbar, *Format ▸ Paragraph Style ▸ New Style from
 Selection…*, name it "Legalese" — done. It's in the palette, the menus, the
 shortcuts; it saves into the `.luce`; *Save to Library* makes it available to
-every future letter.
+every future letter — and the pencil next to its palette row reopens it in the
+editor whenever it needs a nudge.
 
 ---
 
-## 6. Edge cases and policies
+## 6. The style editor
+
+The single most consequential piece of new UI in this design, so it gets its
+own section. The shape: **one** app-global, modeless editor panel in the
+classic palette chrome — a sibling of the Typefaces and Styles palettes, with
+the same one-instance contract (`FloatingPalette`'s "exactly one per kind").
+Deliberately **not a sheet**: a sheet blocks the letter behind it, and the
+whole point (S8) is that the letter *is* the preview — the user should scroll
+it, click into a different paragraph, and compare, all while the editor floats.
+The panel takes key status for its fields the same way the palettes' filter
+field already does (`becomesKeyOnlyIfNeeded` on `ClassicPaletteWindow`).
+
+### 6.1 Entry points
+
+1. **The edit well on a palette row** (§5) — the discoverable, always-there
+   path the brief asks for.
+2. **Double-click a palette row.** Today a double-click in the floating palette
+   merely returns focus to the page (picks commit as they happen, so it is
+   nearly vestigial); repurposing it for *edit* restores the classic
+   stylesheet-window behavior. The attached try-on popovers keep their
+   Return/double-click = commit meaning — only the torn-off palette changes.
+3. **Format ▸ Paragraph Style ▸ Style Settings…** — opens the editor on the
+   caret paragraph's style, for keyboard-first users.
+
+All three retarget the existing panel if it is already open, exactly like the
+palettes.
+
+### 6.2 Anatomy
+
+```
+╭──────────────────────────────────────╮
+│ ●       Style: Body — this letter    │ ← classic half-height title bar; the
+├──────────────────────────────────────┤   title names the target (S8)
+│ Name        [ Body              ]    │
+│ Exports as  [ Paragraph       ▾ ]    │ ← the S4 popup: Markdown, navigator,
+│                                      │   and ToC behavior in one control
+│ Typeface    [ Palatino        ▾ ]    │
+│ Size [12]   [B][I][U]   Color [■]    │
+│                                      │
+│ Align [⫷][≡][⫸][⊜]   Spacing [1.3 ▾] │
+│ Before [ 0 pt ]    After [ 6 pt ]    │
+│ Indent  L [0 cm] 1st [0.5 cm] R [0]  │ ← fields honor Preferences.rulerUnit
+│                                      │
+│ ┌──────────────────────────────────┐ │
+│ │ Hamburgevons 0123 — a line set   │ │ ← live specimen on page-white
+│ │ exactly as this style prints.    │ │
+│ └──────────────────────────────────┘ │
+│ ✎ Capture from Selection             │
+│ Restyles 14 paragraphs in this letter│ ← the blast-radius line
+├──────────────────────────────────────┤
+│ Library: differs from your copy      │ ← the S8 verb strip (§6.4)
+│  [ Update Library ] [ Use Library ]  │
+╰──────────────────────────────────────╯
+```
+
+Every control reuses the classic kit: `ClassicSegmentedControl` for B/I/U and
+alignment, `ClassicPopUp` for line spacing, `ClassicSizeField`,
+`ClassicColorWell`; the typeface popup can present the existing try-on picker.
+**Capture from Selection** fills the fields from the caret paragraph's
+*effective* formatting — the editor-side twin of the *Redefine from Selection*
+menu command, for when the user has already made a paragraph look right.
+
+Two lines do quiet but important work:
+
+- **The title** — "Body — this letter" vs. "Body — Library" — is the entire
+  scope model (S8), stated where it cannot be missed.
+- **The blast-radius line** ("Restyles 14 paragraphs in this letter")
+  distinguishes the editor from the format bar at a glance: the bar formats
+  *this selection*; the editor changes *the definition*, and here is exactly
+  how far that reaches. It updates live (a cheap scan of `.lucerneStyleRole`).
+
+### 6.3 Live application, one undo step
+
+Every control change applies immediately through the S3 re-apply — the letter
+restyles as the stepper clicks. There is no OK/Apply/Cancel row: the palette
+family already established "every pick is a committed edit," and the close box
+just closes. Two refinements keep that honest:
+
+- **Undo coalescing.** Contiguous tweaks to the same style merge into one
+  *Edit Style "Body"* step on the document's undo manager — a run of nine size
+  clicks must not be nine undo steps. Retargeting the editor, editing the
+  letter's text, or closing the panel seals the group. ⌘Z is the cancel button,
+  and because the group is sealed-not-lost, it still works after the panel
+  closes.
+- **Library-target edits** (style not in the document, or no document open)
+  register on the panel's own undo manager — best-effort, and stated honestly:
+  no document undo stack is involved because no document is. The specimen box
+  is the preview in that mode.
+
+### 6.4 The library strip
+
+The strip makes the document↔library relationship visible at exactly the
+moment the user cares, and expresses every transition as a named verb (S8) —
+states compared by *definition*, never by key alone:
+
+| State | Strip reads | Verbs |
+|---|---|---|
+| Key not in the library | "Not in your Library" | **Add to Library** |
+| Definitions identical | "Matches your Library ✓" | — |
+| Definitions differ | "Differs from your Library" | **Update Library** · **Use Library Copy** |
+
+- **Add to Library** / **Update Library** push the document's definition out.
+  S7's overwrite confirmation is satisfied by the strip itself — the user can
+  see they are replacing a differing copy — so no extra dialog.
+- **Update Library** then makes the *open-documents offer*: any other open
+  document whose copy of this key still matched the **old** library definition
+  is listed — "Also restyle 2 open letters?" — and applied per document as that
+  document's own undo step. Offered, never forced; **closed documents are
+  never touched** (S8).
+- **Use Library Copy** pulls the library definition into the document with a
+  full S3 re-apply.
+- The one flow the strip doesn't cover — editing the *library's* definition
+  directly while a divergent document copy exists — gets a small escape hatch:
+  an *"Edit the Library copy instead…"* link in the strip retargets the editor
+  (the title flips to "— Library"). Rare by design, deliberately off the main
+  path.
+
+For a style that exists *only* in the library (§6.5), the strip inverts to the
+document's side of the relationship: "Not in this letter — **Add to This
+Letter**."
+
+### 6.5 Retargeting and the no-document mode
+
+The editor follows the front document the way the palettes do (the
+`refreshFromActiveDocument` idiom): switch letters and it re-resolves the same
+key against the new front document — sealing the undo group — or falls back to
+the library copy when the key isn't there. With **no documents open**, the
+Styles palette lists the library and the editor edits library definitions
+directly: the palette + editor pair quietly *becomes* the library manager,
+which is why the backlog's standalone "library manager window" may never need
+to exist.
+
+### 6.6 Editor-specific policies
+
+- **`body`** is editable and renamable (the name is a label, S1) but not
+  deletable — Delete is disabled for it, with the rationale as the tooltip.
+- **Name collisions** are mechanically harmless (keys are identity, S1) but
+  confuse menus; the Name field warns inline rather than blocking.
+- **Exports-as changes** take effect on the next outline scan (the navigator
+  updates by itself) and on the next ToC regeneration — that staleness is the
+  ToC's documented refresh model (§7).
+- **Typing in the letter mid-edit** is allowed (the panel is modeless); it
+  seals the undo group and refreshes the blast-radius line, nothing more.
+- **The `toc` style** is editable like any other; its dotted leaders re-measure
+  only when the ToC is regenerated (§7).
+
+---
+
+## 7. Edge cases and policies
 
 - **Unknown roles** — unchanged: the spec's fallback chain (role → `body` →
   hard default) already covers malformed or future files.
@@ -333,7 +523,7 @@ every future letter.
 
 ---
 
-## 7. Implementation plan
+## 8. Implementation plan
 
 Phased so each lands shippable and CI-verifiable on its own. Estimates follow
 the roadmap's developer-day convention (implementation only; QA loop extra).
@@ -353,13 +543,18 @@ with custom styles become first-class).
   `file-format.md`.
 - Tests: ordering round-trip; legacy fallback ordering.
 
-### Phase 2 — editing and redefinition (~3–5 days)
+### Phase 2 — editing, redefinition, and the editor panel (~4–6 days)
 
 - `EditorController`: the S3 engine — `redefineStyle(key:to:)`,
   `addStyle(_:)`, `renameStyle(key:to:)`, `deleteStyle(key:)` (reassign policy),
-  `captureStyleFromSelection(into:)`; undo grouping; typing-attribute refresh;
-  palette/status-bar sync (hooks exist: `FloatingPalette.syncOpenPalettes()`).
-- `Views/StyleEditorSheet.swift` (new); palette footer buttons; menu commands.
+  `captureStyleFromSelection(into:)`; undo grouping and coalescing (§6.3);
+  typing-attribute refresh; palette/status-bar sync (hooks exist:
+  `FloatingPalette.syncOpenPalettes()`).
+- `Views/StyleEditorPanel.swift` (new — §6) on the `ClassicPaletteWindow`
+  family; the per-row edit well and double-click in `PickerListView` (rows are
+  plain labels today and become a small custom view); the palette footer
+  (New… / Duplicate / Delete); menu commands. The panel ships in this phase
+  *document-scoped only* — the library strip arrives with the library itself.
 - Add style-level `underline` (and optionally `rightIndent`) to the model,
   builder, reader, and spec while the editor is being built.
 - Tests (the valuable ones, all AppKit-bridge level, CI-runnable): build →
@@ -368,7 +563,7 @@ with custom styles become first-class).
   overrides** pin the old definition; delete-style reassignment; rename
   touching nothing but `name`.
 
-### Phase 3 — the global library (~2–3 days)
+### Phase 3 — the global library (~3–4 days)
 
 - `IO/StyleLibrary.swift` (new): load/save `styles.json`, overlay rule,
   tolerant decode.
@@ -376,23 +571,30 @@ with custom styles become first-class).
   per S6.
 - Commands: Save to Library, Add Library Style to Document, Import/Export
   Stylesheet….
-- Tests: overlay precedence; corrupt/missing file fallback; S7 conflict matrix.
+- The editor grows its library half: the strip and its verbs, the
+  open-documents offer (§6.4), the library section in the palette (§5), and the
+  no-document library mode (§6.5).
+- Tests: overlay precedence; corrupt/missing file fallback; S7 conflict matrix;
+  the strip's state computation and the open-documents-offer eligibility rule
+  (both pure functions over definitions — headless).
 
 ### Phase 4 — later, in likely order of value
 
 - **Next-paragraph style** (`next` member: Return at the end of a "Heading 1"
   paragraph starts a "Body" one) — small, classic, additive, purely behavioral.
-- **Pasteboard fragment type** carrying styles across documents (§6).
+- **Pasteboard fragment type** carrying styles across documents (§7).
 - **`basedOn` inheritance** — if ever added, *flatten on save*: write resolved
   values plus an advisory `basedOn`, so version-1 readers stay correct without a
   format bump.
 - **Character styles** — additive `characterStyles` map + run-level `style` key.
-- **A library manager window** (until then, the library is edited through the
-  save/import commands and, true to the escape hatch, any text editor).
+- **A library manager window** — likely obviated: with no documents open, the
+  palette + editor already browse and edit the library (§6.5). Revisit only if
+  the library outgrows a one-panel workflow. (Until Phase 3 lands, the library
+  file is, true to the escape hatch, editable in any text editor.)
 
 ---
 
-## 8. Testing strategy
+## 9. Testing strategy
 
 Consistent with the project's Linux-authored / macOS-CI reality: everything
 above the sheet/palette layer is deliberately testable headlessly.
@@ -403,20 +605,28 @@ above the sheet/palette layer is deliberately testable headlessly.
 - **Bridge layer**: the Phase-2 redefinition invariants — these are the tests
   that make the diff-based save safe to keep, and they double as regression
   armor for `AttributedStringReader`'s override detection.
-- **Needs a human on a Mac**: palette footer ergonomics, sheet layout, menu
-  rebuild timing on window switches, undo *feel* (one ⌘Z per redefine), and the
-  shortcuts following reorder.
+- **Editor logic** (headless, alongside the bridge tests): the library strip's
+  three-state computation over definition pairs, the open-documents-offer
+  eligibility rule (in-sync-with-the-old-library detection), and the
+  blast-radius count.
+- **Needs a human on a Mac**: the editor panel end to end (§6) — edit-well
+  discoverability, strip wording, coalesced-undo *feel* (one ⌘Z per editing
+  session), retargeting on window switches — plus palette footer ergonomics,
+  menu rebuild timing, and the shortcuts following reorder.
 
 ---
 
-## 9. Summary of the shape
+## 10. Summary of the shape
 
 The format was designed for this and needs only courtesy additions (`order`,
 `underline`). The real work is: (1) stop hardcoding the role list — let the
 document's stylesheet drive every chooser; (2) make redefinition re-apply
 through the existing reader/builder round-trip so direct formatting survives and
-files don't bloat with stale overrides; (3) add a copy-on-use library file that
-seeds new documents and doubles as the stylesheet interchange format. Documents
-stay self-contained at every step — which is the property that makes a `.luce`
-file safe to mail to a stranger's Mac, and the one thing this design refuses to
-trade away.
+files don't bloat with stale overrides; (3) put one modeless, classic-chrome
+style editor on top of that engine — reached from an edit well on every palette
+row, always editing what you can see, with the document↔library relationship
+shown as a strip of explicit verbs rather than a mode switch; (4) add a
+copy-on-use library file that seeds new documents and doubles as the stylesheet
+interchange format. Documents stay self-contained at every step — which is the
+property that makes a `.luce` file safe to mail to a stranger's Mac, and the one
+thing this design refuses to trade away.
