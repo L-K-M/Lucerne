@@ -31,14 +31,18 @@ build the app bundle.
 ## Build a distributable app
 
 ```sh
-Scripts/make-app.sh        # release build → dist/Lucerne.app (ad-hoc signed)
-Scripts/make-app.sh --debug
-open dist/Lucerne.app
+Scripts/build.sh           # release build → dist/Lucerne.app, revealed in Finder
+Scripts/build.sh --debug   # debug configuration instead
+Scripts/build.sh --run     # build, then launch the app
+Scripts/build.sh --clean   # wipe .build/ + dist/ and rebuild from scratch
 ```
 
-The script compiles with SPM, lays out `Lucerne.app/Contents/{MacOS,Resources}`,
-copies `Scripts/Info.plist` (which declares the `.luce` document type and its
-`public.zip-archive`-conforming UTI), and ad-hoc codesigns it.
+`Scripts/build.sh` is the recommended local build. It wraps the assembler
+`Scripts/make-app.sh`, which compiles with SPM, lays out
+`Lucerne.app/Contents/{MacOS,Resources}`, copies `Scripts/Info.plist` (which
+declares the `.luce` document type and its `public.zip-archive`-conforming UTI),
+and ad-hoc codesigns it; `build.sh` then reveals the result in Finder (and
+launches it with `--run`).
 
 The app and document icons are generated automatically from
 `media-sources/icon.png` by `Scripts/GenerateIcons.swift` (run by `make-app.sh`,
@@ -59,7 +63,7 @@ the bundle still lacks Finder document-type registration — same caveat as
 ## Troubleshooting
 
 - **"document type couldn't be determined" when opening from Finder.** You launched
-  the unbundled binary. Use `Scripts/make-app.sh` and open the resulting `.app`.
+  the unbundled binary. Use `Scripts/build.sh` and open the resulting `.app`.
 - **TextKit 2 surprises.** Lucerne deliberately uses **TextKit 1** (it constructs
   and owns the `NSLayoutManager`). Don't introduce `NSTextLayoutManager` on the
   page text views; see `AGENTS.md` ▸ "Why TextKit 1".

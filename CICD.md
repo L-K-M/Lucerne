@@ -18,6 +18,10 @@ Runs **Build & test** on `macos-14`: selects a recent Xcode, prints the Swift ve
 then `swift build -v`, `swift test -v`, and runs `Scripts/GenerateIcons.swift` to make
 sure the icon generator still works.
 
+> CI builds the bundle with `Scripts/make-app.sh` (see `release.yml` below); local
+> developers use `Scripts/build.sh`, which wraps the same assembler and reveals the
+> result in Finder (see [`docs/building.md`](docs/building.md)).
+
 ## Releases (`release.yml`)
 
 To cut a release:

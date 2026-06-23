@@ -1,6 +1,6 @@
 # Lucerne
 
-*A ClarisWorks-style word editor for the Mac — a small, pleasant tool for writing
+*An experimental Word processors with only the features I actually need and a classic user interface inspired by ClarisWorks — a small, pleasant tool for writing
 letters, with rulers, tabs, and free placement of images.*
 
 ![Screenshot](screenshot.png)
@@ -46,9 +46,13 @@ swift run Lucerne
 Produce a double-clickable `Lucerne.app` (with `.luce` document-type registration):
 
 ```sh
-Scripts/make-app.sh        # writes dist/Lucerne.app
-open dist/Lucerne.app
+Scripts/build.sh           # writes dist/Lucerne.app and reveals it in Finder
+Scripts/build.sh --run     # …and launches it
 ```
+
+`Scripts/build.sh` is the recommended local build: an incremental release build by
+default, wrapping `Scripts/make-app.sh` (the bundle assembler), then revealing the
+result in Finder. Use `--clean` to rebuild from scratch (wipes `.build/` and `dist/`).
 
 Run the tests (model, Markdown export, geometry — no GUI needed):
 
