@@ -332,6 +332,18 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     @objc func lucerneFindNext(_ sender: Any?) { findPanel.findNext() }
     @objc func lucerneFindPrevious(_ sender: Any?) { findPanel.findPrevious() }
 
+    // MARK: - Substitutions
+
+    @objc func lucerneToggleSmartQuotes(_ sender: Any?) {
+        Preferences.smartQuotes.toggle()
+        editor.applySubstitutionPreferences()
+    }
+
+    @objc func lucerneToggleSmartDashes(_ sender: Any?) {
+        Preferences.smartDashes.toggle()
+        editor.applySubstitutionPreferences()
+    }
+
     // MARK: - Zoom
 
     @objc func lucerneZoomIn(_ sender: Any?) { setMagnification(scrollView.magnification * 1.25) }
@@ -485,6 +497,12 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             return true
         case #selector(lucerneToggleNavigator(_:)):
             menuItem.state = (window?.contentView as? EditorContainerView)?.navigatorVisible == true ? .on : .off
+            return true
+        case #selector(lucerneToggleSmartQuotes(_:)):
+            menuItem.state = Preferences.smartQuotes ? .on : .off
+            return true
+        case #selector(lucerneToggleSmartDashes(_:)):
+            menuItem.state = Preferences.smartDashes ? .on : .off
             return true
         case #selector(lucerneInsertRowAbove(_:)), #selector(lucerneInsertRowBelow(_:)),
              #selector(lucerneInsertColumnBefore(_:)), #selector(lucerneInsertColumnAfter(_:)),
