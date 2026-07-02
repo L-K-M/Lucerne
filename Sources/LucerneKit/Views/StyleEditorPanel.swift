@@ -824,7 +824,7 @@ final class StyleSpecimenView: NSView {
 /// is honored rather than silently dropped (§1.18).
 enum UserNumber {
     static func parse(_ s: String) -> Double? {
-        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if let value = Double(trimmed) { return value }
         let formatter = NumberFormatter()
