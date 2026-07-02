@@ -26,7 +26,16 @@ public enum HistoryPruner {
         var snapshots = history
         let newest = snapshots.max(by: { $0.timestamp < $1.timestamp })
         if newest?.markdown != markdown {
-            snapshots.append(HistorySnapshot(timestamp: now, markdown: markdown))
+            // Entry names have one-second granularity (see entryName), so two saves in
+            // the same second would collide into one ZIP entry name. Nudge the new
+            // snapshot forward whole seconds until its name is unique (2.8). A few
+            // seconds' drift doesn't perturb the age-based pruning buckets below.
+            let takenNames = Set(snapshots.map { entryName(for: $0.timestamp) })
+            var stamp = now
+            while takenNames.contains(entryName(for: stamp)) {
+                stamp = stamp.addingTimeInterval(1)
+            }
+            snapshots.append(HistorySnapshot(timestamp: stamp, markdown: markdown))
         }
         let keepDates = keep(timestamps: snapshots.map(\.timestamp), now: now)
         return snapshots

@@ -6,15 +6,27 @@ import PDFKit
 // page per sheet at the correct size.
 public final class PaginatedPrintView: NSView {
 
-    private let pdfPages: [PDFPage]
+    // One slot per source page, preserving position: a page whose PDF failed to
+    // parse is kept as `nil` rather than compacted away, so later pages don't shift
+    // into the wrong slot (which would desync the baked "{page} of {pages}" footers).
+    private let pdfPages: [PDFPage?]
     private let pageSize: CGSize
 
     public override var isFlipped: Bool { true }
 
     public init(pagePDFs: [Data], pageSize: CGSize) {
-        self.pdfPages = pagePDFs.compactMap { PDFDocument(data: $0)?.page(at: 0) }
+        let rendered = pagePDFs.map { PDFDocument(data: $0)?.page(at: 0) }
+        // If *every* page failed there's nothing to preserve; fall back to a single
+        // blank sheet (as before) but leave a trace of why the print looks empty.
+        if !rendered.isEmpty && rendered.allSatisfy({ $0 == nil }) {
+            NSLog("PaginatedPrintView: all \(rendered.count) page(s) failed to render; printing one blank sheet.")
+            self.pdfPages = []
+        } else {
+            self.pdfPages = rendered
+        }
         self.pageSize = pageSize
-        let height = max(pageSize.height, CGFloat(pdfPages.count) * pageSize.height)
+        let pageCount = self.pdfPages.count
+        let height = max(pageSize.height, CGFloat(pageCount) * pageSize.height)
         super.init(frame: CGRect(x: 0, y: 0, width: pageSize.width, height: height))
     }
 
@@ -41,6 +53,12 @@ public final class PaginatedPrintView: NSView {
             let pageRect = NSRect(x: 0, y: CGFloat(index) * pageSize.height,
                                   width: pageSize.width, height: pageSize.height)
             guard pageRect.intersects(dirtyRect) else { continue }
+            guard let page else {
+                // A page that failed to render still occupies its sheet; label it so
+                // the failure is visible rather than a silently dropped page (2.9).
+                drawFailedPagePlaceholder(in: pageRect)
+                continue
+            }
             context.saveGState()
             // PDFPage.draw expects an unflipped (y-up) CTM; flip within this page box.
             context.translateBy(x: 0, y: pageRect.maxY)
@@ -52,5 +70,19 @@ public final class PaginatedPrintView: NSView {
             page.draw(with: .mediaBox, to: context)
             context.restoreGState()
         }
+    }
+
+    private func drawFailedPagePlaceholder(in rect: NSRect) {
+        let text = "This page could not be rendered." as NSString
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: style,
+        ]
+        let size = text.size(withAttributes: attrs)
+        let origin = NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2)
+        text.draw(at: origin, withAttributes: attrs)
     }
 }

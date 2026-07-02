@@ -164,7 +164,8 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                try make(editor).write(to: url)
+                // Atomic so a disk-full mid-write can't truncate an existing export (2.7).
+                try make(editor).write(to: url, options: .atomic)
             } catch {
                 NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
             }
