@@ -52,19 +52,95 @@ public final class StyleLibrary {
 
     // MARK: - Load / save
 
-    /// The library's styles. Read on demand; a missing or undecodable file is an
-    /// empty library (the built-in defaults rule alone).
-    public func load() -> [String: ParagraphStyleDef] {
-        guard let data = try? Data(contentsOf: fileURL) else { return [:] }
-        return (try? StyleLibrary.decode(data)) ?? [:]
+    /// Why the last `load()` couldn't return the file's real contents. A missing
+    /// file is *not* a failure — that's a legitimately empty library. But a file
+    /// that exists and won't load (corrupt, or a newer `formatVersion` this build
+    /// rejects on purpose, or transiently unreadable) must never be silently
+    /// overwritten: every mutator is read-modify-write, so saving on top of a
+    /// swallowed failure would clobber the real file (1.11). While this is
+    /// non-`.none`, destructive writes refuse.
+    public enum LoadFailure: Equatable {
+        case none
+        /// The file exists but couldn't be read (permissions, transient I/O).
+        case unreadable
+        /// The file exists but couldn't be decoded — corrupt JSON, wrong format,
+        /// or a `formatVersion` newer than this build understands.
+        case undecodable
     }
 
-    /// Rewrites the library file (atomically) and posts `didChange`.
+    public private(set) var loadFailure: LoadFailure = .none
+
+    /// In-memory cache keyed by the file's modification date (3.4): with the
+    /// styles palette open, `load()` is called on the selection-change path (per
+    /// caret move). Serving an unchanged file from memory kills that disk I/O
+    /// while still honoring an external edit — a changed mtime re-reads.
+    private var cache: [String: ParagraphStyleDef]?
+    private var cacheModDate: Date?
+
+    private func fileModificationDate() -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+    }
+
+    /// The library's styles. Read on demand; a missing file is an empty library
+    /// (the built-in defaults rule alone). A file that exists but won't load is
+    /// also reported as empty so the UI degrades gracefully, but it flips
+    /// `loadFailure` so writes refuse rather than clobber it (1.11).
+    public func load() -> [String: ParagraphStyleDef] {
+        guard let modDate = fileModificationDate() else {
+            // No file yet: a legitimately empty library, not a failure.
+            loadFailure = .none
+            cache = [:]
+            cacheModDate = nil
+            return [:]
+        }
+        if let cache, cacheModDate == modDate { return cache }
+        guard let data = try? Data(contentsOf: fileURL) else {
+            return recordLoadFailure(.unreadable,
+                "could not read style library at \(fileURL.path)", modDate: modDate)
+        }
+        do {
+            let styles = try StyleLibrary.decode(data)
+            cache = styles
+            cacheModDate = modDate
+            loadFailure = .none
+            return styles
+        } catch {
+            return recordLoadFailure(.undecodable,
+                "could not decode style library at \(fileURL.path): \(error)", modDate: modDate)
+        }
+    }
+
+    /// Enters a load-failure state: caches the empty result against this mtime so
+    /// a corrupt file isn't re-read every caret move, and logs the reason once
+    /// (only on the transition into a failure, not on every subsequent load).
+    private func recordLoadFailure(_ failure: LoadFailure, _ reason: String,
+                                   modDate: Date) -> [String: ParagraphStyleDef] {
+        if loadFailure != failure {
+            NSLog("Lucerne: \(reason); refusing to overwrite it until it loads cleanly")
+        }
+        loadFailure = failure
+        cache = [:]
+        cacheModDate = modDate
+        return [:]
+    }
+
+    /// Rewrites the library file (atomically) and posts `didChange`. Refuses
+    /// while `load()` last failed on an existing file, so a corrupt or
+    /// future-versioned library is never overwritten wholesale (1.11).
     public func save(_ styles: [String: ParagraphStyleDef]) {
+        guard loadFailure == .none else {
+            NSLog("Lucerne: refusing to overwrite the style library while it is "
+                + "in a load-failure state (\(loadFailure)); leaving it untouched")
+            return
+        }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             try StyleLibrary.encode(styles).write(to: fileURL, options: .atomic)
+            // Keep the cache in step with what we just wrote so the palette's
+            // next selection-change sync serves memory, not disk (3.4).
+            cache = styles
+            cacheModDate = fileModificationDate()
             NotificationCenter.default.post(name: StyleLibrary.didChange, object: self)
         } catch {
             // A preferences-grade file: failing to persist must never take the
