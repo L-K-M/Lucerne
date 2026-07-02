@@ -16,9 +16,10 @@ All four pillars of the brief are implemented and CI-green: the **editing surfac
 underline/color/alignment/spacing + named paragraph styles), **rulers & tabs**, and
 the defining feature — **free image placement with live text reflow** around
 rectangular wrap, including dragging images across page boundaries. On top of those:
-page zoom, forced page breaks, running headers/footers, a heading navigator, a
-generated table of contents, `.luce` (ZIP) read/write with Markdown version history,
-PDF + lossy RTF export, AppleScript, a welcome screen, and crash/draft recovery.
+page zoom (incl. Fit Page / Fit Width), forced page breaks, running headers/footers, a
+heading navigator, a generated table of contents, find & replace, spell checking, a
+live word count, `.luce` (ZIP) read/write with Markdown version history, PDF + lossy
+RTF export, AppleScript, a welcome screen, an update checker, and crash/draft recovery.
 
 What's **not** done is tracked in Milestone 3 below and, with design notes and
 effort estimates, in [`docs/roadmap.md`](docs/roadmap.md) — chiefly tables, lists,
@@ -109,7 +110,27 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [ ] Irregular wrap from image alpha
 - [ ] Lists (numbering / nesting)
 - [ ] Document inspector (page size, margins) UI
-- [ ] Preferences
+- [x] Settings (⌘,) — modeless window with the ruler unit and update-check
+  preferences (`PreferencesWindowController` / `Support/Preferences.swift`); the
+  former "Preferences" placeholder
+
+## Shipped subsystems previously missing from this checklist
+> These landed in the codebase but the list above hadn't caught up (see the
+> `fable-is-awesome.md` review, §8.1). Recorded here to keep this file honest.
+- [x] **Find & Replace** — Edit ▸ Find ▸ Find… / Find Next / Find Previous, plus a
+  Replace / Replace All panel (`Views/FindPanelController.swift`) that operates on the
+  document's shared text storage, so matches are found and replaced across every
+  page's container rather than just the focused page
+- [x] **Spell checking** — continuous check-while-typing is on and automatic spelling
+  *correction* is off on the page text views (`EditorController.makeTextView`);
+  Edit ▸ Spelling and Grammar exposes the standard panel/toggles
+- [x] **Live word count** in the status-bar footer, updated as the text changes
+  (`DocumentWindowController`)
+- [x] **Fit Page / Fit Width** zoom (View ▸ Zoom, ⌘⇧0 / Fit Width) alongside Zoom
+  In/Out/Actual Size
+- [x] **Update checker** — Check for Updates… in the app menu plus an "Automatically
+  check for updates" toggle in Settings (`Updates/UpdateChecker`), comparing the
+  bundled version against the latest GitHub release
 
 ## Tests (run on macOS CI)
 - [x] Model JSON round-trip, geometry, Markdown export (`ModelTests`)

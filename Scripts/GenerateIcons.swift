@@ -10,6 +10,13 @@ import Foundation
 // Run from the repository root:  swift Scripts/GenerateIcons.swift
 // Invoked automatically by Scripts/make-app.sh.
 
+// Report an error to stderr and exit non-zero, so a failure fails the build (CI runs
+// this to validate the generator) rather than silently producing nothing.
+func fail(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("error: \(message)\n".utf8))
+    exit(1)
+}
+
 let sourcePath = "media-sources/icon.png"
 guard let source = NSImage(contentsOfFile: sourcePath) else {
     FileHandle.standardError.write(Data("error: \(sourcePath) not found (run from the repo root)\n".utf8))
@@ -35,7 +42,10 @@ func renderPNG(pixels: Int, _ draw: (CGFloat) -> Void) -> Data {
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     draw(CGFloat(pixels))
     NSGraphicsContext.restoreGraphicsState()
-    return rep.representation(using: .png, properties: [:]) ?? Data()
+    guard let png = rep.representation(using: .png, properties: [:]) else {
+        fail("failed to encode a \(pixels)×\(pixels) PNG")
+    }
+    return png
 }
 
 // Draws the artwork to fill `bounds` (aspect-fill / cover), clipped to `shape`, so
@@ -105,11 +115,20 @@ func drawDocumentIcon(_ s: CGFloat) {
 func buildIcns(named name: String, draw: @escaping (CGFloat) -> Void) {
     let iconsetURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("\(name)-\(UUID().uuidString).iconset")
-    try? FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
+    do {
+        try FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
+    } catch {
+        fail("could not create \(iconsetURL.path): \(error)")
+    }
 
     for (fileName, pixels) in entries {
         let data = renderPNG(pixels: pixels, draw)
-        try? data.write(to: iconsetURL.appendingPathComponent("\(fileName).png"))
+        let pngURL = iconsetURL.appendingPathComponent("\(fileName).png")
+        do {
+            try data.write(to: pngURL)
+        } catch {
+            fail("could not write \(pngURL.path): \(error)")
+        }
     }
 
     let output = "Scripts/\(name).icns"
@@ -120,8 +139,10 @@ func buildIcns(named name: String, draw: @escaping (CGFloat) -> Void) {
         try process.run()
         process.waitUntilExit()
     } catch {
-        FileHandle.standardError.write(Data("error: iconutil failed: \(error)\n".utf8))
-        exit(1)
+        fail("iconutil failed to launch: \(error)")
+    }
+    guard process.terminationStatus == 0 else {
+        fail("iconutil exited with status \(process.terminationStatus) writing \(output)")
     }
     try? FileManager.default.removeItem(at: iconsetURL)
     print("wrote \(output)")

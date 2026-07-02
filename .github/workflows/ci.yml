@@ -28,4 +28,22 @@ jobs:
         run: swift test -v
 
       - name: Generate icons (validates the icon generator)
-        run: swift Scripts/GenerateIcons.swift
+        run: |
+          swift Scripts/GenerateIcons.swift
+          test -f Scripts/AppIcon.icns      || { echo "::error::AppIcon.icns was not generated"; exit 1; }
+          test -f Scripts/DocumentIcon.icns || { echo "::error::DocumentIcon.icns was not generated"; exit 1; }
+
+      - name: Assemble the app bundle (Scripts/make-app.sh)
+        # Exercise the exact bundle assembly the release workflow depends on, so a
+        # broken make-app.sh surfaces here (in the gated workflow) rather than at
+        # release time. make-app.sh does a release build; that build cost is the point.
+        run: Scripts/make-app.sh
+
+      - name: Verify the assembled bundle
+        run: |
+          APP="dist/Lucerne.app"
+          test -x "$APP/Contents/MacOS/Lucerne"               || { echo "::error::missing executable $APP/Contents/MacOS/Lucerne"; exit 1; }
+          test -f "$APP/Contents/Info.plist"                  || { echo "::error::missing $APP/Contents/Info.plist"; exit 1; }
+          test -f "$APP/Contents/Resources/Lucerne.sdef"      || { echo "::error::missing $APP/Contents/Resources/Lucerne.sdef"; exit 1; }
+          test -f "$APP/Contents/Resources/AppIcon.icns"      || { echo "::error::missing $APP/Contents/Resources/AppIcon.icns"; exit 1; }
+          test -f "$APP/Contents/Resources/DocumentIcon.icns" || { echo "::error::missing $APP/Contents/Resources/DocumentIcon.icns"; exit 1; }

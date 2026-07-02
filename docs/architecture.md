@@ -113,7 +113,8 @@ is character *i* on?" use one shared primitive,
 - `Views/` — canvas, page, text view, ruler, navigator, status bar, sheets, floating
   image, the hand-drawn classic control chrome (`ClassicControls.swift`, used by the
   format bar, status bar, ruler, and welcome screen, muting with window activation),
-  and the live font try-on picker (`FontPickerPopover.swift`).
+  and the live try-on pickers (`TryOnPopover.swift` + `PickerListView.swift`, the
+  shared specimen-list UI behind the font/style popovers and floating palettes).
 - `IO/` — `MiniZip`, `.luce` archive, version history, `NSDocument` subclass, PDF/print.
 - `Document/` — `EditorController` (conductor: pagination, exclusions, furniture,
   outline, ToC) + `DocumentWindowController` (toolbar/ruler/canvas/status/navigator).
@@ -122,5 +123,8 @@ is character *i* on?" use one shared primitive,
 ## Known limitations
 
 See `AGENTS.md` ▸ "Gotchas / known limitations" and `docs/roadmap.md` — cross-page
-selection, boundary overhang, irregular wrap, the scope of `MiniZip`, no dotted ToC
-leader, dialog-only header/footer editing, and tables/lists not yet implemented.
+selection, boundary overhang, irregular wrap, the scope of `MiniZip`, dialog-only
+header/footer editing, and lists not yet implemented. (Tables and the printed ToC's
+dotted leader **are** implemented — see the structural-features table above; the
+leader is drawn as measured `.` text, since Cocoa tabs have no leader fill, and goes
+stale until the ToC command is re-run.)

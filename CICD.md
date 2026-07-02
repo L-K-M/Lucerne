@@ -9,18 +9,21 @@ AppKit), and the release workflow assembles an unsigned, ad-hoc-codesigned
 
 | Workflow | Trigger | Purpose |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | Pushes to `main`/`claude/**`, PRs, manual | `swift build` + `swift test` (+ validate the icon generator) on macOS. |
+| `.github/workflows/ci.yml` | Pushes to `main`/`claude/**`, PRs, manual | `swift build` + `swift test`, icon generation, and app-bundle assembly (`Scripts/make-app.sh`) on macOS. |
 | `.github/workflows/release.yml` | Pushing a `v*` tag (e.g. `v1.2.0`) | Build `Lucerne.app`, package `.zip` + `.dmg`, and publish a GitHub Release. |
 
 ## Continuous integration (`ci.yml`)
 
 Runs **Build & test** on `macos-14`: selects a recent Xcode, prints the Swift version,
-then `swift build -v`, `swift test -v`, and runs `Scripts/GenerateIcons.swift` to make
-sure the icon generator still works.
+then `swift build -v` and `swift test -v`. It then runs `Scripts/GenerateIcons.swift`
+(asserting the two `.icns` files it should produce exist) and assembles the app bundle
+with `Scripts/make-app.sh`, asserting the built `dist/Lucerne.app` contains its
+executable, `Info.plist`, `Lucerne.sdef`, and the app/document icons — so bundle
+breakage surfaces in the gated CI run, not first at release time.
 
-> CI builds the bundle with `Scripts/make-app.sh` (see `release.yml` below); local
-> developers use `Scripts/build.sh`, which wraps the same assembler and reveals the
-> result in Finder (see [`docs/building.md`](docs/building.md)).
+> CI assembles the bundle with `Scripts/make-app.sh` — the same assembler
+> `release.yml` uses (below); local developers use `Scripts/build.sh`, which wraps it
+> and reveals the result in Finder (see [`docs/building.md`](docs/building.md)).
 
 ## Releases (`release.yml`)
 
@@ -41,6 +44,13 @@ Scripts/release.sh 1.2.3 --push
 
 The version is derived from the tag with the leading `v` stripped (e.g. `v1.2.3` →
 `1.2.3`), and the build number is the workflow run number. The job runs on `macos-14`.
+
+Before building, the workflow **verifies the tag matches the committed version** — the
+tag-derived version must equal both `Scripts/Info.plist`'s `CFBundleShortVersionString`
+and the README version marker, failing with a clear message otherwise (this check runs
+before the plist is stamped from the tag, so it sees the committed values) — and then
+**runs `swift test`**, so a tag can't publish a release from a commit that never went
+green.
 
 It produces:
 
