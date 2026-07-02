@@ -44,6 +44,13 @@ public final class ToolbarView: NSView {
 
     private let lineSpacings: [(String, CGFloat)] = [("1.0", 1.0), ("1.15", 1.15), ("1.5", 1.5), ("2.0", 2.0)]
 
+    /// A color-well drag rides the try-on preview machinery so a continuous drag
+    /// commits as one undo step instead of one whole-document snapshot per tick
+    /// (§3.6). `colorPreviewActive` marks a live session; the timer commits it
+    /// once the drag settles.
+    private var colorPreviewActive = false
+    private var colorCommitTimer: Timer?
+
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         build()
@@ -54,6 +61,7 @@ public final class ToolbarView: NSView {
 
     deinit {
         if let paletteObserver { NotificationCenter.default.removeObserver(paletteObserver) }
+        colorCommitTimer?.invalidate()
     }
 
     public override func draw(_ dirtyRect: NSRect) {
@@ -185,7 +193,12 @@ public final class ToolbarView: NSView {
             FloatingPalette.typefaces.bringToFront()
             return
         }
-        guard let editor, !fontPicker.isActive else { return }
+        // Cross-guard the sibling picker: both popovers are .transient and close
+        // asynchronously, so a session could begin over one still tearing down and
+        // clobber its undo baseline (§1.17). Also settle any pending color-well
+        // session before starting this one (§3.6).
+        guard let editor, !fontPicker.isActive, !stylePicker.isActive else { return }
+        commitColorSession()
         let current = (editor.currentAttributes()[.font] as? NSFont)?.familyName
         editor.beginFormatPreview()
         fontPicker.present(from: fontControl, palette: .typefaces,
@@ -211,7 +224,10 @@ public final class ToolbarView: NSView {
             FloatingPalette.styles.bringToFront()
             return
         }
-        guard let editor, !stylePicker.isActive else { return }
+        // Cross-guard the sibling font picker (§1.17) and settle any pending
+        // color-well session (§3.6) before starting this one.
+        guard let editor, !stylePicker.isActive, !fontPicker.isActive else { return }
+        commitColorSession()
         editor.beginFormatPreview()
         stylePicker.present(from: styleControl, palette: .styles,
                             items: FloatingPalette.styleItems(styles: editor.model.styles),
@@ -231,7 +247,7 @@ public final class ToolbarView: NSView {
         }
     }
     private func applyFontSize(_ raw: String) {
-        if let value = Double(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
+        if let value = UserNumber.parse(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
         returnFocusToPage()
     }
     @objc private func formatChanged() {
@@ -244,7 +260,35 @@ public final class ToolbarView: NSView {
         syncFromSelection()   // reflect the true state back on the control
         returnFocusToPage()
     }
-    @objc private func colorChanged() { editor?.setTextColor(colorWell.color) }
+    @objc private func colorChanged() {
+        guard let editor else { return }
+        // NSColorWell fires continuously through a color-panel drag. Without a
+        // session each tick snapshots the whole document for undo and relayouts;
+        // instead begin one preview session on the first tick, apply every tick
+        // under suppressed undo (setTextColor → withUndo skips registration while
+        // a preview is live), and commit once the drag settles (§3.6). Never start
+        // over a running try-on picker, whose transient popover closes async.
+        guard !fontPicker.isActive, !stylePicker.isActive else { return }
+        if !colorPreviewActive {
+            editor.beginFormatPreview()
+            colorPreviewActive = true
+        }
+        editor.setTextColor(colorWell.color)
+        colorCommitTimer?.invalidate()
+        colorCommitTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+            self?.commitColorSession()
+        }
+    }
+
+    /// Ends a color-well preview session, banking the whole drag as one undo step.
+    /// A no-op when no session is live, so pickers can call it unconditionally.
+    private func commitColorSession() {
+        colorCommitTimer?.invalidate()
+        colorCommitTimer = nil
+        guard colorPreviewActive else { return }
+        colorPreviewActive = false
+        editor?.endFormatPreview(commit: true, actionName: "Text Color")
+    }
     @objc private func alignChanged() {
         let map: [NSTextAlignment] = [.left, .center, .right, .justified]
         editor?.setAlignment(map[min(max(alignControl.selectedSegment, 0), 3)])
@@ -292,8 +336,11 @@ public final class ToolbarView: NSView {
             default: seg = 0
             }
             alignControl.setSelected(true, forSegment: seg)
-            if ps.lineHeightMultiple > 0,
-               let index = lineSpacings.firstIndex(where: { abs($0.1 - ps.lineHeightMultiple) < 0.01 }) {
+            // A lineHeightMultiple of 0 means "no multiple set", i.e. single
+            // spacing — our 1.0 preset. A value matching no preset (a custom-spaced
+            // style) leaves the popup as-is rather than misreporting a wrong preset.
+            let multiple = ps.lineHeightMultiple > 0 ? ps.lineHeightMultiple : 1.0
+            if let index = lineSpacings.firstIndex(where: { abs($0.1 - multiple) < 0.01 }) {
                 lineSpacingPopup.selectItem(at: index)
             }
         }

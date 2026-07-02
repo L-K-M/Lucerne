@@ -40,6 +40,17 @@ final class StyleEditorPanel: NSObject {
     /// Suppresses populate-feedback while the panel itself writes the library.
     private var isApplyingChange = false
 
+    /// The typeface-popup index populate() last landed on. When a style's family
+    /// isn't installed, `selectItem(withTitle:)` is a silent no-op and the popup
+    /// keeps a stale selection; readControls writes a font back only when the
+    /// selection index has actually moved off this value, so editing any other
+    /// property of a style whose face is missing never rewrites its font (§1.14).
+    private var populatedFontIndex = -1
+
+    /// Coalesces the color well's continuous drag ticks into one apply/redefine
+    /// pass — the last value wins (§3.6).
+    private var colorDebounceTimer: Timer?
+
     // MARK: Controls
 
     private let nameField = NSTextField()
@@ -138,6 +149,7 @@ final class StyleEditorPanel: NSObject {
     }
 
     func close() {
+        flushPendingColorEdit()   // land the last color drag before we drop the target
         sealUndoSession()
         panel?.orderOut(nil)
         target = nil
@@ -202,6 +214,27 @@ final class StyleEditorPanel: NSObject {
         apply(def, to: target)
     }
 
+    /// The color well fires continuously through a color-panel drag, and each tick
+    /// would otherwise run a full S3 stylesheet re-apply + relayout. Coalesce the
+    /// ticks — the last value wins — so a drag collapses to one apply while a
+    /// discrete click still lands within the window (§3.6).
+    @objc private func colorWellChanged() {
+        colorDebounceTimer?.invalidate()
+        colorDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in
+            self?.colorDebounceTimer = nil
+            self?.controlChanged()
+        }
+    }
+
+    /// If a color-well debounce is pending when the panel closes or retargets,
+    /// apply it now so the last drag value isn't lost.
+    private func flushPendingColorEdit() {
+        guard colorDebounceTimer != nil else { return }
+        colorDebounceTimer?.invalidate()
+        colorDebounceTimer = nil
+        controlChanged()
+    }
+
     @objc private func captureFromSelection() {
         guard case .document(let key)? = target,
               let editor = targetWindowController()?.editor,
@@ -226,6 +259,7 @@ final class StyleEditorPanel: NSObject {
             registerLibraryUndo(key: key, restoring: old)
         }
         refreshDynamicLabels()
+        refreshStrip(def: def)   // keep the library-sync verbs honest during live edits (§1.15)
         specimen.definition = def
         chrome?.title = titleText(for: def)
     }
@@ -361,7 +395,8 @@ final class StyleEditorPanel: NSObject {
         // exporter treats them as "p" anyway (spec §5.1).
         let exportIndex = Self.exportChoices.firstIndex { $0.markdown == def.markdown } ?? 0
         exportsPopup.selectItem(at: exportIndex)
-        fontPopup.selectItem(withTitle: def.font ?? "Helvetica")
+        fontPopup.selectItem(withTitle: def.font ?? "Helvetica")   // no-op if the face isn't installed (§1.14)
+        populatedFontIndex = fontPopup.indexOfSelectedItem
         sizeField.stringValue = formatNumber(def.size ?? 12)
         traitsControl.setSelected(def.bold ?? false, forSegment: 0)
         traitsControl.setSelected(def.italic ?? false, forSegment: 1)
@@ -392,8 +427,15 @@ final class StyleEditorPanel: NSObject {
         if !trimmedName.isEmpty { def.name = trimmedName }
         def.markdown = Self.exportChoices[max(0, min(exportsPopup.indexOfSelectedItem,
                                                      Self.exportChoices.count - 1))].markdown
-        if let family = fontPopup.titleOfSelectedItem { def.font = family }
-        if let size = Double(sizeField.stringValue), size > 0 { def.size = size }
+        // Only adopt the popup's family when the user actually moved the selection.
+        // If the style's face isn't installed the popup couldn't select it, so its
+        // current title is a fallback — writing it back would silently rewrite the
+        // real (uninstalled) family (§1.14).
+        if fontPopup.indexOfSelectedItem != populatedFontIndex,
+           let family = fontPopup.titleOfSelectedItem {
+            def.font = family
+        }
+        if let size = UserNumber.parse(sizeField.stringValue), size > 0 { def.size = size }
         def.bold = traitsControl.isSelected(forSegment: 0)
         def.italic = traitsControl.isSelected(forSegment: 1)
         def.underline = traitsControl.isSelected(forSegment: 2)
@@ -404,17 +446,17 @@ final class StyleEditorPanel: NSObject {
         case 3: def.alignment = "justified"
         default: def.alignment = "left"
         }
-        if let spacing = Double(lineSpacingField.stringValue), spacing > 0 {
+        if let spacing = UserNumber.parse(lineSpacingField.stringValue), spacing > 0 {
             def.lineSpacing = spacing
         } else if lineSpacingField.stringValue.trimmingCharacters(in: .whitespaces).isEmpty {
             def.lineSpacing = nil
         }
-        def.spaceBefore = Double(beforeField.stringValue) ?? def.spaceBefore
-        def.spaceAfter = Double(afterField.stringValue) ?? def.spaceAfter
+        def.spaceBefore = UserNumber.parse(beforeField.stringValue) ?? def.spaceBefore
+        def.spaceAfter = UserNumber.parse(afterField.stringValue) ?? def.spaceAfter
         let unit = Double(Preferences.rulerUnit.pointsPerUnit)
-        if let left = Double(indentLeftField.stringValue) { def.leftIndent = left * unit }
-        if let first = Double(indentFirstField.stringValue) { def.firstLineIndent = first * unit }
-        if let right = Double(indentRightField.stringValue) { def.rightIndent = right * unit }
+        if let left = UserNumber.parse(indentLeftField.stringValue) { def.leftIndent = left * unit }
+        if let first = UserNumber.parse(indentFirstField.stringValue) { def.firstLineIndent = first * unit }
+        if let right = UserNumber.parse(indentRightField.stringValue) { def.rightIndent = right * unit }
         refreshNameWarning(def)
     }
 
@@ -562,7 +604,7 @@ final class StyleEditorPanel: NSObject {
         traitsControl.target = self
         traitsControl.action = #selector(controlChanged)
         colorWell.target = self
-        colorWell.action = #selector(controlChanged)
+        colorWell.action = #selector(colorWellChanged)
         alignControl.target = self
         alignControl.action = #selector(controlChanged)
 
@@ -770,6 +812,25 @@ final class StyleSpecimenView: NSView {
             string: "Hamburgevons 0123 — the quick brown fox jumps over the lazy dog.",
             attributes: attrs)
         sample.draw(in: bounds.insetBy(dx: 7, dy: 7))
+    }
+}
+
+// MARK: - Locale-aware numeric parsing
+
+/// Parse for user-typed numeric fields (the style editor and the toolbar size
+/// field). These fields always *display* values with a period (formatNumber →
+/// String(Double)), so accept the canonical period form first — correct in every
+/// locale — then fall back to the current locale so a comma-decimal user's "1,5"
+/// is honored rather than silently dropped (§1.18).
+enum UserNumber {
+    static func parse(_ s: String) -> Double? {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if let value = Double(trimmed) { return value }
+        let formatter = NumberFormatter()
+        formatter.locale = .current
+        formatter.numberStyle = .decimal
+        return formatter.number(from: trimmed)?.doubleValue
     }
 }
 
