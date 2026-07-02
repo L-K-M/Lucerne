@@ -127,6 +127,7 @@ enum MainMenu {
             add(findMenu, "Find…", "lucerneShowFindPanel:", key: "f", symbol: "magnifyingglass")
             add(findMenu, "Find Next", "lucerneFindNext:", key: "g")
             add(findMenu, "Find Previous", "lucerneFindPrevious:", key: "G")
+            add(findMenu, "Use Selection for Find", "lucerneUseSelectionForFind:", key: "e")
             find.submenu = findMenu
             menu.addItem(find)
             let spelling = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")

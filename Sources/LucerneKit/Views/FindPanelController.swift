@@ -11,13 +11,19 @@ public final class FindPanelController: NSWindowController {
     private let findField = NSTextField(string: "")
     private let replaceField = NSTextField(string: "")
     private let statusLabel = NSTextField(labelWithString: "")
-    private let searchOptions: NSString.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+    private let matchCaseButton = NSButton(checkboxWithTitle: "Match Case", target: nil, action: nil)
+
+    // Match Case ON means exact matching (also drop diacritic-insensitivity); OFF
+    // keeps the classic forgiving search (case- and diacritic-insensitive).
+    private var searchOptions: NSString.CompareOptions {
+        matchCaseButton.state == .on ? [] : [.caseInsensitive, .diacriticInsensitive]
+    }
 
     public init(editor: EditorController) {
         self.editor = editor
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 140),
-                            styleMask: [.titled, .closable, .utilityWindow],
-                            backing: .buffered, defer: false)
+        let panel = FindPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 172),
+                              styleMask: [.titled, .closable, .utilityWindow],
+                              backing: .buffered, defer: false)
         panel.title = "Find"
         panel.isReleasedWhenClosed = false
         panel.appearance = NSAppearance(named: .aqua)
@@ -62,7 +68,11 @@ public final class FindPanelController: NSWindowController {
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 8
 
-        let stack = NSStackView(views: [grid, buttonRow])
+        let optionsRow = NSStackView(views: [matchCaseButton])
+        optionsRow.orientation = .horizontal
+        optionsRow.spacing = 8
+
+        let stack = NSStackView(views: [grid, optionsRow, buttonRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -88,6 +98,7 @@ public final class FindPanelController: NSWindowController {
                 findField.stringValue = ns.substring(with: sel)
             }
         }
+        if findField.stringValue.isEmpty { seedQueryFromFindPasteboard() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(findField)
@@ -99,6 +110,13 @@ public final class FindPanelController: NSWindowController {
 
     @discardableResult
     public func findPrevious() -> Bool { find(forward: false) }
+
+    /// Fills the search field from an external source (⌘E Use Selection for Find)
+    /// and publishes it to the system find pasteboard, without opening the panel.
+    public func setQuery(_ text: String) {
+        findField.stringValue = text
+        writeToFindPasteboard()
+    }
 
     // MARK: - Find
 
@@ -114,7 +132,9 @@ public final class FindPanelController: NSWindowController {
     }
 
     private func find(forward: Bool) -> Bool {
+        if query.isEmpty { seedQueryFromFindPasteboard() }
         guard let editor, !query.isEmpty else { NSSound.beep(); return false }
+        writeToFindPasteboard()
         let ns = editor.textStorage.string as NSString
         guard ns.length > 0 else { notFound(); return false }
         let sel = editor.activeTextView?.selectedRange() ?? NSRange(location: 0, length: 0)
@@ -151,7 +171,25 @@ public final class FindPanelController: NSWindowController {
             tv.setSelectedRange(range)
             tv.showFindIndicator(for: range)
         }
-        status("")
+        let counts = matchCounts(revealed: range)
+        status(counts.index > 0 ? "\(counts.index) of \(counts.total)" : "")
+    }
+
+    /// Counts every match of the current query and reports the 1-based position of
+    /// the revealed one, ordered by location (index 0 if it isn't among them).
+    private func matchCounts(revealed: NSRange) -> (index: Int, total: Int) {
+        guard let editor else { return (0, 0) }
+        let ns = editor.textStorage.string as NSString
+        var total = 0, index = 0, cursor = 0
+        while cursor < ns.length {
+            let found = ns.range(of: query, options: searchOptions,
+                                 range: NSRange(location: cursor, length: ns.length - cursor))
+            guard found.location != NSNotFound else { break }
+            total += 1
+            if found.location == revealed.location { index = total }
+            cursor = NSMaxRange(found) > cursor ? NSMaxRange(found) : cursor + 1
+        }
+        return (index, total)
     }
 
     // MARK: - Replace
@@ -187,17 +225,21 @@ public final class FindPanelController: NSWindowController {
         }
         guard !matches.isEmpty else { notFound(); return }
 
-        // One undo step for the whole sweep; replace back-to-front so earlier
-        // ranges stay valid.
-        tv.undoManager?.beginUndoGrouping()
-        var replaced = 0
-        for range in matches.reversed() where tv.shouldChangeText(in: range, replacementString: replacement) {
+        // One undo record for the whole sweep: the multi-range shouldChangeText
+        // form registers a single change. Batch the mutations between begin/end
+        // Editing and fire didChangeText once. Replace back-to-front so earlier
+        // ranges stay valid as the storage length shifts under us.
+        let replacements = Array(repeating: replacement, count: matches.count)
+        guard tv.shouldChangeText(inRanges: matches.map { NSValue(range: $0) },
+                                  replacementStrings: replacements) else { return }
+        editor.textStorage.beginEditing()
+        for range in matches.reversed() {
             editor.textStorage.replaceCharacters(in: range, with: replacement)
-            tv.didChangeText()
-            replaced += 1
         }
-        tv.undoManager?.endUndoGrouping()
+        editor.textStorage.endEditing()
+        tv.didChangeText()
         tv.undoManager?.setActionName("Replace All")
+        let replaced = matches.count
         status(replaced == 1 ? "Replaced 1 match" : "Replaced \(replaced) matches")
     }
 
@@ -213,5 +255,29 @@ public final class FindPanelController: NSWindowController {
 
     private func status(_ text: String) {
         statusLabel.stringValue = text
+    }
+
+    // MARK: - System find pasteboard
+
+    // Publish the current query to the shared find pasteboard so ⌘G and other apps
+    // (Safari, TextEdit) see the same term; seeding pulls one in when empty.
+    private func writeToFindPasteboard() {
+        let pb = NSPasteboard(name: .find)
+        pb.clearContents()
+        pb.setString(query, forType: .string)
+    }
+
+    private func seedQueryFromFindPasteboard() {
+        if let shared = NSPasteboard(name: .find).string(forType: .string), !shared.isEmpty {
+            findField.stringValue = shared
+        }
+    }
+}
+
+// An NSPanel that treats Esc (cancelOperation) as "close the panel" — the classic
+// Find-panel dismissal the stock utility window doesn't provide on its own.
+private final class FindPanel: NSPanel {
+    override func cancelOperation(_ sender: Any?) {
+        performClose(sender)
     }
 }
