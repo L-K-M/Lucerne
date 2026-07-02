@@ -81,6 +81,13 @@ enum MainMenu {
     private static func makeFileMenu() -> NSMenuItem {
         submenu("File") { menu in
             add(menu, "New", "newDocument:", key: "n", symbol: "doc.badge.plus")
+            // Rebuilt on open from the .luce files in the Stationery folder; each
+            // opens as an untitled copy (see StationeryMenuDelegate).
+            let newFromStationery = NSMenuItem(title: "New from Stationery", action: nil, keyEquivalent: "")
+            let stationeryMenu = NSMenu(title: "New from Stationery")
+            stationeryMenu.delegate = StationeryMenuDelegate.shared
+            newFromStationery.submenu = stationeryMenu
+            menu.addItem(newFromStationery)
             add(menu, "Open…", "openDocument:", key: "o", symbol: "folder")
             let openRecent = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
             let recentMenu = NSMenu(title: "Open Recent")
@@ -95,6 +102,7 @@ enum MainMenu {
             menu.addItem(.separator())
             add(menu, "Export as PDF…", "exportPDF:", symbol: "arrow.up.doc")
             add(menu, "Export as RTF… (lossy)", "exportRTF:")
+            add(menu, "Save as Stationery…", "lucerneSaveAsStationery:")
             menu.addItem(.separator())
             add(menu, "Import Stylesheet…", "lucerneImportStylesheet:")
             add(menu, "Export Stylesheet…", "lucerneExportStylesheet:")
