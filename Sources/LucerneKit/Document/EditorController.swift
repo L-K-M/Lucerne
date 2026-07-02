@@ -474,6 +474,9 @@ public final class EditorController: NSObject {
         // The image bytes stay in `images`, so re-adding restores the picture too.
         registerObjectUndo(undoName) { $0.addObject(removed, undoName: undoName) }
         document?.editorDidChange()
+        // The removed view may have been first responder (e.g. ⌫ on a selected image);
+        // hand focus back to the text so the keyboard isn't stranded.
+        focusActiveTextView()
     }
 
     private func registerObjectUndo(_ name: String, _ action: @escaping (EditorController) -> Void) {
@@ -1932,6 +1935,11 @@ extension EditorController: FloatingImageViewDelegate {
 
     public func floatingImageViewRequestsDelete(_ view: FloatingImageView) {
         removeObject(id: view.objectID, undoName: "Delete Image")
+    }
+
+    public func floatingImageViewRequestsDeselect(_ view: FloatingImageView) {
+        deselectAllImages()
+        focusActiveTextView()
     }
 
     public func floatingImageViewDidCancelDrag(_ view: FloatingImageView) {

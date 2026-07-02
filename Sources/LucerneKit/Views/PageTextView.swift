@@ -116,6 +116,42 @@ public final class PageTextView: NSTextView {
         return true
     }
 
+    // MARK: - Paste image
+
+    // An image on the pasteboard (⌘V after copying from Preview, a browser, etc.)
+    // inserts as a free-placed floating image on this view's page — reusing the exact
+    // drop-path insertion — instead of NSTextView beeping or pasting a text
+    // attachment. Anything else falls through to the normal paste.
+    public override func paste(_ sender: Any?) {
+        guard let (data, name) = Self.imagePayload(from: .general) else {
+            super.paste(sender)
+            return
+        }
+        let pageView = superview as? PageContainerView
+        editor?.insertImage(data: data, suggestedName: name,
+                            onPage: pageView?.pageIndex ?? 0,
+                            centeredAt: imagePasteCenter(inPage: pageView))
+    }
+
+    /// A page-relative point to centre a pasted image on: the caret's line rect when
+    /// the layout manager reports a usable one, otherwise the centre of the visible
+    /// area of this page (so the image lands where the reader is looking).
+    private func imagePasteCenter(inPage pageView: PageContainerView?) -> CGPoint {
+        let target: NSView = pageView ?? self
+        if let layoutManager, let textContainer {
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange(),
+                                                      actualCharacterRange: nil)
+            var caret = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            if caret.width > 0 || caret.height > 0 {
+                caret.origin.x += textContainerOrigin.x
+                caret.origin.y += textContainerOrigin.y
+                return target.convert(CGPoint(x: caret.midX, y: caret.midY), from: self)
+            }
+        }
+        let visible = visibleRect
+        return target.convert(CGPoint(x: visible.midX, y: visible.midY), from: self)
+    }
+
     private static func hasImage(_ pasteboard: NSPasteboard) -> Bool {
         let urlOptions: [NSPasteboard.ReadingOptionKey: Any] = [
             .urlReadingFileURLsOnly: true,

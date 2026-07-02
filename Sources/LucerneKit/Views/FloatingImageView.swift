@@ -9,6 +9,9 @@ public protocol FloatingImageViewDelegate: AnyObject {
     func floatingImageViewRequestsDelete(_ view: FloatingImageView)
     /// Escape was pressed mid-drag: restore the pre-drag placement, no undo step.
     func floatingImageViewDidCancelDrag(_ view: FloatingImageView)
+    /// Escape was pressed with no drag in progress: give up the image selection and
+    /// hand keyboard focus back to the text.
+    func floatingImageViewRequestsDeselect(_ view: FloatingImageView)
     /// Mouse entered (true) or left (false) the image — used to show contextual
     /// help in the status bar.
     func floatingImageView(_ view: FloatingImageView, didHover entered: Bool)
@@ -91,8 +94,19 @@ public final class FloatingImageView: NSView {
         }
     }
 
+    /// `handleSize` is expressed in page points, so at fit-page zoom the 9 pt handles
+    /// shrink to a few screen pixels and at high zoom they swallow a small image.
+    /// Divide by the canvas magnification so they render at a roughly constant ~9
+    /// *screen* px, clamped to a sane page-point range. Drawing, hit-testing and
+    /// cursor rects all read this, so they stay consistent.
+    private var effectiveHandleSize: CGFloat {
+        let scale = enclosingScrollView?.magnification ?? 1
+        guard scale > 0 else { return handleSize }
+        return min(24, max(6, handleSize / scale))
+    }
+
     private func handleRects() -> [CGRect] {
-        let b = bounds, h = handleSize
+        let b = bounds, h = effectiveHandleSize
         return [
             CGRect(x: b.minX, y: b.minY, width: h, height: h),          // TL
             CGRect(x: b.maxX - h, y: b.minY, width: h, height: h),      // TR
@@ -186,6 +200,11 @@ public final class FloatingImageView: NSView {
 
         frame = f
         delegate?.floatingImageView(self, didChangeFrameLive: f)
+        // Keep the drag alive when the pointer reaches the viewport edge, so an image
+        // can be dragged onto the next/previous page — the canvas scrolls to follow.
+        // The superview (a stationary page) owns the visibleRect that matters, not the
+        // image, which moves with the cursor.
+        _ = superview.autoscroll(with: event)
     }
 
     public override func mouseUp(with event: NSEvent) {
@@ -203,10 +222,14 @@ public final class FloatingImageView: NSView {
         switch event.keyCode {
         case 51, 117:                    // delete, forward-delete
             delegate?.floatingImageViewRequestsDelete(self)
-        case 53 where dragMode != .none: // escape mid-drag: abort, restore placement
-            dragCancelled = true
-            dragMode = .none
-            delegate?.floatingImageViewDidCancelDrag(self)
+        case 53:                          // escape
+            if dragMode != .none {        // mid-drag: abort, restore placement
+                dragCancelled = true
+                dragMode = .none
+                delegate?.floatingImageViewDidCancelDrag(self)
+            } else {                      // idle: give up the selection, return to text
+                delegate?.floatingImageViewRequestsDeselect(self)
+            }
         case 123, 124, 125, 126:         // arrows: nudge 1 pt (⇧ = 10 pt)
             let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
             switch event.keyCode {
