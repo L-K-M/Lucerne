@@ -35,6 +35,19 @@ public final class PageTextView: NSTextView {
         super.moveUp(sender)
     }
 
+    // In a table, Tab / Shift-Tab walk to the next / previous cell in row-major order
+    // (the most ingrained table gesture). Outside a table — or at the table's first/last
+    // cell — fall through to the normal tab behavior (inserting a tab / shifting focus).
+    public override func insertTab(_ sender: Any?) {
+        if editor?.moveCaretInTable(cellDelta: 1) == true { return }
+        super.insertTab(sender)
+    }
+
+    public override func insertBacktab(_ sender: Any?) {
+        if editor?.moveCaretInTable(cellDelta: -1) == true { return }
+        super.insertBacktab(sender)
+    }
+
     // MARK: - Context menu
 
     // Augment the standard editing menu (Cut/Copy/Paste/…) with Lucerne's formatting
