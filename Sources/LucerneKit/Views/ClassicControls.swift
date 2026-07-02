@@ -20,6 +20,10 @@ enum ClassicChrome {
     /// main or key window (popovers count as key while in use).
     static func active(for view: NSView?) -> Bool {
         guard let window = view?.window else { return true }
+        // Floating palettes are never main and only briefly key, but they hide
+        // whenever the app deactivates — so a visible palette is attached to the
+        // active app by contract and draws at full strength.
+        if let palette = window as? ClassicPaletteWindow { return palette.isVisible }
         return window.isMainWindow || window.isKeyWindow
     }
 
@@ -249,6 +253,10 @@ final class ClassicSegmentedControl: NSControl {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    override var isEnabled: Bool {
+        didSet { needsDisplay = true }
+    }
+
     func setGlyph(_ glyph: ClassicGlyph, forSegment index: Int) {
         guard glyphs.indices.contains(index) else { return }
         glyphs[index] = glyph
@@ -330,7 +338,7 @@ final class ClassicSegmentedControl: NSControl {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let active = ClassicChrome.active(for: self)
+        let active = ClassicChrome.active(for: self) && isEnabled
         let outline = ClassicChrome.bezelOutline(in: bounds)
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
@@ -343,7 +351,8 @@ final class ClassicSegmentedControl: NSControl {
         var boundary: CGFloat = 0
         for width in widths.dropLast() {
             boundary += width
-            NSRect(x: boundary - 0.5, y: 0, width: 1, height: bounds.height).fill()
+            // Integral x for a crisp 1 px fill: last column of the left segment.
+            NSRect(x: boundary - 1, y: 0, width: 1, height: bounds.height).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
         ClassicChrome.bezelBorder(active).setStroke()
@@ -383,6 +392,10 @@ class ClassicPopUp: NSControl {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var isEnabled: Bool {
+        didSet { needsDisplay = true }
+    }
 
     var titleOfSelectedItem: String? {
         popMenu.items.indices.contains(indexOfSelectedItem) ? popMenu.items[indexOfSelectedItem].title : nil
@@ -454,7 +467,7 @@ class ClassicPopUp: NSControl {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let active = ClassicChrome.active(for: self)
+        let active = ClassicChrome.active(for: self) && isEnabled
         let outline = ClassicChrome.bezelOutline(in: bounds)
         let state: ClassicChrome.BezelState = isPressed ? .pressed : idleBezelState
         NSGraphicsContext.saveGraphicsState()
@@ -462,7 +475,8 @@ class ClassicPopUp: NSControl {
         ClassicChrome.bezelGradient(state, active: active).draw(in: bounds, angle: 90)
         ClassicChrome.drawInnerHint(state, in: bounds, active: active)
         ClassicChrome.segmentSeparator(active).withAlphaComponent(0.7).setFill()
-        NSRect(x: bounds.width - arrowZoneWidth - 0.5, y: 2, width: 1, height: bounds.height - 4).fill()
+        // Integral x for a crisp 1 px fill: last column just left of the arrow well.
+        NSRect(x: bounds.width - arrowZoneWidth - 1, y: 2, width: 1, height: bounds.height - 4).fill()
         NSGraphicsContext.restoreGraphicsState()
         ClassicChrome.bezelBorder(active).setStroke()
         outline.lineWidth = 1
@@ -547,6 +561,16 @@ final class ClassicSizeField: NSView {
         set { field.stringValue = newValue }
     }
 
+    /// Mirrors NSControl.isEnabled for this NSView-based control: stops editing,
+    /// gates the preset menu, and mutes the drawn chrome.
+    var isEnabled = true {
+        didSet {
+            field.isEditable = isEnabled
+            field.isSelectable = isEnabled
+            needsDisplay = true
+        }
+    }
+
     private let field = NSTextField()
     private let presets: [String]
     private let fixedWidth: CGFloat
@@ -589,6 +613,7 @@ final class ClassicSizeField: NSView {
     // Clicks land here only outside the text field (its own area starts editing),
     // i.e. on the arrow well or bezel — pop the preset menu below the control.
     override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
         for preset in presets {
@@ -607,7 +632,7 @@ final class ClassicSizeField: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let active = ClassicChrome.active(for: self)
+        let active = ClassicChrome.active(for: self) && isEnabled
         let outline = ClassicChrome.bezelOutline(in: bounds, radius: 3)
         NSGraphicsContext.saveGraphicsState()
         outline.addClip()
@@ -619,7 +644,8 @@ final class ClassicSizeField: NSView {
         NSColor(calibratedWhite: 0, alpha: 0.07).setFill()     // inset shadow on the text area
         NSRect(x: 0, y: bounds.height - 2, width: bounds.width - arrowZoneWidth, height: 1).fill()
         ClassicChrome.segmentSeparator(active).withAlphaComponent(0.7).setFill()
-        NSRect(x: bounds.width - arrowZoneWidth - 0.5, y: 0, width: 1, height: bounds.height).fill()
+        // Integral x for a crisp 1 px fill: last column just left of the arrow well.
+        NSRect(x: bounds.width - arrowZoneWidth - 1, y: 0, width: 1, height: bounds.height).fill()
         NSGraphicsContext.restoreGraphicsState()
         ClassicChrome.bezelBorder(active).setStroke()
         outline.lineWidth = 1
@@ -738,6 +764,10 @@ public final class ClassicButton: NSControl {
 
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    public override var isEnabled: Bool {
+        didSet { needsDisplay = true }
+    }
+
     public override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
         isTracking = true
@@ -764,7 +794,7 @@ public final class ClassicButton: NSControl {
     }
 
     public override func draw(_ dirtyRect: NSRect) {
-        let active = ClassicChrome.active(for: self)
+        let active = ClassicChrome.active(for: self) && isEnabled
         let outline = ClassicChrome.bezelOutline(in: bounds)
         let state: ClassicChrome.BezelState = isPressed ? .pressed : .normal
         NSGraphicsContext.saveGraphicsState()
