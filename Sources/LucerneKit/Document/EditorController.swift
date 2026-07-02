@@ -153,6 +153,7 @@ public final class EditorController: NSObject {
         pageView.marginLeft = metrics.marginLeft
         pageView.marginBottom = metrics.marginBottom
         pageView.marginRight = metrics.marginRight
+        pageView.showFoldMarks = model.page.foldMarks ?? false
         pageView.addSubview(textView)
         let info = PageInfo(container: container, textView: textView, pageView: pageView)
         pages.append(info)

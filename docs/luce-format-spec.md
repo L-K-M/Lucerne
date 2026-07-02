@@ -144,7 +144,12 @@ token rather than render a partial string. This is presentational and additive.
 | `width` | number | REQUIRED | Page width in points. **Authoritative.** |
 | `height` | number | REQUIRED | Page height in points. **Authoritative.** |
 | `margins` | object | REQUIRED | `{ "top", "left", "bottom", "right" }`, all numbers (points). |
+| `foldMarks` | boolean | optional | When `true`, print DIN 5008 tri-fold guide ticks in the left margin (default `false`). |
 
+- `foldMarks` is **additive in format version 1**: it is optional and defaults to
+  `false`. When `true`, a writer draws two short horizontal tick marks in the outer
+  left margin at 1/3 and 2/3 of the page height as folding guides for windowed
+  envelopes; readers that do not support it **MUST** ignore it.
 - `width`/`height` are authoritative; `size` is an advisory label for UI. A reader
   **MUST** use `width`/`height` for layout and **MUST NOT** infer dimensions from
   `size`. Reference dimensions: A4 = `595.28 × 841.89`, Letter = `612 × 792`.
@@ -450,7 +455,8 @@ prose in §7 is authoritative over the schema here).
         "size": { "type": "string" },
         "width": { "type": "number", "exclusiveMinimum": 0 },
         "height": { "type": "number", "exclusiveMinimum": 0 },
-        "margins": { "$ref": "#/$defs/edgeInsets" }
+        "margins": { "$ref": "#/$defs/edgeInsets" },
+        "foldMarks": { "type": "boolean" }
       }
     },
     "edgeInsets": {
