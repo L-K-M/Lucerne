@@ -1825,6 +1825,19 @@ public final class EditorController: NSObject {
         return textStorage.rtf(from: range, documentAttributes: [:]) ?? Data()
     }
 
+    /// Lossy Word (.docx) interchange export, mirroring `makeRTFData`. Text, fonts,
+    /// color, and paragraph formatting survive; free-placed images are dropped
+    /// (Office Open XML can't express page-anchored frames — plan §4). The pictures
+    /// live on in the .luce package and the PDF.
+    public func makeDOCXData() -> Data {
+        let range = NSRange(location: 0, length: textStorage.length)
+        // The value dictionary is typed `[…: Any]`, so the document type is spelled
+        // out in full (a leading-dot member can't infer its base against `Any`).
+        return (try? textStorage.data(
+            from: range,
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])) ?? Data()
+    }
+
     /// The whole document as a single multi-page PDF (share / print / export).
     public func makePDFData() -> Data {
         let document = PDFDocument()

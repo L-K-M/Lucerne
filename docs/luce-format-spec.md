@@ -376,6 +376,20 @@ derivation so tools can produce comparable output.
    `![alt](src)`, ordered by `(page ascending, then z ascending)`; page-anchored
    objects with no page sort last. `alt` is the `src` filename without its
    extension, or the object `id` if no usable stem exists.
+7. A run of consecutive **cell** paragraphs sharing one `table` id (§6.7) is
+   emitted as a single GFM pipe table rather than as separate paragraph blocks.
+   Cells are placed on the derived grid by their `(row, column)`; a spanning
+   cell's text goes in its origin position and the positions it covers are left
+   empty (GFM has no span syntax). Since the model has no header flag, row 0 is
+   used as the table header, followed by a `---` delimiter row (GFM requires
+   one). A literal `|` in cell text is backslash-escaped. Block prefixes (item 2)
+   do not apply inside a cell — only the inline emphasis of item 3.
+8. In a plain-paragraph block (item 2's `p`/default case), if the rendered text
+   would *begin* another block construct — an ATX heading (`#…` + space), a
+   blockquote (`>`), a bullet (`- `/`+ `) or ordered (`1. `/`1) `) list item,
+   four or more leading spaces, or a lone `---`/`===` — the leading marker is
+   backslash-escaped (leading indentation is trimmed to three spaces) so the text
+   round-trips as prose. This is in addition to item 4's inline escaping.
 
 ## 9. Versioning and migration
 
