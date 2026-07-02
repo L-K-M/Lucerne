@@ -203,6 +203,7 @@ enum MainMenu {
             add(menu, "Header & Footer…", "lucerneHeaderFooter:")
             add(menu, "Table…", "lucerneInsertTable:", symbol: "tablecells")
             add(menu, "Table of Contents", "lucerneTableOfContents:")
+            add(menu, "Date", "lucerneInsertDate:")
             menu.addItem(.separator())
             let wrap = NSMenuItem(title: "Image Text Wrap", action: nil, keyEquivalent: "")
             let wrapMenu = NSMenu(title: "Image Text Wrap")
