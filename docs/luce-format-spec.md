@@ -331,7 +331,14 @@ type; readers **MUST** ignore objects whose `type` they do not understand.
 
 ### 7.1 Image payloads
 
-- `src` **MUST** name an entry inside the archive, conventionally under `images/`.
+- `src` **MUST** name an entry inside the archive, and that entry **MUST** be a
+  flat path of the form `images/<filename>`: the literal prefix `images/` followed by
+  a single filename component with **no** further subdirectories and no `.` or `..`
+  segments (e.g. `images/lake.png` — never `images/2026/lake.png`). Earlier drafts
+  described this only as "conventionally under `images/`"; that was looser than the
+  reference implementation, which reads and writes only the flat shape (a nested path
+  is ignored on read and its bytes are dropped on the next save), so the flat form is
+  stated normatively here.
 - The bytes are the image's original encoded form (e.g. PNG, JPEG). Readers
   **SHOULD** support common raster formats; if a payload is missing or
   undecodable, a reader **SHOULD** render a placeholder and **MUST NOT** fail to
@@ -369,7 +376,12 @@ derivation so tools can produce comparable output.
    `blockquote` → `> `, `code` → four leading spaces (an indented code block),
    and `p` (or anything else) → no prefix.
 3. Within a paragraph, each run's text is emitted with emphasis markers from its
-   *effective* bold/italic: bold → `**…**`, italic → `*…*`, both → `***…***`.
+   **run-level** `bold`/`italic` only: bold → `**…**`, italic → `*…*`, both →
+   `***…***`. Style-level bold/italic (e.g. a heading that is bold by definition) is
+   treated as part of the block's overall look — it selects the block prefix, not
+   inline emphasis — and is **not** re-emitted as markers, so a bold `h1` style
+   yields `# Title`, not `# **Title**`. (This differs from the *effective*-value
+   resolution of §6.6, which is for layout, not the Markdown escape hatch.)
    Surrounding whitespace is moved outside the markers (so `"word "` italic emits
    `*word* `, not `*word *`); a run whose trimmed text is empty is emitted
    verbatim.

@@ -175,8 +175,10 @@ on these views.
 - **MiniZip** writes *stored* (uncompressed) entries — fine because images are
   already compressed and text is tiny — and reads stored + deflate (via the
   `Compression` framework). It is not a general-purpose ZIP library.
-- **Printed ToC** has no dotted tab leader (Cocoa's `NSTextTab` doesn't support
-  one) and goes stale as the document changes until you re-run the command.
+- **Printed ToC** draws its dotted leader as *measured text* — a run of `.`
+  characters sized to fill the line to the right-aligned page number, because Cocoa's
+  `NSTextTab` has no leader fill — and it goes stale as the document changes until you
+  re-run the command.
 - **Headers/footers** are edited in a dialog; clicking into the margin to edit them
   in place is future work (the model already supports the three zones).
 - **Tables** are v1: Insert ▸ Table… makes an editable `NSTextTable` grid that flows

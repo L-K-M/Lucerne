@@ -1,6 +1,6 @@
 # Lucerne
 
-*An experimental Word processors with only the features I actually need and a classic user interface inspired by ClarisWorks — a small, pleasant tool for writing
+*An experimental word processor with only the features I actually need and a classic user interface inspired by ClarisWorks — a small, pleasant tool for writing
 letters, with rulers, tabs, and free placement of images.*
 
 ![Screenshot](screenshot.png)

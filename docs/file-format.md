@@ -49,9 +49,9 @@ top-left, y increasing downward**.
 
   // D1 — one fixed page size for the whole document
   "page": {
-    "size": "A4",                 // "A4" | "Letter" | "custom"
-    "width": 595.28,              // points; authoritative when size == "custom"
-    "height": 841.89,
+    "size": "A4",                 // "A4" | "Letter" | "custom" — an advisory label only
+    "width": 595.28,              // points; always authoritative (readers use this, not size)
+    "height": 841.89,             // points; always authoritative
     "margins": { "top": 72, "left": 72, "bottom": 72, "right": 72 }
   },
 

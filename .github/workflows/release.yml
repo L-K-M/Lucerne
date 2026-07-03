@@ -30,10 +30,33 @@ jobs:
       - name: Version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
+      - name: Verify the tag matches the committed version
+        # Guards against tagging a commit whose committed version markers were never
+        # bumped (Scripts/release.sh bumps both; a hand-cut tag can skip them). Runs
+        # BEFORE the plist is stamped from the tag, so it sees the committed values.
+        run: |
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Scripts/Info.plist)"
+          README_VERSION="$(sed -n 's/.*<!-- version -->\(.*\)<!-- \/version -->.*/\1/p' README.md | head -1)"
+          fail=0
+          if [ "$PLIST_VERSION" != "$VERSION" ]; then
+            echo "::error::tag version ($VERSION) != Scripts/Info.plist CFBundleShortVersionString ($PLIST_VERSION); bump the plist (Scripts/release.sh does this) before tagging."
+            fail=1
+          fi
+          if [ "$README_VERSION" != "$VERSION" ]; then
+            echo "::error::tag version ($VERSION) != README version marker ($README_VERSION); bump the README version line before tagging."
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] || exit 1
+
       - name: Stamp the bundle version from the tag
         run: |
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Scripts/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" Scripts/Info.plist
+
+      - name: Test
+        # Gate the release on the unit tests — a tag can land on a commit whose CI
+        # run is still in flight (or never ran), so re-run them here before publishing.
+        run: swift test -v
 
       - name: Build the app bundle
         # Builds Release, assembles dist/Lucerne.app, and ad-hoc signs it (identity "-").
