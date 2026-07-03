@@ -266,7 +266,18 @@ public final class StyleLibraryWindowController: NSWindowController, NSWindowDel
             })
     }
 
+    private func removeObservers() {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers = []
+    }
+
     public func windowDidBecomeKey(_ notification: Notification) {
         reload()
+    }
+
+    /// A closed Library window must stop reloading (with disk I/O) on every
+    /// window-main change and every library save; `show()` re-installs (2.10).
+    public func windowWillClose(_ notification: Notification) {
+        removeObservers()
     }
 }

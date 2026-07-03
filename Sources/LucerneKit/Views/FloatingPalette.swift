@@ -310,6 +310,16 @@ final class FloatingPalette: NSObject {
                 guard (note.object as? NSWindow)?.delegate is DocumentWindowController else { return }
                 DispatchQueue.main.async { self?.refreshFromActiveDocument() }
             })
+        if kind == .styles {
+            // The styles palette's dimmed Library section mirrors the global
+            // library; refresh it when the library changes elsewhere (edited in
+            // its own window, imported, a style deleted) so a stale/renamed row
+            // can't linger and be clicked into a silent no-op (2.11).
+            observers.append(center.addObserver(
+                forName: StyleLibrary.didChange, object: nil, queue: .main) { [weak self] _ in
+                    self?.refreshFromActiveDocument()
+                })
+        }
     }
 
     private func removeObservers() {
