@@ -47,6 +47,11 @@ public final class EditorController: NSObject {
     private var relayoutScheduled = false
     private let maxPages = 2000     // safety cap against pathological geometry
 
+    /// The image-wrap exclusion rects last assigned to each page's container, keyed
+    /// by the container. Assigning `container.exclusionPaths` invalidates layout
+    /// unconditionally, so pagination only reassigns when these rects change (3.1).
+    private var appliedExclusionRects: [ObjectIdentifier: [CGRect]] = [:]
+
     // MARK: - Init
 
     public init(model: LucerneDocumentModel) {
@@ -74,6 +79,7 @@ public final class EditorController: NSObject {
         while !pages.isEmpty { removeLastPage(force: true) }
         imageViews.values.forEach { $0.removeFromSuperview() }
         imageViews.removeAll()
+        appliedExclusionRects.removeAll()   // containers are gone; drop their cache
 
         addPage()                       // ensure a container exists before text flows
         let attributed = AttributedStringBuilder.attributedString(for: model)
@@ -173,6 +179,7 @@ public final class EditorController: NSObject {
         }
         let index = pages.count - 1
         layoutManager.removeTextContainer(at: index)
+        appliedExclusionRects.removeValue(forKey: ObjectIdentifier(last.container))
         last.pageView.removeFromSuperview()
         canvasView.removeLastPageView()
         pages.removeLast()
@@ -182,12 +189,24 @@ public final class EditorController: NSObject {
     /// paths (image wrap + forced page-break bands). When the document has no page
     /// breaks this behaves exactly like simple overflow pagination.
     private func paginateAndExclude() {
-        guard metrics.contentSize.height > 1 else { return }
+        // Guard both dimensions: a zero/sliver-width container lays out nothing, so
+        // every page "overflows" and pagination runs away to the cap (1.5 companion).
+        guard metrics.contentSize.height > 1, metrics.contentSize.width > 1 else { return }
         if pages.isEmpty { addPage() }
+
+        // Grow to cover page-anchored objects, not just text: an image can be anchored
+        // to a page past where the body text reaches (e.g. a freshly loaded document),
+        // and it would otherwise be dropped. Text overflow below adds any further pages.
+        if let maxObjectPage = model.objects
+            .filter({ $0.anchorMode == .page && $0.frame != nil })
+            .compactMap({ $0.page })
+            .max() {
+            while pages.count < min(maxObjectPage + 1, maxPages) { addPage() }
+        }
 
         let breaks = pageBreakCharIndices()
         var bandedPages = Set<Int>()
-        for index in pages.indices { pages[index].container.exclusionPaths = imageExclusions(index) }
+        for index in pages.indices { applyExclusionPaths(toPage: index) }
 
         var guardCount = 0
         let limit = maxPages + breaks.count + 4
@@ -200,7 +219,13 @@ public final class EditorController: NSObject {
                 continue
             }
             if !breaks.isEmpty, let page = firstPageNeedingBreakBand(breaks: breaks, banded: bandedPages) {
-                pages[page].container.exclusionPaths = imageExclusions(page) + breakBands(forPage: page, breaks: breaks)
+                let paths = imageExclusionRects(page).map { NSBezierPath(rect: $0) }
+                pages[page].container.exclusionPaths = paths + breakBands(forPage: page, breaks: breaks)
+                // The container now carries bands on top of the plain image rects, but
+                // the cache still holds just the image rects. Drop the entry so the next
+                // plain pass reassigns (clearing stale bands when the break moves/leaves)
+                // instead of seeing an unchanged rect list and skipping the page (3.1).
+                appliedExclusionRects.removeValue(forKey: ObjectIdentifier(pages[page].container))
                 bandedPages.insert(page)
                 continue
             }
@@ -210,8 +235,8 @@ public final class EditorController: NSObject {
         while pages.count > 1 && lastPageIsTrulyEmpty() { removeLastPage() }
     }
 
-    private func imageExclusions(_ index: Int) -> [NSBezierPath] {
-        ExclusionPathController.exclusionPaths(forPage: index, objects: model.objects, metrics: metrics)
+    private func imageExclusionRects(_ index: Int) -> [CGRect] {
+        ExclusionPathController.exclusionRects(forPage: index, objects: model.objects, metrics: metrics)
     }
 
     private func pageBreakCharIndices() -> [Int] {
@@ -264,6 +289,10 @@ public final class EditorController: NSObject {
 
     private func lastPageIsTrulyEmpty() -> Bool {
         guard pages.count >= 2, let last = pages.last else { return false }
+        // Keep a page the MODEL anchors an object to: on a freshly loaded document the
+        // image views don't exist yet when the first trim runs, so the live-subview
+        // check below would miss them and drop the page out from under the image (1.2).
+        if model.objects.contains(where: { $0.anchorMode == .page && $0.page == pages.count - 1 }) { return false }
         // Keep a page that hosts a floating image or the insertion point.
         if last.pageView.subviews.contains(where: { $0 is FloatingImageView }) { return false }
         if last.textView == activeTextView { return false }
@@ -279,9 +308,19 @@ public final class EditorController: NSObject {
 
     // MARK: - Exclusion paths (free placement)
 
+    /// Assigns a page's image-wrap exclusion paths, but only when the computed rects
+    /// differ from those last applied. Assigning `exclusionPaths` invalidates layout
+    /// unconditionally, so skipping no-op reassignments keeps TextKit's incremental
+    /// layout for the common (unchanged) case — the whole-document-relayout-per-
+    /// keystroke fix (3.1).
     private func applyExclusionPaths(toPage index: Int) {
         guard index < pages.count else { return }
-        pages[index].container.exclusionPaths = imageExclusions(index)
+        let container = pages[index].container
+        let rects = imageExclusionRects(index)
+        let key = ObjectIdentifier(container)
+        if let applied = appliedExclusionRects[key], applied == rects { return }
+        container.exclusionPaths = rects.map { NSBezierPath(rect: $0) }
+        appliedExclusionRects[key] = rects
     }
 
     // MARK: - Relayout orchestration
@@ -290,7 +329,14 @@ public final class EditorController: NSObject {
         guard !isUpdatingLayout else { return }
         isUpdatingLayout = true
         paginateAndExclude()
-        if syncImages { syncImageViews() }
+        if syncImages {
+            syncImageViews()
+            // paginateAndExclude's trim ran while the moved image's view still sat on
+            // the old last page, so that page survived. Now that syncImageViews has
+            // re-parented it (and the model no longer anchors an object there), re-trim
+            // any trailing page that has become truly empty before laying pages out.
+            while pages.count > 1 && lastPageIsTrulyEmpty() { removeLastPage() }
+        }
         canvasView.layoutPages()
         updateFurniture()
         isUpdatingLayout = false
