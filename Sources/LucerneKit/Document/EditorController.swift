@@ -1013,17 +1013,44 @@ public final class EditorController: NSObject {
         var spans: [[(Int, Int)?]]         // [r][c] = (rowSpan, colSpan) for a real cell; nil = covered by a span
     }
 
+    /// The character index of the first paragraph of `table`, found by walking backward
+    /// paragraph-by-paragraph from `index` while paragraphs still belong to `table`
+    /// (its cells are contiguous). Returns 0 if `index` isn't in `table`, so the caller
+    /// falls back to a full forward scan.
+    private func tableStartLocation(forTable table: NSTextTable, nearCharacterIndex index: Int, in ns: NSString) -> Int {
+        guard ns.length > 0 else { return 0 }
+        let clamped = min(max(0, index), ns.length - 1)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: clamped, length: 0))
+        guard tableBlock(atCharacterIndex: start)?.table === table else { return 0 }
+        var tableStart = start
+        while tableStart > 0 {
+            var prevStart = 0, prevEnd = 0, prevContentsEnd = 0
+            ns.getParagraphStart(&prevStart, end: &prevEnd, contentsEnd: &prevContentsEnd,
+                                 for: NSRange(location: tableStart - 1, length: 0))
+            guard tableBlock(atCharacterIndex: prevStart)?.table === table else { break }
+            tableStart = prevStart
+        }
+        return tableStart
+    }
+
     /// Reads a table's grid out of the storage as a rectangular array of cell content
     /// (single paragraph per cell — multi-paragraph cells collapse to their first),
     /// plus each real cell's span (positions covered by a span are nil in `spans`).
-    private func parseTable(containing table: NSTextTable) -> ParsedTable? {
+    ///
+    /// `nearCharacterIndex` (the caret, when known) avoids scanning the whole document
+    /// on every caret move: a table's cells are contiguous, so we walk backward from the
+    /// caret's paragraph to the table's first paragraph and run the forward scan from
+    /// there. Without a hint (or if the hint isn't in this table) we scan from 0.
+    private func parseTable(containing table: NSTextTable, nearCharacterIndex: Int? = nil) -> ParsedTable? {
         let ns = textStorage.string as NSString
         var contentByCell: [String: NSAttributedString] = [:]
         var spanByCell: [String: (Int, Int)] = [:]
         var widthByColumn: [Int: Double] = [:]
         var maxRow = 0, maxColumn = 0
         var rangeStart = -1, rangeEnd = -1
-        var location = 0
+        var location = nearCharacterIndex.map { tableStartLocation(forTable: table, nearCharacterIndex: $0, in: ns) } ?? 0
         while location < ns.length {
             var start = 0, end = 0, contentsEnd = 0
             ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
@@ -1074,7 +1101,7 @@ public final class EditorController: NSObject {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let caret = min(tv.selectedRange().location, max(0, storage.length))
         guard let block = tableBlock(atCharacterIndex: caret),
-              let parsed = parseTable(containing: block.table) else { return }
+              let parsed = parseTable(containing: block.table, nearCharacterIndex: caret) else { return }
         let caretRow = min(block.startingRow, parsed.rows - 1)
         let caretColumn = min(block.startingColumn, parsed.columns - 1)
         var grid = parsed.cells
@@ -1137,7 +1164,7 @@ public final class EditorController: NSObject {
     public func currentTableColumnWidths() -> [Double]? {
         guard let tv = activeTextView,
               let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
-              let parsed = parseTable(containing: block.table) else { return nil }
+              let parsed = parseTable(containing: block.table, nearCharacterIndex: tv.selectedRange().location) else { return nil }
         return parsed.columnWidths
     }
 
@@ -1145,7 +1172,7 @@ public final class EditorController: NSObject {
     public func setCurrentTableColumnWidths(_ widths: [Double]) {
         guard let tv = formattingTextView(), let storage = tv.textStorage,
               let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
-              let parsed = parseTable(containing: block.table),
+              let parsed = parseTable(containing: block.table, nearCharacterIndex: tv.selectedRange().location),
               widths.count == parsed.columns else { return }
         let caret = tv.selectedRange().location
         // Preserve any merged cells across a resize (column count is unchanged).
@@ -1158,8 +1185,9 @@ public final class EditorController: NSObject {
 
     /// Resets the caret's table to equal column widths.
     public func distributeTableColumnsEvenly() {
-        guard let block = tableBlock(atCharacterIndex: activeTextView?.selectedRange().location ?? 0),
-              let parsed = parseTable(containing: block.table), parsed.columns > 0 else { return }
+        let caret = activeTextView?.selectedRange().location ?? 0
+        guard let block = tableBlock(atCharacterIndex: caret),
+              let parsed = parseTable(containing: block.table, nearCharacterIndex: caret), parsed.columns > 0 else { return }
         setCurrentTableColumnWidths(Array(repeating: 100.0 / Double(parsed.columns), count: parsed.columns))
     }
 
@@ -1172,13 +1200,71 @@ public final class EditorController: NSObject {
     public func moveCaretInTable(rowDelta: Int) -> Bool {
         guard let tv = activeTextView,
               let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
-              let parsed = parseTable(containing: block.table) else { return false }
+              let parsed = parseTable(containing: block.table,
+                                      nearCharacterIndex: tv.selectedRange().location) else { return false }
         let targetRow = block.startingRow + rowDelta
         guard targetRow >= 0, targetRow < parsed.rows else { return false }
-        let column = min(block.startingColumn, parsed.columns - 1)
-        let offset = parsed.range.location + cellStartOffset(row: targetRow, column: column, grid: parsed.cells)
+        var row = targetRow
+        var column = min(block.startingColumn, parsed.columns - 1)
+        // The target position may be covered by a merged cell (no cell in storage there);
+        // step to the origin that owns it so the caret lands inside a real cell.
+        if parsed.spans[row][column] == nil {
+            let owner = owningCellOrigin(row: row, column: column, spans: parsed.spans)
+            row = owner.row; column = owner.column
+        }
+        let offset = parsed.range.location + cellStartOffset(row: row, column: column,
+                                                             grid: parsed.cells, spans: parsed.spans)
         revealHeading(atCharacterIndex: offset)   // places the caret (handles a table that spans pages)
         return true
+    }
+
+    /// Moves the caret to the next (`cellDelta` > 0) or previous (< 0) real cell of the
+    /// current table in row-major order — Tab / Shift-Tab. Covered (merged-over) positions
+    /// are skipped. Returns false when not in a table or already at the first/last cell, so
+    /// Tab falls through to its normal behavior at the table's edges.
+    public func moveCaretInTable(cellDelta: Int) -> Bool {
+        guard cellDelta != 0, let tv = activeTextView,
+              let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
+              let parsed = parseTable(containing: block.table,
+                                      nearCharacterIndex: tv.selectedRange().location) else { return false }
+        var row = min(block.startingRow, parsed.rows - 1)
+        var column = min(block.startingColumn, parsed.columns - 1)
+        let forward = cellDelta > 0
+        while true {
+            if forward {
+                column += 1
+                if column >= parsed.columns { column = 0; row += 1 }
+                if row >= parsed.rows { return false }          // past the last cell
+            } else {
+                column -= 1
+                if column < 0 { column = parsed.columns - 1; row -= 1 }
+                if row < 0 { return false }                     // before the first cell
+            }
+            guard parsed.spans[row][column] != nil else { continue }   // skip covered positions
+            let offset = parsed.range.location + cellStartOffset(row: row, column: column,
+                                                                 grid: parsed.cells, spans: parsed.spans)
+            revealHeading(atCharacterIndex: offset)
+            return true
+        }
+    }
+
+    /// Resolves a position covered by a merged cell to the origin (top-left) cell that
+    /// owns it — walking left through the row, then up to earlier rows — so the caret
+    /// can be placed in the real cell backing that position. Returns the position
+    /// unchanged if it's already a real cell.
+    private func owningCellOrigin(row: Int, column: Int, spans: [[(Int, Int)?]]) -> (row: Int, column: Int) {
+        var r = row
+        while r >= 0 {
+            var c = column
+            while c >= 0 {
+                if let span = spans[r][c], r + max(1, span.0) > row, c + max(1, span.1) > column {
+                    return (r, c)
+                }
+                c -= 1
+            }
+            r -= 1
+        }
+        return (row, column)
     }
 
     /// Selects the whole table the caret is in (so it can be deleted/cut/copied like
@@ -1187,7 +1273,8 @@ public final class EditorController: NSObject {
     public func selectCurrentTable() -> Bool {
         guard let tv = activeTextView,
               let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
-              let parsed = parseTable(containing: block.table) else { return false }
+              let parsed = parseTable(containing: block.table,
+                                      nearCharacterIndex: tv.selectedRange().location) else { return false }
         revealHeading(atCharacterIndex: parsed.range.location)   // focus the table's page
         activeTextView?.setSelectedRange(parsed.range)
         selectionObserver?(self)
@@ -1209,10 +1296,31 @@ public final class EditorController: NSObject {
     public func mergeSelectedCells() {
         guard let tv = formattingTextView(), let storage = tv.textStorage,
               let block = tableBlock(atCharacterIndex: tv.selectedRange().location),
-              let parsed = parseTable(containing: block.table),
+              let parsed = parseTable(containing: block.table,
+                                      nearCharacterIndex: tv.selectedRange().location),
               let region = cellRegion(in: tv.selectedRange(), table: block.table) else { return }
-        let minRow = max(0, region.minRow), minCol = max(0, region.minColumn)
-        let maxRow = min(parsed.rows - 1, region.maxRow), maxCol = min(parsed.columns - 1, region.maxColumn)
+        var minRow = max(0, region.minRow), minCol = max(0, region.minColumn)
+        var maxRow = min(parsed.rows - 1, region.maxRow), maxCol = min(parsed.columns - 1, region.maxColumn)
+        // Grow the region to span-closure: any existing merged cell the selection only
+        // partially clips must be pulled in whole, or positions covered by neither the
+        // old nor the new span would be dropped from the rebuilt grid (a malformed table).
+        var changed = true
+        while changed {
+            changed = false
+            for r in 0 ..< parsed.rows {
+                for c in 0 ..< parsed.columns {
+                    guard let span = parsed.spans[r][c] else { continue }   // real cells only
+                    let cellMaxRow = r + max(1, span.0) - 1
+                    let cellMaxCol = c + max(1, span.1) - 1
+                    guard r <= maxRow, cellMaxRow >= minRow,
+                          c <= maxCol, cellMaxCol >= minCol else { continue }   // must intersect
+                    if r < minRow { minRow = r; changed = true }
+                    if c < minCol { minCol = c; changed = true }
+                    if cellMaxRow > maxRow { maxRow = cellMaxRow; changed = true }
+                    if cellMaxCol > maxCol { maxCol = cellMaxCol; changed = true }
+                }
+            }
+        }
         guard maxRow > minRow || maxCol > minCol else { return }      // need at least two cells
 
         var grid = parsed.cells
@@ -1282,11 +1390,18 @@ public final class EditorController: NSObject {
         return cell
     }
 
-    private func cellStartOffset(row: Int, column: Int, grid: [[NSAttributedString]]) -> Int {
+    /// Character offset (from the table's start) of cell (row, column). `spans`, when
+    /// given, marks positions covered by a merged cell (nil entries): the storage holds
+    /// no cell there, so they must NOT add the phantom +1 a full-grid walk would — that
+    /// drift is what landed merged-table navigation past the intended cell. Pass nil when
+    /// the grid has a real cell at every position (e.g. a freshly rebuilt, unmerged grid).
+    private func cellStartOffset(row: Int, column: Int, grid: [[NSAttributedString]],
+                                 spans: [[(Int, Int)?]]? = nil) -> Int {
         var offset = 0
         for r in grid.indices {
             for c in grid[r].indices {
                 if r == row && c == column { return offset }
+                if let spans, r < spans.count, c < spans[r].count, spans[r][c] == nil { continue }
                 offset += grid[r][c].length + 1   // +1 for the cell's terminating newline
             }
         }
