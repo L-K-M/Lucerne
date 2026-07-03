@@ -290,9 +290,9 @@ public final class LucerneRulerView: NSView {
         case .none:
             return
         case .left:
-            leftIndent = clamp(docPoint, 0, contentWidth)
+            leftIndent = clamp(docPoint, 0, contentWidth - rightIndent)   // don't cross the right marker
         case .firstLine:
-            firstLineExtra = clamp(docPoint, 0, contentWidth) - leftIndent
+            firstLineExtra = clamp(docPoint, 0, contentWidth - rightIndent) - leftIndent
         case .right:
             rightIndent = clamp(contentWidth - docPoint, 0, contentWidth - leftIndent)
         case .tab(let i):

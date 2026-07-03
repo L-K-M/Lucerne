@@ -29,6 +29,9 @@ public final class PageContainerView: NSView {
     public var furnitureFont: NSFont? { didSet { if furnitureFont != oldValue { needsDisplay = true } } }
     public var furnitureColor: NSColor? { didSet { if furnitureColor != oldValue { needsDisplay = true } } }
 
+    // DIN 5008 tri-fold guide ticks in the outer left margin (windowed envelopes).
+    public var showFoldMarks = false { didSet { if oldValue != showFoldMarks { needsDisplay = true } } }
+
     public override var isFlipped: Bool { true }
 
     public init(pageIndex: Int, frame: CGRect) {
@@ -62,6 +65,24 @@ public final class PageContainerView: NSView {
         drawZones(headerLeft, headerCenter, headerRight, in: headerBand)
         let footerBand = NSRect(x: 0, y: bounds.height - marginBottom, width: bounds.width, height: marginBottom)
         drawZones(footerLeft, footerCenter, footerRight, in: footerBand)
+
+        if showFoldMarks { drawFoldMarks() }
+    }
+
+    /// Two light 0.5-pt horizontal ticks in the outer left margin band (x 6→18) at
+    /// 1/3 and 2/3 of the page height — DIN 5008 tri-fold guides for windowed
+    /// envelopes. Drawn here so print/PDF capture them automatically. (Exact thirds
+    /// for v1; DIN's precise fold positions are 105 mm / 210 mm from the top.)
+    private func drawFoldMarks() {
+        NSColor(calibratedWhite: 0.75, alpha: 1).setStroke()
+        for fraction in [1.0 / 3.0, 2.0 / 3.0] {
+            let y = bounds.height * CGFloat(fraction)
+            let mark = NSBezierPath()
+            mark.move(to: CGPoint(x: 6, y: y))
+            mark.line(to: CGPoint(x: 18, y: y))
+            mark.lineWidth = 0.5
+            mark.stroke()
+        }
     }
 
     private func drawZones(_ left: String, _ center: String, _ right: String, in band: NSRect) {

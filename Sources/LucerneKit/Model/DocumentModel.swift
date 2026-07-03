@@ -124,12 +124,18 @@ public struct PageConfig: Codable, Equatable {
     public var width: Double         // points; authoritative when size == "custom"
     public var height: Double
     public var margins: EdgeInsetsModel
+    /// Print DIN 5008 tri-fold guide ticks in the outer left margin (for folding
+    /// into a windowed envelope). Additive/optional: nil or false means none;
+    /// synthesized Codable omits it when nil.
+    public var foldMarks: Bool?
 
-    public init(size: String, width: Double, height: Double, margins: EdgeInsetsModel) {
+    public init(size: String, width: Double, height: Double, margins: EdgeInsetsModel,
+                foldMarks: Bool? = nil) {
         self.size = size
         self.width = width
         self.height = height
         self.margins = margins
+        self.foldMarks = foldMarks
     }
 
     public static let a4 = PageConfig(size: "A4", width: 595.28, height: 841.89,
