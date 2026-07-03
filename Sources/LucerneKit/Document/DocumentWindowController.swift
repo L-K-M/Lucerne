@@ -408,6 +408,23 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         syncUI()
     }
 
+    /// Insert today's date (long style, matching the {date} furniture token) at the
+    /// caret. Routing through the text view's insertText gets us undo grouping and
+    /// the caret's typing attributes for free.
+    @objc func lucerneInsertDate(_ sender: Any?) {
+        if editor.activeTextView == nil { editor.focusInitialResponder() }
+        guard let tv = editor.activeTextView else { return }
+        let dateString = DocumentWindowController.dateFormatter.string(from: Date())
+        tv.insertText(dateString, replacementRange: tv.selectedRange())
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .long
+        f.timeStyle = .none
+        return f
+    }()
+
     @objc func lucerneInsertTable(_ sender: Any?) {
         guard let window else { return }
         TableInsertSheet.present(from: window) { [weak self] rows, columns in
@@ -493,7 +510,9 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             menuItem.state = alignmentState(for: menuItem.action) ? .on : .off
             return true
         case #selector(lucerneToggleBold(_:)), #selector(lucerneToggleItalic(_:)),
-             #selector(lucerneToggleUnderline(_:)):
+             #selector(lucerneToggleUnderline(_:)),
+             #selector(lucerneInsertDate(_:)):
+            // Always available: there's always an editor to insert into.
             return true
         case #selector(lucerneToggleNavigator(_:)):
             menuItem.state = (window?.contentView as? EditorContainerView)?.navigatorVisible == true ? .on : .off
