@@ -595,6 +595,11 @@ public final class EditorController: NSObject {
     /// for real (so the page shows the candidate) but register no undo and don't
     /// dirty the document. End the session with endFormatPreview.
     public func beginFormatPreview() {
+        // A transient try-on popover closes asynchronously, so a second session
+        // (or a color-well drag) can begin before the first's endFormatPreview
+        // runs. Re-snapshotting here would replace the first session's baseline
+        // and make its edits uncommittable — keep the live snapshot instead.
+        guard previewSnapshot == nil else { return }
         previewSnapshot = textStorage.copy() as? NSAttributedString
         previewTypingAttributes = formattingTextView()?.typingAttributes
         suppressUndoRegistration = true
