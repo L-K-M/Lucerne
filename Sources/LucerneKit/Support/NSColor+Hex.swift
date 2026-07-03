@@ -12,8 +12,10 @@ public extension NSColor {
         }
         guard s.count == 6 || s.count == 8 else { return nil }
 
-        var value: UInt64 = 0
-        guard Scanner(string: s).scanHexInt64(&value) else { return nil }
+        // Strict parse: Scanner.scanHexInt64 would accept a hex *prefix* (and an
+        // "0x" marker), so "#12345G" or "0xAABBCC" would silently become the
+        // wrong color. Require every character to be a hex digit instead.
+        guard s.allSatisfy(\.isHexDigit), let value = UInt64(s, radix: 16) else { return nil }
 
         let r, g, b, a: CGFloat
         if s.count == 8 {

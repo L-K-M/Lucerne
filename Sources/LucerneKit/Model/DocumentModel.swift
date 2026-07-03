@@ -106,6 +106,14 @@ public struct PageFurniture: Codable, Equatable {
         self.right = right
     }
 
+    // Tolerate files that omit some zones (spec §3.2: each optional, default "").
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        left = try c.decodeIfPresent(String.self, forKey: .left) ?? ""
+        center = try c.decodeIfPresent(String.self, forKey: .center) ?? ""
+        right = try c.decodeIfPresent(String.self, forKey: .right) ?? ""
+    }
+
     public var isEmpty: Bool { left.isEmpty && center.isEmpty && right.isEmpty }
 }
 
@@ -305,6 +313,13 @@ public struct TabStopModel: Codable, Equatable {
     public init(pos: Double, type: String = "left") {
         self.pos = pos
         self.type = type
+    }
+
+    // Tolerate files that omit the defaulted type (spec §6.5: default "left").
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pos = try c.decode(Double.self, forKey: .pos)
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "left"
     }
 
     public enum Kind: String { case left, center, right, decimal }
