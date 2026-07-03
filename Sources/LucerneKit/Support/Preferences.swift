@@ -39,12 +39,33 @@ public enum Preferences {
     public static let didChange = Notification.Name("ch.lkmc.lucerne.preferencesDidChange")
 
     private static let rulerUnitKey = "rulerUnit"
+    private static let smartQuotesKey = "smartQuotes"
+    private static let smartDashesKey = "smartDashes"
 
     /// The ruler unit. Defaults to centimetres.
     public static var rulerUnit: RulerUnit {
         get { RulerUnit(rawValue: UserDefaults.standard.string(forKey: rulerUnitKey) ?? "") ?? .centimeters }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: rulerUnitKey)
+            NotificationCenter.default.post(name: didChange, object: nil)
+        }
+    }
+
+    /// Automatic smart-quote substitution in the editor. Off by default — a
+    /// period-correct opt-in; a letters tool shouldn't silently rewrite what you type.
+    public static var smartQuotes: Bool {
+        get { UserDefaults.standard.bool(forKey: smartQuotesKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: smartQuotesKey)
+            NotificationCenter.default.post(name: didChange, object: nil)
+        }
+    }
+
+    /// Automatic smart-dash substitution in the editor. Off by default (see `smartQuotes`).
+    public static var smartDashes: Bool {
+        get { UserDefaults.standard.bool(forKey: smartDashesKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: smartDashesKey)
             NotificationCenter.default.post(name: didChange, object: nil)
         }
     }

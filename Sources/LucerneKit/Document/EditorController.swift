@@ -140,12 +140,25 @@ public final class EditorController: NSObject {
         // but never change what you typed behind your back.
         tv.isContinuousSpellCheckingEnabled = true
         tv.isAutomaticSpellingCorrectionEnabled = false
+        // Smart quote/dash substitution follows the app preference (both off by
+        // default — same "never rewrite silently" reasoning; see Preferences).
+        tv.isAutomaticQuoteSubstitutionEnabled = Preferences.smartQuotes
+        tv.isAutomaticDashSubstitutionEnabled = Preferences.smartDashes
         tv.minSize = metrics.contentSize
         tv.maxSize = metrics.contentSize
         tv.autoresizingMask = []
         tv.allowsImageEditing = false
         tv.importsGraphics = false
         return tv
+    }
+
+    /// Re-apply the smart-quote/dash preferences to every existing page text view.
+    /// The Substitutions menu toggles flip the pref, then call this.
+    public func applySubstitutionPreferences() {
+        for page in pages {
+            page.textView.isAutomaticQuoteSubstitutionEnabled = Preferences.smartQuotes
+            page.textView.isAutomaticDashSubstitutionEnabled = Preferences.smartDashes
+        }
     }
 
     @discardableResult

@@ -12,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (STYLES.md S6). Before the menu and before any document exists, so
         // the very first letter already seeds from it.
         StyleLibrary.shared.seedStarterLibraryIfNeeded()
+        // Pin the whole app to the light (aqua) appearance so alerts, the font/color
+        // panels, and open/save panels match the aqua-pinned document windows even in
+        // Dark Mode (4.5). The per-window pins stay as belt-and-braces.
+        NSApp.appearance = NSAppearance(named: .aqua)
         NSApp.mainMenu = MainMenu.build()
     }
 
@@ -22,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         updateChecker.start()   // check GitHub for a newer release on launch + daily
         observeDocumentWindowClose()
+        observeDocumentWindowArrival()
         // Let macOS restore/recover documents first; if nothing opened, show the
         // welcome screen (recent documents + New/Open/Sample). The small delay lets
         // window/draft restoration settle so we don't show it alongside a restored doc.
@@ -36,9 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     // Set the guard without overriding applicationShouldTerminate, so NSDocumentController
-    // still reviews unsaved changes on quit. During quit, document windows close (and post
-    // willClose) before this fires, but the deferred welcome check runs after it — so a
-    // quit doesn't pop the welcome screen.
+    // still reviews unsaved changes on quit. This fires late — after the save-review sheet
+    // on a ⌘Q — so the deferred welcome check below also re-reads isTerminating to avoid
+    // popping the welcome window mid-quit. (The review-sheet path can still race in theory;
+    // we accept that rather than override applicationShouldTerminate, which would take over
+    // the unsaved-changes review.)
     func applicationWillTerminate(_ notification: Notification) {
         isTerminating = true
     }
@@ -52,8 +59,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, !self.isTerminating,
                       let window = note.object as? NSWindow,
                       window.delegate is DocumentWindowController else { return }
-                // Defer so the document has deregistered before we check the count.
-                DispatchQueue.main.async { self.showWelcomeIfNoDocuments() }
+                // Defer so the document has deregistered before we check the count, and
+                // re-check isTerminating — termination can begin between this notification
+                // and the deferred block running (1.33).
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, !self.isTerminating else { return }
+                    self.showWelcomeIfNoDocuments()
+                }
+            }
+    }
+
+    /// A document window became main (⌘N, Open, Open Recent, sample, or a Finder
+    /// double-click all land here) — the welcome screen has done its job, so dismiss
+    /// it. The controller is kept for reuse when the last window closes again (5.7).
+    private func observeDocumentWindowArrival() {
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { [weak self] note in
+                guard let self,
+                      let window = note.object as? NSWindow,
+                      window.delegate is DocumentWindowController else { return }
+                self.welcomeWindowController?.close()
             }
     }
 
@@ -76,8 +101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.onNew = { NSDocumentController.shared.newDocument(nil) }
             controller.onOpen = { NSDocumentController.shared.openDocument(nil) }
             controller.onSample = { [weak self] in self?.openSampleDocument() }
-            controller.onOpenRecent = { url in
-                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+            controller.onOpenRecent = { [weak self] url in
+                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+                    // A moved/renamed recent otherwise fails silently, leaving no
+                    // windows; surface the error and keep the welcome screen (1.20).
+                    if let error {
+                        _ = NSApp.presentError(error)
+                        self?.showWelcome()
+                    }
+                }
             }
             welcomeWindowController = controller
         }
@@ -123,6 +155,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func checkForUpdates(_ sender: Any?) {
         updateChecker.checkNow()
+    }
+
+    // MARK: - Help
+
+    @objc func showLucerneHelp(_ sender: Any?) {
+        guard let url = URL(string: "https://github.com/L-K-M/Lucerne#readme") else { return }
+        _ = NSWorkspace.shared.open(url)
     }
 
     private func openSampleDocument() {

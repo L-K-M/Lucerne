@@ -16,6 +16,7 @@ enum MainMenu {
         mainMenu.addItem(makeInsertMenu())
         mainMenu.addItem(makeViewMenu())
         mainMenu.addItem(makeWindowMenu())
+        mainMenu.addItem(makeHelpMenu())
         return mainMenu
     }
 
@@ -115,8 +116,29 @@ enum MainMenu {
             add(menu, "Cut", "cut:", key: "x")
             add(menu, "Copy", "copy:", key: "c")
             add(menu, "Paste", "paste:", key: "v")
+            add(menu, "Paste and Match Style", "pasteAsPlainText:", key: "v",
+                modifiers: [.command, .option, .shift])
             add(menu, "Delete", "delete:", key: "")
             add(menu, "Select All", "selectAll:", key: "a")
+
+            // Standard text transformations (nil-targeted → the first-responder text view).
+            let transformations = NSMenuItem(title: "Transformations", action: nil, keyEquivalent: "")
+            let transformationsMenu = NSMenu(title: "Transformations")
+            add(transformationsMenu, "Make Upper Case", "uppercaseWord:")
+            add(transformationsMenu, "Make Lower Case", "lowercaseWord:")
+            add(transformationsMenu, "Capitalize", "capitalizeWord:")
+            transformations.submenu = transformationsMenu
+            menu.addItem(transformations)
+
+            // Smart quotes/dashes, off by default (period-correct opt-in). These route to
+            // DocumentWindowController, which flips the pref and re-applies it to every page.
+            let substitutions = NSMenuItem(title: "Substitutions", action: nil, keyEquivalent: "")
+            let substitutionsMenu = NSMenu(title: "Substitutions")
+            add(substitutionsMenu, "Smart Quotes", "lucerneToggleSmartQuotes:")
+            add(substitutionsMenu, "Smart Dashes", "lucerneToggleSmartDashes:")
+            substitutions.submenu = substitutionsMenu
+            menu.addItem(substitutions)
+
             menu.addItem(.separator())
             // Lucerne's own Find panel: the legacy NSTextView find panel was never
             // enabled on the page text views, and it can't navigate the one-text-
@@ -148,7 +170,10 @@ enum MainMenu {
         submenu("Format") { menu in
             let font = NSMenuItem(title: "Font", action: nil, keyEquivalent: "")
             let fontMenu = NSMenu(title: "Font")
-            add(fontMenu, "Show Fonts", "orderFrontFontPanel:", key: "t")
+            // orderFrontFontPanel: lives on NSFontManager, which is not in the responder
+            // chain — target it directly or the item stays permanently disabled (1.19).
+            let showFonts = add(fontMenu, "Show Fonts", "orderFrontFontPanel:", key: "t")
+            showFonts.target = NSFontManager.shared
             add(fontMenu, "Show Colors", "orderFrontColorPanel:", key: "C", modifiers: [.command, .shift])
             fontMenu.addItem(.separator())
             add(fontMenu, "Bold", "lucerneToggleBold:", key: "b", symbol: "bold")
@@ -223,7 +248,8 @@ enum MainMenu {
         submenu("View") { menu in
             add(menu, "Show Navigator", "lucerneToggleNavigator:", key: "0", modifiers: [.command, .option])
             menu.addItem(.separator())
-            add(menu, "Zoom In", "lucerneZoomIn:", key: "+")
+            // "=" so plain ⌘= works on US layouts (macOS still renders it as ⌘+).
+            add(menu, "Zoom In", "lucerneZoomIn:", key: "=")
             add(menu, "Zoom Out", "lucerneZoomOut:", key: "-")
             add(menu, "Actual Size", "lucerneActualSize:", key: "0")
             add(menu, "Fit Page", "lucerneZoomToFitPage:", key: "0", modifiers: [.command, .shift])
@@ -241,6 +267,17 @@ enum MainMenu {
             add(menu, "Bring All to Front", "arrangeInFront:")
         }
         NSApp.windowsMenu = item.submenu
+        return item
+    }
+
+    // MARK: - Help
+
+    private static func makeHelpMenu() -> NSMenuItem {
+        let item = submenu("Help") { menu in
+            add(menu, "Lucerne Help", "showLucerneHelp:", key: "?")
+        }
+        // Assigning helpMenu gives us macOS's built-in menu-item search field.
+        NSApp.helpMenu = item.submenu
         return item
     }
 }
