@@ -73,6 +73,11 @@ final class UpdateChecker: ObservableObject {
     /// True while an update asset is downloading to `~/Downloads`.
     @Published private(set) var isDownloading = false
 
+    /// Set when a user-initiated check arrives while a check is already in flight, so
+    /// the running (usually background) check reports its outcome as if the user had
+    /// asked instead of dropping the request silently (1.30).
+    private var pendingUserReport = false
+
     init(configuration: Configuration, defaults: UserDefaults = .standard) {
         self.configuration = configuration
         self.defaults = defaults
@@ -105,6 +110,11 @@ final class UpdateChecker: ObservableObject {
     /// elapsed. Silent unless a newer, non-skipped version is found.
     func checkInBackground() {
         guard automaticChecksEnabled else { return }
+        // An unbundled `swift run` has no Info.plist, so the version falls back to a
+        // placeholder that any real release would outrank — which would pop a spurious
+        // update alert on every launch. Skip automatic checks there; the menu's
+        // Check for Updates… still works on demand. (1.31)
+        guard Bundle.main.bundleIdentifier != nil else { return }
         if let last = lastCheckDate, Date().timeIntervalSince(last) < configuration.minimumCheckInterval { return }
         performCheck(userInitiated: false)
     }
@@ -123,37 +133,56 @@ final class UpdateChecker: ObservableObject {
     }
 
     private func performCheck(userInitiated: Bool) {
-        guard !isChecking else { return }
+        guard !isChecking else {
+            // A user-initiated request arriving during an in-flight (usually
+            // background) check would otherwise be dropped; remember it so the
+            // running check reports its outcome as if the user had asked. (1.30)
+            if userInitiated { pendingUserReport = true }
+            return
+        }
         isChecking = true
+        // Register the reset before the `self` guard so `isChecking` can't stick if the
+        // checker deallocates mid-flight. (1.35)
         Task { @MainActor [weak self] in
+            defer { self?.isChecking = false }
             guard let self else { return }
-            defer { self.isChecking = false }
             do {
                 let release = try await self.client.latestRelease(includePrereleases: self.configuration.allowPrereleases)
                 self.lastCheckDate = Date()
                 self.defaults.set(self.lastCheckDate, forKey: self.key("lastCheck"))
 
+                // Fold in a user request that arrived mid-check so its outcome is
+                // reported rather than dropped. `consume…` is listed first so the flag
+                // is always cleared regardless of `userInitiated`. (1.30)
+                let report = self.consumePendingUserReport() || userInitiated
+
                 guard let current = SemanticVersion(self.configuration.currentVersion) else {
-                    if userInitiated { self.presentUpToDate() }
+                    if report { self.presentUpToDate() }
                     return
                 }
                 guard let remote = SemanticVersion(release.tagName) else {
                     // Don't claim "up to date" about a release we couldn't interpret.
-                    if userInitiated { self.presentUnrecognizedRelease(release.tagName) }
+                    if report { self.presentUnrecognizedRelease(release.tagName) }
                     return
                 }
                 if remote > current {
-                    if userInitiated || self.skippedVersion != release.tagName {
+                    if report || self.skippedVersion != release.tagName {
                         self.presentUpdateAvailable(release: release, remote: remote, current: current)
                     }
-                } else if userInitiated {
+                } else if report {
                     self.presentUpToDate()
                 }
             } catch {
-                if userInitiated { self.presentError(error) }
+                if self.consumePendingUserReport() || userInitiated { self.presentError(error) }
                 else { NSLog("UpdateChecker: background check failed: \(error.localizedDescription)") }
             }
         }
+    }
+
+    /// Reads and clears the "a user asked while a check was already running" flag (1.30).
+    private func consumePendingUserReport() -> Bool {
+        defer { pendingUserReport = false }
+        return pendingUserReport
     }
 
     // MARK: Presentation
@@ -192,7 +221,12 @@ final class UpdateChecker: ObservableObject {
             NSWorkspace.shared.open(release.htmlURL)
             return
         }
-        guard !isDownloading else { return }
+        guard !isDownloading else {
+            // A second Download click while one is already in flight opens the release
+            // page rather than doing nothing (there's no in-app progress UI yet). (5.16)
+            NSWorkspace.shared.open(release.htmlURL)
+            return
+        }
         isDownloading = true
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -261,9 +295,11 @@ final class UpdateChecker: ObservableObject {
 }
 
 extension Bundle {
-    /// `CFBundleShortVersionString` (the marketing version), or `"0"`.
+    /// `CFBundleShortVersionString` (the marketing version), or the About box's
+    /// fallback version so an unbundled `swift run` reports the same number as the
+    /// About window instead of a bare `"0"`. Kept in step by `Scripts/release.sh`. (1.31)
     var shortVersionString: String {
-        (infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
+        (infoDictionary?["CFBundleShortVersionString"] as? String) ?? AboutWindowController.fallbackVersion
     }
 
     /// The app's display name, falling back to the bundle name then the process name.

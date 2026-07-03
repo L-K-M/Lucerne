@@ -125,8 +125,11 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
         let epigraph = ClassicText.engravedLabel(Self.epigraphOfTheDay(), size: 13,
                                                  italic: true, gray: 0.42)
 
+        // Fall back to the About box's version (kept in step by Scripts/release.sh) so
+        // an unbundled `swift run` shows the same number everywhere instead of "—". (1.31)
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        let versionLabel = ClassicText.engravedLabel("Version \(version ?? "—")", size: 10, gray: 0.5)
+            ?? AboutWindowController.fallbackVersion
+        let versionLabel = ClassicText.engravedLabel("Version \(version)", size: 10, gray: 0.5)
 
         let stack = NSStackView(views: [icon, title, tagline, rule,
                                         newButton, openButton, sampleButton,
