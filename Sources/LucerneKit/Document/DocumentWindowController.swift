@@ -285,7 +285,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                try StyleLibrary.encode(styles).write(to: url)
+                try StyleLibrary.encode(styles).write(to: url, options: .atomic)
             } catch {
                 NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
             }

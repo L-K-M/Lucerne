@@ -37,7 +37,15 @@ public enum LuceArchive {
         // Only include images actually referenced by the model, in a stable order.
         let referenced = referencedImageSources(in: model)
         for src in referenced.sorted() {
-            guard let data = images[src] else { continue }
+            // A referenced image with no bytes would write a document.json that points
+            // at a picture the archive doesn't contain — a silent, unopenable-picture
+            // save. Refuse with a clear error instead of dropping it (2.6).
+            guard let data = images[src] else {
+                throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError, userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Can't save the document because a referenced image is missing (\(src))."
+                ])
+            }
             entries.append(MiniZip.Entry(name: src, data: data))
         }
 
@@ -50,7 +58,7 @@ public enum LuceArchive {
                                          data: Data(snapshot.markdown.utf8)))
         }
 
-        return MiniZip.archive(entries)
+        return try MiniZip.archive(entries, maxEntrySize: MiniZip.maxEntrySize)
     }
 
     // MARK: - Read

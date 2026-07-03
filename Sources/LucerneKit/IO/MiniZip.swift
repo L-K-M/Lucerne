@@ -31,7 +31,8 @@ public enum MiniZip {
     /// (possibly hostile) archive is attacker-controlled and is used to size the
     /// inflate buffer, so it must not be trusted blindly — a 1 KB file could
     /// otherwise demand a 4 GiB allocation. Generous for a letters document.
-    private static let maxEntrySize = 512 * 1024 * 1024
+    /// Not `private` so the writer (and tests) can enforce the same cap on save.
+    static let maxEntrySize = 512 * 1024 * 1024
 
     // Signatures
     private static let localHeaderSig: UInt32 = 0x0403_4b50
@@ -39,30 +40,63 @@ public enum MiniZip {
     private static let endOfCentralSig: UInt32 = 0x0605_4b50
     private static let dosDate1980: UInt16 = 0x0021   // 1980-01-01 (deterministic)
     private static let dosTimeZero: UInt16 = 0x0000
+    /// General-purpose flag bit 11 (EFS): entry names/comments are UTF-8, not CP437,
+    /// so strict extractors read non-ASCII names (e.g. "images/Zürich.png") correctly.
+    private static let utf8NameFlag: UInt16 = 0x0800
 
     // MARK: - Writing (stored)
 
+    /// Non-throwing entry point retained for callers that build small, trusted
+    /// archives entirely in memory (unit tests). Real saves go through the checked
+    /// overload below — that is the one that enforces the size/offset limits.
     public static func archive(_ entries: [Entry]) -> Data {
+        // These callers never approach the size or 32-bit-offset limits, so the
+        // checked build can't actually throw here; fall back to empty on the
+        // impossible path rather than trapping.
+        (try? archive(entries, maxEntrySize: maxEntrySize)) ?? Data()
+    }
+
+    /// Builds a stored-only ZIP, enforcing the SAME per-entry size cap the reader
+    /// applies and rejecting a running offset that would overflow ZIP's 32-bit
+    /// fields — so a save can never quietly produce a `.luce` this code then refuses
+    /// to reopen (1.13). Throws `ZipError` instead of trapping on the conversions.
+    public static func archive(_ entries: [Entry], maxEntrySize: Int) throws -> Data {
         var output = Data()
         var central = Data()
         var offsets: [(entry: Entry, crc: UInt32, offset: UInt32)] = []
 
         for entry in entries {
+            if entry.data.count > maxEntrySize {
+                throw ZipError.unsupported(
+                    "An entry (\(entry.name)) is too large to store: \(entry.data.count) bytes "
+                    + "exceeds the \(maxEntrySize)-byte limit.")
+            }
+            // Sizes and the running offset go into ZIP's fixed 32-bit fields; a value
+            // that no longer fits means a >4 GiB archive this reader could never
+            // reopen, so stop with a clean error instead of trapping on the UInt32.
+            guard let dataLen = UInt32(exactly: entry.data.count) else {
+                throw ZipError.unsupported("An entry (\(entry.name)) exceeds ZIP's 4 GiB size limit.")
+            }
+            guard let offset = UInt32(exactly: output.count) else {
+                throw ZipError.unsupported("The archive exceeds ZIP's 4 GiB size limit.")
+            }
             let nameBytes = Array(entry.name.utf8)
+            guard let nameLen = UInt16(exactly: nameBytes.count) else {
+                throw ZipError.unsupported("An entry name is too long to store.")
+            }
             let crc = CRC32.checksum(entry.data)
-            let offset = UInt32(output.count)
 
             // Local file header
             output.appendLE(localHeaderSig)
             output.appendLE(UInt16(20))                  // version needed
-            output.appendLE(UInt16(0))                   // gp flag
+            output.appendLE(utf8NameFlag)                // gp flag: bit 11 = UTF-8 names
             output.appendLE(UInt16(0))                   // method: stored
             output.appendLE(dosTimeZero)
             output.appendLE(dosDate1980)
             output.appendLE(crc)
-            output.appendLE(UInt32(entry.data.count))    // compressed size
-            output.appendLE(UInt32(entry.data.count))    // uncompressed size
-            output.appendLE(UInt16(nameBytes.count))
+            output.appendLE(dataLen)                     // compressed size
+            output.appendLE(dataLen)                     // uncompressed size
+            output.appendLE(nameLen)
             output.appendLE(UInt16(0))                   // extra length
             output.append(contentsOf: nameBytes)
             output.append(entry.data)
@@ -70,13 +104,20 @@ public enum MiniZip {
             offsets.append((entry, crc, offset))
         }
 
-        let centralStart = UInt32(output.count)
+        guard let entryCount = UInt16(exactly: offsets.count) else {
+            throw ZipError.unsupported("The archive has too many entries for a non-ZIP64 ZIP.")
+        }
+        guard let centralStart = UInt32(exactly: output.count) else {
+            throw ZipError.unsupported("The archive exceeds ZIP's 4 GiB size limit.")
+        }
         for record in offsets {
+            // Name length and data size were bounds-checked in the loop above, so
+            // these conversions can't trap.
             let nameBytes = Array(record.entry.name.utf8)
             central.appendLE(centralHeaderSig)
             central.appendLE(UInt16(20))                 // version made by
             central.appendLE(UInt16(20))                 // version needed
-            central.appendLE(UInt16(0))                  // gp flag
+            central.appendLE(utf8NameFlag)               // gp flag: bit 11 = UTF-8 names
             central.appendLE(UInt16(0))                  // method: stored
             central.appendLE(dosTimeZero)
             central.appendLE(dosDate1980)
@@ -93,14 +134,17 @@ public enum MiniZip {
             central.append(contentsOf: nameBytes)
         }
         output.append(central)
+        guard let centralSize = UInt32(exactly: central.count) else {
+            throw ZipError.unsupported("The archive's central directory exceeds ZIP's 4 GiB limit.")
+        }
 
         // End of central directory
         output.appendLE(endOfCentralSig)
         output.appendLE(UInt16(0))                       // disk number
         output.appendLE(UInt16(0))                       // disk with CD start
-        output.appendLE(UInt16(offsets.count))           // CD records on this disk
-        output.appendLE(UInt16(offsets.count))           // total CD records
-        output.appendLE(UInt32(central.count))           // size of CD
+        output.appendLE(entryCount)                      // CD records on this disk
+        output.appendLE(entryCount)                      // total CD records
+        output.appendLE(centralSize)                     // size of CD
         output.appendLE(centralStart)                    // offset of CD start
         output.appendLE(UInt16(0))                       // comment length
         return output
@@ -120,7 +164,15 @@ public enum MiniZip {
         guard let eocd = findEndOfCentralDirectory(in: bytes) else { throw ZipError.notAZip }
 
         let total = Int(readLE16(bytes, eocd + 10))
-        var cursor = Int(readLE32(bytes, eocd + 16))     // offset of central directory
+        let cdOffset = readLE32(bytes, eocd + 16)        // offset of central directory
+        // ZIP64 parks sentinel values in these EOCD fields and stores the real ones
+        // in a separate record we don't parse. Detect the sentinels and fail with an
+        // honest "unsupported" error rather than chasing 0xFFFFFFFF as a real offset
+        // and reporting generic corruption (2.5).
+        if total == 0xFFFF || cdOffset == 0xFFFF_FFFF {
+            throw ZipError.unsupported("This archive uses ZIP64 extensions, which Lucerne can't open.")
+        }
+        var cursor = Int(cdOffset)
 
         var result: [Entry] = []
         for _ in 0 ..< total {
@@ -232,6 +284,18 @@ public enum MiniZip {
     private static func readLE32(_ bytes: [UInt8], _ offset: Int) -> UInt32 {
         UInt32(bytes[offset]) | (UInt32(bytes[offset + 1]) << 8)
             | (UInt32(bytes[offset + 2]) << 16) | (UInt32(bytes[offset + 3]) << 24)
+    }
+}
+
+// Surface the associated message so `NSAlert(error:)` shows real text instead of a
+// generic "operation couldn't be completed" (2.5).
+extension MiniZip.ZipError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .notAZip:                 return "The file is not a valid .luce archive."
+        case .corrupt(let message):    return message
+        case .unsupported(let message): return message
+        }
     }
 }
 
