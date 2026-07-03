@@ -53,9 +53,21 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         NotificationCenter.default.addObserver(
             self, selector: #selector(viewportChanged),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+
+        // Recount words only after an actual text edit (not selection changes),
+        // debounced so a burst of keystrokes recounts once (1.25 / 3.2).
+        textStorageObserver = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification,
+            object: editor.textStorage, queue: .main) { [weak self] _ in
+                self?.scheduleWordCountRefresh()
+            }
     }
 
-    deinit { NotificationCenter.default.removeObserver(self) }
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        if let textStorageObserver { NotificationCenter.default.removeObserver(textStorageObserver) }
+        wordCountTimer?.invalidate()
+    }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -138,7 +150,10 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         editor.selectionObserver = { [weak self] _ in self?.syncUI() }
         editor.onStatusHint = { [weak self] hint in self?.showStatus(hint) }
         editor.outlineObserver = { [weak self] in
-            guard let self else { return }
+            // Rescanning every heading on every relayout is wasted work while the
+            // navigator is hidden; it's repopulated when shown (3.3).
+            guard let self,
+                  (self.window?.contentView as? EditorContainerView)?.navigatorVisible == true else { return }
             self.navigator.setItems(self.editor.headingOutline())
         }
         navigator.onSelect = { [weak self] index in self?.editor.revealHeading(atCharacterIndex: index) }
@@ -156,6 +171,14 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         editor.focusInitialResponder()
         navigator.setItems(editor.headingOutline())
         syncUI()
+    }
+
+    // Keep the {title} furniture token following Save As / rename: the document's
+    // display name changes here, not just at first show (1.24).
+    public override func synchronizeWindowTitleWithDocumentName() {
+        super.synchronizeWindowTitleWithDocumentName()
+        editor.documentTitle = (document as? NSDocument)?.displayName ?? ""
+        editor.refreshFurniture()
     }
 
     private func syncUI() {
@@ -179,31 +202,57 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     private func defaultStatus() -> String {
         let pages = editor.pageCount
-        let pageText = pages == 1 ? "1 page" : "\(pages) pages"
         if editor.hasSelectedImage {
             return "Image selected — drag to move · drag a corner to resize (⇧ for free aspect) · ⌫ to delete"
         }
+        // Tell the reader where they are — the classic word-processor cue (idea 7).
+        let pageText = pages <= 1 ? "1 page" : "Page \(currentPageNumber()) of \(pages)"
         let styleName = editor.currentStyleRole().flatMap { editor.model.styles[$0]?.name } ?? "Body"
         let words = wordCount()
         let wordText = words == 1 ? "1 word" : "\(words) words"
         return "\(styleName)  ·  \(pageText)  ·  \(wordText)"
     }
 
-    // The classic Document Info statistic, kept live in the status bar. Counting
-    // is O(text), so it's cached by length: selection-only changes (clicks, arrow
-    // keys) reuse the cached count and only edits recount.
-    private var cachedWordCount: (length: Int, words: Int) = (-1, 0)
+    // 1-based page under the viewport's vertical midpoint; 0 when there are no
+    // pages yet (idea 7). documentVisibleRect is in the canvas's own coordinates,
+    // which is where the page frames live.
+    private func currentPageNumber() -> Int {
+        guard editor.pageCount > 0 else { return 0 }
+        return editor.pageIndex(atCanvasMidY: scrollView.documentVisibleRect.midY) + 1
+    }
+    private var shownPageNumber = 0
+
+    // The classic Document Info statistic, kept live in the status bar. Counting is
+    // O(text), so the status line always reads the cached value and never recounts
+    // on the selection-change path; edits schedule a debounced recount (1.25 / 3.2).
+    private var cachedWords = 0
+    private var hasWordCount = false
+    private var wordCountTimer: Timer?
+    private var textStorageObserver: NSObjectProtocol?
 
     private func wordCount() -> Int {
+        if !hasWordCount { recomputeWordCount() }
+        return cachedWords
+    }
+
+    private func recomputeWordCount() {
         let ns = editor.textStorage.string as NSString
-        if cachedWordCount.length == ns.length { return cachedWordCount.words }
         var count = 0
         ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
                                options: [.byWords, .substringNotRequired]) { _, _, _, _ in
             count += 1
         }
-        cachedWordCount = (ns.length, count)
-        return count
+        cachedWords = count
+        hasWordCount = true
+    }
+
+    private func scheduleWordCountRefresh() {
+        wordCountTimer?.invalidate()
+        wordCountTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.recomputeWordCount()
+            self.showStatus(nil)
+        }
     }
 
     public func windowDidResize(_ notification: Notification) {
@@ -386,6 +435,14 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
 
     @objc func viewportChanged() {
         (window?.contentView as? EditorContainerView)?.layoutContents()
+        // Pinch-zoom changes the clip bounds too, so keep the footer % honest (1.28).
+        statusBar.setZoom(percent: Int((scrollView.magnification * 100).rounded()))
+        // Refresh the status line only when scrolling actually crossed a page (idea 7).
+        let page = currentPageNumber()
+        if page != shownPageNumber {
+            shownPageNumber = page
+            showStatus(nil)
+        }
     }
 
     // MARK: - Headers/footers & navigator
@@ -410,7 +467,13 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     }
 
     @objc func lucerneToggleNavigator(_ sender: Any?) {
-        (window?.contentView as? EditorContainerView)?.toggleNavigator()
+        let container = window?.contentView as? EditorContainerView
+        container?.toggleNavigator()
+        // Recompute the outline the moment it becomes visible (the observer skips
+        // relayouts while hidden — 3.3).
+        if container?.navigatorVisible == true {
+            navigator.setItems(editor.headingOutline())
+        }
     }
 
     @objc func lucerneTableOfContents(_ sender: Any?) {

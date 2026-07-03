@@ -1774,6 +1774,18 @@ public final class EditorController: NSObject {
     /// Number of laid-out pages (for the status bar).
     public var pageCount: Int { pages.count }
 
+    /// The 0-based index of the page occupying a given canvas-space vertical
+    /// position (typically the viewport's midpoint) — the first page whose bottom
+    /// edge reaches `midY`, or the last page when `midY` is past every page. Drives
+    /// the "Page N of M" status as the viewport scrolls (idea 7).
+    public func pageIndex(atCanvasMidY midY: CGFloat) -> Int {
+        guard !pages.isEmpty else { return 0 }
+        for (index, page) in pages.enumerated() where midY <= page.pageView.frame.maxY {
+            return index
+        }
+        return pages.count - 1
+    }
+
     func deselectAllImages() {
         selectedImageView?.isSelected = false
         selectedImageView = nil
@@ -1815,10 +1827,21 @@ public final class EditorController: NSObject {
     /// no reflow, they live in the margins. `pageNumberStart` is the 1-based physical
     /// page that shows page number 1; earlier pages are unnumbered.
     public func updatePageFurniture(header: PageFurniture?, footer: PageFurniture?, pageNumberStart: Int?) {
+        // Capture the pre-change furniture so the whole edit is one undo step (2.1);
+        // PageFurniture is a value type, so these are snapshots.
+        let oldHeader = model.header
+        let oldFooter = model.footer
+        let oldStart = model.pageNumberStart
         model.header = header
         model.footer = footer
         model.pageNumberStart = pageNumberStart
         updateFurniture()
+        if let undo = document?.editorUndoManager {
+            undo.registerUndo(withTarget: self) { controller in
+                controller.updatePageFurniture(header: oldHeader, footer: oldFooter, pageNumberStart: oldStart)
+            }
+            undo.setActionName("Change Header & Footer")
+        }
         document?.editorDidChange()
     }
 
@@ -1830,6 +1853,12 @@ public final class EditorController: NSObject {
         let date = EditorController.dateFormatter.string(from: Date())
         let header = model.header ?? PageFurniture()
         let footer = model.footer ?? PageFurniture()
+        // Furniture renders in the document's Body face at 80% of its size (floored
+        // at 8 pt) so a Baskerville letter gets Baskerville headers, not Helvetica (4.6).
+        let body = model.resolvedStyle(for: LucerneDocumentModel.defaultStyleRole)
+        let furnitureFont = FontResolver.font(family: body.font,
+                                              size: max(8, CGFloat(body.size ?? 12) * 0.8),
+                                              bold: false, italic: false)
         // Page numbering starts at 1 on physical page `start`; earlier pages are
         // unnumbered, and the total shown by {pages} counts only numbered pages.
         let start = max(1, model.pageNumberStart ?? 1)
@@ -1837,6 +1866,7 @@ public final class EditorController: NSObject {
         for (index, page) in pages.enumerated() {
             let displayed: Int? = (index + 1) >= start ? (index + 1) - (start - 1) : nil
             let view = page.pageView
+            view.furnitureFont = furnitureFont
             view.headerLeft = resolve(header.left, page: displayed, of: numberedCount, date: date)
             view.headerCenter = resolve(header.center, page: displayed, of: numberedCount, date: date)
             view.headerRight = resolve(header.right, page: displayed, of: numberedCount, date: date)
@@ -1846,17 +1876,24 @@ public final class EditorController: NSObject {
         }
     }
 
+    private func resolve(_ template: String, page: Int?, of count: Int, date: String) -> String {
+        EditorController.resolveFurnitureTemplate(template, page: page, pages: count,
+                                                  date: date, title: documentTitle)
+    }
+
     /// Substitutes the furniture tokens. `page` is nil on an unnumbered page (before
     /// the numbering start): a zone that references a page number is then blanked so
-    /// you don't get "Page  of 3", while date/title-only zones still render.
-    private func resolve(_ template: String, page: Int?, of count: Int, date: String) -> String {
+    /// you don't get "Page  of 3", while date/title-only zones still render. Pure so
+    /// the token math is unit-testable without an editor.
+    static func resolveFurnitureTemplate(_ template: String, page: Int?, pages: Int,
+                                         date: String, title: String) -> String {
         guard !template.isEmpty else { return "" }
         if page == nil, template.contains("{page}") || template.contains("{pages}") { return "" }
         return template
             .replacingOccurrences(of: "{page}", with: page.map { "\($0)" } ?? "")
-            .replacingOccurrences(of: "{pages}", with: "\(count)")
+            .replacingOccurrences(of: "{pages}", with: "\(pages)")
             .replacingOccurrences(of: "{date}", with: date)
-            .replacingOccurrences(of: "{title}", with: documentTitle)
+            .replacingOccurrences(of: "{title}", with: title)
     }
 
     private static let dateFormatter: DateFormatter = {
