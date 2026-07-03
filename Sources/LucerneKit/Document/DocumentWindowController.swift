@@ -344,6 +344,16 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         editor.applySubstitutionPreferences()
     }
 
+    // Take the active page's selection as the search term (⌘E) so ⌘G can chase it,
+    // without opening the panel. Mirrors showPanel's "reasonable length" guard.
+    @objc func lucerneUseSelectionForFind(_ sender: Any?) {
+        guard let tv = editor.activeTextView else { NSSound.beep(); return }
+        let sel = tv.selectedRange()
+        let ns = tv.string as NSString
+        guard sel.length > 0, sel.length < 200, NSMaxRange(sel) <= ns.length else { NSSound.beep(); return }
+        findPanel.setQuery(ns.substring(with: sel))
+    }
+
     // MARK: - Zoom
 
     @objc func lucerneZoomIn(_ sender: Any?) { setMagnification(scrollView.magnification * 1.25) }
@@ -530,6 +540,8 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             return editor.selectionIsInTableCell   // only valid with the caret in a table
         case #selector(lucerneMergeCells(_:)):
             return editor.selectionSpansMultipleCells   // needs ≥2 selected cells
+        case #selector(lucerneUseSelectionForFind(_:)):
+            return (editor.activeTextView?.selectedRange().length ?? 0) > 0
         default:
             return true
         }
