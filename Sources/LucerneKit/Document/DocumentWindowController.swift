@@ -367,6 +367,41 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         }
     }
 
+    // MARK: - Stationery
+
+    /// Save as Stationery…: snapshot this letter as a reusable letterhead template
+    /// in the Stationery folder. It's an ordinary `.luce` file; File ▸ New from
+    /// Stationery later opens it as an untitled copy.
+    @objc func lucerneSaveAsStationery(_ sender: Any?) {
+        guard let window, let document = document as? LucerneDocument else { return }
+        let data: Data
+        do {
+            data = try document.stationeryArchiveData()
+        } catch {
+            NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
+            return
+        }
+        let directory = (try? LucerneDocument.ensureStationeryDirectory())
+            ?? LucerneDocument.stationeryDirectoryURL()
+        let panel = NSSavePanel()
+        panel.directoryURL = directory
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        if let type = UTType(filenameExtension: LucerneUTI.fileExtension) {
+            panel.allowedContentTypes = [type]
+        }
+        let base = document.displayName ?? "Untitled"
+        panel.nameFieldStringValue = (base as NSString).deletingPathExtension + "." + LucerneUTI.fileExtension
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try data.write(to: url)
+            } catch {
+                NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
+            }
+        }
+    }
+
     @objc func lucerneInsertImage(_ sender: Any?) { presentInsertImagePanel() }
     @objc func lucerneInsertPageBreak(_ sender: Any?) { editor.insertPageBreak(); syncUI() }
     @objc func lucerneDeleteImage(_ sender: Any?) { editor.deleteSelectedImage() }

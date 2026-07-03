@@ -184,4 +184,56 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
             }
         }
     }
+
+    // MARK: - Stationery (letterhead templates)
+
+    /// Where letterhead templates live — ordinary `.luce` files under
+    /// `~/Library/Application Support/Lucerne/Stationery/` (mirrors StyleLibrary's
+    /// Application Support location). Anything dropped in here shows up in
+    /// File ▸ New from Stationery.
+    public static func stationeryDirectoryURL() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory,
+                                            in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("Lucerne", isDirectory: true)
+            .appendingPathComponent("Stationery", isDirectory: true)
+    }
+
+    /// Creates the Stationery folder if it does not yet exist and returns it.
+    @discardableResult
+    public static func ensureStationeryDirectory() throws -> URL {
+        let url = stationeryDirectoryURL()
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// Every `.luce` template in the Stationery folder, sorted by display name. A
+    /// missing folder is simply an empty shelf.
+    public static func stationeryTemplates() -> [URL] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: stationeryDirectoryURL(), includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])) ?? []
+        return urls
+            .filter { $0.pathExtension.lowercased() == LucerneUTI.fileExtension }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
+    /// Snapshots the current document to `.luce` archive Data for "Save as
+    /// Stationery…" — the same machinery as a real save (LuceArchive.write over the
+    /// live model + images) but without appending to the file's history trail.
+    public func stationeryArchiveData() throws -> Data {
+        let model = editor?.snapshotModel() ?? pendingModel
+        let images = editor?.imageData ?? pendingImages
+        return try LuceArchive.write(model: model, images: images)
+    }
+
+    /// Loads a stationery template into this brand-new untitled document, exactly
+    /// as loadSampleContent seeds the demo letter: model + images, no file URL, so
+    /// the letter opens as an untitled copy the user saves fresh. The template's
+    /// self-contained stylesheet is kept verbatim; its history trail is dropped.
+    public func loadStationery(from url: URL) throws {
+        let contents = try LuceArchive.read(try Data(contentsOf: url))
+        pendingModel = contents.model
+        pendingImages = contents.images
+    }
 }
