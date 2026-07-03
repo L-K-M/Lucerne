@@ -36,10 +36,26 @@ public enum AttributedStringReader {
         // role so "press return at the end" persists.
         let last = ns.character(at: length - 1)
         if last == 0x0A || last == 0x0D {
-            let role = (attr.attribute(.lucerneStyleRole, at: length - 1, effectiveRange: nil) as? String)
-                ?? defaultRole(in: styles)
-            let ps = attr.attribute(.paragraphStyle, at: length - 1, effectiveRange: nil) as? NSParagraphStyle
-            paragraphs.append(emptyParagraph(role: role, paragraphStyle: ps, styleDef: model.resolved(role)))
+            if let trailingRole = attr.attribute(.lucerneTrailingStyleRole,
+                                                 at: length - 1, effectiveRange: nil) as? String {
+                // The builder stamped the trailing empty paragraph's own identity on
+                // the terminator. Take role + id from it and paragraph fields from the
+                // role's definition — the newline's paragraph style belongs to the
+                // *preceding* paragraph, so we must not read overrides off it (1.8).
+                var trailing = emptyParagraph(role: trailingRole)
+                if let id = attr.attribute(.lucerneTrailingParagraphID,
+                                           at: length - 1, effectiveRange: nil) as? String {
+                    trailing.id = id
+                }
+                paragraphs.append(trailing)
+            } else {
+                // Fallback (storage without the trailing keys): inherit the final
+                // newline's role and formatting, minting a fresh id.
+                let role = (attr.attribute(.lucerneStyleRole, at: length - 1, effectiveRange: nil) as? String)
+                    ?? defaultRole(in: styles)
+                let ps = attr.attribute(.paragraphStyle, at: length - 1, effectiveRange: nil) as? NSParagraphStyle
+                paragraphs.append(emptyParagraph(role: role, paragraphStyle: ps, styleDef: model.resolved(role)))
+            }
         }
         return paragraphs
     }
@@ -127,12 +143,17 @@ public enum AttributedStringReader {
         var run = Run(text: text)
 
         let font = (attrs[.font] as? NSFont) ?? NSFont.systemFont(ofSize: 12)
-        let isBold = FontResolver.isBold(font)
-        let isItalic = FontResolver.isItalic(font)
+        // When the font system substituted, the builder stashed the *requested*
+        // family + traits here; trust that over the resolved substitute so a save on
+        // a Mac lacking the font doesn't rewrite the document's font names (1.3).
+        let intent = FontIntent.decode(attrs[.lucerneIntendedFont])
+
+        let isBold = intent?.bold ?? FontResolver.isBold(font)
+        let isItalic = intent?.italic ?? FontResolver.isItalic(font)
         if isBold != (styleDef.bold ?? false) { run.bold = isBold }
         if isItalic != (styleDef.italic ?? false) { run.italic = isItalic }
 
-        let family = font.familyName ?? font.fontName
+        let family = intent?.family ?? (font.familyName ?? font.fontName)
         if family != (styleDef.font ?? "Helvetica") { run.font = family }
 
         let size = Double(font.pointSize)

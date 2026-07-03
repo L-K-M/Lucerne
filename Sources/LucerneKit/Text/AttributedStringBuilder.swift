@@ -32,6 +32,17 @@ public enum AttributedStringBuilder {
             out.addAttribute(.lucernePageBreakBefore, value: true,
                              range: NSRange(location: location, length: 1))
         }
+        // A trailing empty paragraph contributes no characters, so its identity would
+        // otherwise live only on the terminating "\n" — which carries the *preceding*
+        // paragraph's role. Stamp that newline with the trailing paragraph's own id +
+        // role (two inert keys only; its paragraph style still belongs to the
+        // preceding paragraph) so the reader rebuilds it faithfully (review 1.8).
+        if let last = model.body.last, last.plainText.isEmpty, out.length > 0,
+           (out.string as NSString).character(at: out.length - 1) == 0x0A {
+            let terminator = NSRange(location: out.length - 1, length: 1)
+            out.addAttribute(.lucerneTrailingParagraphID, value: last.id, range: terminator)
+            out.addAttribute(.lucerneTrailingStyleRole, value: last.style, range: terminator)
+        }
         return out
     }
 
@@ -84,6 +95,12 @@ public enum AttributedStringBuilder {
         ]
         if run.underline ?? style.underline ?? false {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+        // If the font system substituted (missing family → fallback), preserve the
+        // *requested* identity so the reader persists it instead of the substitute —
+        // otherwise saving on a Mac without the font destroys its name (review 1.3).
+        if font.familyName != family {
+            attrs[.lucerneIntendedFont] = FontIntent.encode(family: family, bold: bold, italic: italic)
         }
         return attrs
     }
