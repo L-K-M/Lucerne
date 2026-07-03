@@ -515,6 +515,10 @@ public final class EditorController: NSObject {
         let before = storage.copy() as! NSAttributedString
         changes()
         relayoutText(syncImages: false)
+        // A no-op change (e.g. a style/paragraph command whose loop never ran on
+        // the trailing empty paragraph) must not register a junk undo step or
+        // dirty the document. The relayout above already ran and is cheap.
+        guard !before.isEqual(to: storage) else { return }
         if let undo = document?.editorUndoManager {
             undo.registerUndo(withTarget: self) { $0.restoreText(before, name: name) }
             undo.setActionName(name)
@@ -696,6 +700,17 @@ public final class EditorController: NSObject {
             return
         }
 
+        // Caret on the trailing empty paragraph (after the final newline): its
+        // paragraphRange has length 0 so the loop below can't reach it. Transform
+        // the typing paragraph style so the next typed character adopts it.
+        let caret = tv.selectedRange()
+        if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
+            let ps = (tv.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+            transform(ps)
+            tv.typingAttributes[.paragraphStyle] = ps
+            return
+        }
+
         withUndo(name) {
             storage.beginEditing()
             for selection in tv.selectedRanges.map({ $0.rangeValue }) {
@@ -761,6 +776,16 @@ public final class EditorController: NSObject {
             tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
             return
         }
+        // Caret on the trailing empty paragraph (after the final newline): its
+        // paragraphRange has length 0 so the loop below can't reach it. Set the
+        // typing attributes for the new role — preserving the paragraph id already
+        // in the typing attributes — so the next typed character adopts it.
+        let caret = tv.selectedRange()
+        if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
+            let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
+            tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
+            return
+        }
         withUndo("Apply Style") {
             storage.beginEditing()
             for selection in tv.selectedRanges.map({ $0.rangeValue }) {
@@ -771,8 +796,27 @@ public final class EditorController: NSObject {
                     let single = ns.paragraphRange(for: NSRange(location: cursor, length: 0))
                     let id = (storage.attribute(.lucerneParagraphID, at: single.location, effectiveRange: nil) as? String)
                         ?? IDGenerator.next("p")
-                    let attrs = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
+                    var attrs = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
+                    // typingAttributes never carries an NSTextTableBlock or a page
+                    // break, so setAttributes would strip a cell out of its grid and
+                    // delete a forced break. Re-attach both structural attributes
+                    // (mirrors tableCellAttributes, which re-attaches the block).
+                    var restorePageBreak = false
+                    if single.length > 0 {
+                        let existing = storage.attributes(at: single.location, effectiveRange: nil)
+                        if let oldPS = existing[.paragraphStyle] as? NSParagraphStyle, !oldPS.textBlocks.isEmpty {
+                            let ps = (attrs[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                                ?? NSMutableParagraphStyle()
+                            ps.textBlocks = oldPS.textBlocks
+                            attrs[.paragraphStyle] = ps
+                        }
+                        restorePageBreak = (existing[.lucernePageBreakBefore] as? Bool) == true
+                    }
                     storage.setAttributes(attrs, range: single)
+                    if restorePageBreak {
+                        storage.addAttribute(.lucernePageBreakBefore, value: true,
+                                             range: NSRange(location: single.location, length: 1))
+                    }
                     if NSMaxRange(single) == cursor { break }
                     cursor = NSMaxRange(single)
                 }
@@ -1208,6 +1252,13 @@ public final class EditorController: NSObject {
     public func currentStyleRole() -> String? {
         guard let tv = activeTextView, let storage = tv.textStorage, storage.length > 0 else {
             return activeTextView?.typingAttributes[.lucerneStyleRole] as? String
+        }
+        // A collapsed caret's typing attributes are the role the next character
+        // will take (and where a role just applied to the trailing empty paragraph
+        // lives), so prefer them over the character behind the caret.
+        if tv.selectedRange().length == 0,
+           let role = tv.typingAttributes[.lucerneStyleRole] as? String {
+            return role
         }
         let loc = min(tv.selectedRange().location, storage.length - 1)
         return storage.attribute(.lucerneStyleRole, at: loc, effectiveRange: nil) as? String
