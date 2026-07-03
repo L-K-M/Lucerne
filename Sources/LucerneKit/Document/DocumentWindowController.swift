@@ -375,6 +375,14 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
     @objc func lucerneStandoffIncrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: 4) }
     @objc func lucerneStandoffDecrease(_ sender: Any?) { editor.adjustSelectedStandoff(by: -4) }
 
+    /// Copy the whole document as Markdown to the pasteboard (the same write-only
+    /// derivation as `content.md`, on demand).
+    @objc func copyAsMarkdown(_ sender: Any?) {
+        let markdown = MarkdownExporter.export(editor.snapshotModel())
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(markdown, forType: .string)
+    }
+
     // MARK: - Find
 
     @objc func lucerneShowFindPanel(_ sender: Any?) { findPanel.showPanel() }

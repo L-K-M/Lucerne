@@ -155,6 +155,19 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
         export(data: { $0.makeRTFData() }, contentType: .rtf, fileExtension: "rtf")
     }
 
+    @objc public func exportMarkdown(_ sender: Any?) {
+        export(data: { Data(MarkdownExporter.export($0.snapshotModel()).utf8) },
+               contentType: UTType(filenameExtension: "md") ?? .plainText, fileExtension: "md")
+    }
+
+    @objc public func exportDOCX(_ sender: Any?) {
+        // The DOCX UTI isn't OS-registered when run unbundled, so fall back to a
+        // generic data type; the "docx" extension is still forced by `export`.
+        export(data: { $0.makeDOCXData() },
+               contentType: UTType("org.openxmlformats.wordprocessingml.document") ?? .data,
+               fileExtension: "docx")
+    }
+
     private func export(data make: @escaping (EditorController) -> Data,
                         contentType: UTType, fileExtension ext: String) {
         guard let editor, let window = windowControllers.first?.window else { return }

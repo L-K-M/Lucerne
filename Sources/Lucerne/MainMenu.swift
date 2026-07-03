@@ -96,6 +96,8 @@ enum MainMenu {
             menu.addItem(.separator())
             add(menu, "Export as PDF…", "exportPDF:", symbol: "arrow.up.doc")
             add(menu, "Export as RTF… (lossy)", "exportRTF:")
+            add(menu, "Export as Markdown…", "exportMarkdown:")
+            add(menu, "Export as Word… (lossy)", "exportDOCX:")
             menu.addItem(.separator())
             add(menu, "Import Stylesheet…", "lucerneImportStylesheet:")
             add(menu, "Export Stylesheet…", "lucerneExportStylesheet:")
@@ -139,6 +141,7 @@ enum MainMenu {
             substitutions.submenu = substitutionsMenu
             menu.addItem(substitutions)
 
+            add(menu, "Copy as Markdown", "copyAsMarkdown:")
             menu.addItem(.separator())
             // Lucerne's own Find panel: the legacy NSTextView find panel was never
             // enabled on the page text views, and it can't navigate the one-text-
