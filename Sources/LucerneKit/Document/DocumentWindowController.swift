@@ -298,6 +298,16 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         if let role = sender.representedObject as? String { editor.applyStyleRole(role); syncUI() }
     }
 
+    // MARK: - Lists
+
+    @objc func lucerneToggleBulletedList(_ sender: Any?) { editor.toggleBulletedList(); syncUI() }
+    @objc func lucerneToggleNumberedList(_ sender: Any?) { editor.toggleNumberedList(); syncUI() }
+    @objc func lucerneSetListMarker(_ sender: NSMenuItem) {
+        if let marker = sender.representedObject as? String { editor.setListMarker(marker); syncUI() }
+    }
+    @objc func lucerneListIndent(_ sender: Any?) { editor.changeListIndent(by: 1); syncUI() }
+    @objc func lucerneListOutdent(_ sender: Any?) { editor.changeListIndent(by: -1); syncUI() }
+
     // MARK: - Styles (STYLES.md §5–§6)
 
     @objc func lucerneNewStyleFromSelection(_ sender: Any?) {
@@ -622,6 +632,18 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         case #selector(lucerneApplyStyle(_:)):
             menuItem.state = (menuItem.representedObject as? String) == editor.currentStyleRole() ? .on : .off
             return true
+        case #selector(lucerneToggleBulletedList(_:)):
+            menuItem.state = (editor.currentListItem().map { !$0.ordered }) == true ? .on : .off
+            return true
+        case #selector(lucerneToggleNumberedList(_:)):
+            menuItem.state = editor.currentListItem()?.ordered == true ? .on : .off
+            return true
+        case #selector(lucerneSetListMarker(_:)):
+            let current = editor.currentListItem()
+            menuItem.state = current?.marker == (menuItem.representedObject as? String) ? .on : .off
+            return current != nil
+        case #selector(lucerneListIndent(_:)), #selector(lucerneListOutdent(_:)):
+            return editor.currentListItem() != nil
         case #selector(lucerneRedefineStyleFromSelection(_:)),
              #selector(lucerneSaveStyleToLibrary(_:)):
             // Both fold the caret's style; they need a resolvable current role.

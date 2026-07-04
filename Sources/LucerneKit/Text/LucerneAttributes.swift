@@ -23,6 +23,15 @@ public extension NSAttributedString.Key {
     /// fresh id every save (review 1.8).
     static let lucerneTrailingParagraphID = NSAttributedString.Key("ch.lkmc.lucerne.trailingParagraphID")
     static let lucerneTrailingStyleRole = NSAttributedString.Key("ch.lkmc.lucerne.trailingStyleRole")
+    /// A list item's membership (its `ListItemModel`, JSON-encoded by `ListItemCodec`),
+    /// stamped on every character of the paragraph — including its terminating newline
+    /// — so the reader reconstructs the list and the layout manager knows where to draw
+    /// a marker. The visible marker itself is derived at draw time, never stored.
+    static let lucerneList = NSAttributedString.Key("ch.lkmc.lucerne.list")
+    /// The list membership of a trailing *empty* list item, stamped on the document's
+    /// final newline (which otherwise carries only the preceding paragraph's data) —
+    /// the list counterpart to `.lucerneTrailingStyleRole`.
+    static let lucerneTrailingList = NSAttributedString.Key("ch.lkmc.lucerne.trailingList")
 }
 
 /// Codec for the `.lucerneIntendedFont` value: the requested family plus its

@@ -47,6 +47,8 @@ public enum AttributedStringReader {
                                            at: length - 1, effectiveRange: nil) as? String {
                     trailing.id = id
                 }
+                trailing.list = ListItemCodec.decode(attr.attribute(.lucerneTrailingList,
+                                                                     at: length - 1, effectiveRange: nil))
                 paragraphs.append(trailing)
             } else {
                 // Fallback (storage without the trailing keys): inherit the final
@@ -54,7 +56,10 @@ public enum AttributedStringReader {
                 let role = (attr.attribute(.lucerneStyleRole, at: length - 1, effectiveRange: nil) as? String)
                     ?? defaultRole(in: styles)
                 let ps = attr.attribute(.paragraphStyle, at: length - 1, effectiveRange: nil) as? NSParagraphStyle
-                paragraphs.append(emptyParagraph(role: role, paragraphStyle: ps, styleDef: model.resolved(role)))
+                var trailing = emptyParagraph(role: role, paragraphStyle: ps, styleDef: model.resolved(role))
+                trailing.list = ListItemCodec.decode(attr.attribute(.lucerneList, at: length - 1, effectiveRange: nil))
+                stripDerivedListIndent(&trailing)
+                paragraphs.append(trailing)
             }
         }
         return paragraphs
@@ -80,6 +85,8 @@ public enum AttributedStringReader {
         var paragraph = emptyParagraph(role: role, paragraphStyle: ps, styleDef: styleDef)
         paragraph.id = id
         paragraph.cell = tableCell(from: ps, tableIDs: &tableIDs)
+        paragraph.list = ListItemCodec.decode(attr.attribute(.lucerneList, at: probe, effectiveRange: nil))
+        stripDerivedListIndent(&paragraph)
 
         if length > 0,
            (attr.attribute(.lucernePageBreakBefore, at: probe, effectiveRange: nil) as? Bool) == true {
@@ -111,6 +118,17 @@ public enum AttributedStringReader {
             ? Double(widthValue) : nil
         return TableCellModel(table: id, row: block.startingRow, column: block.startingColumn,
                               rowSpan: block.rowSpan, columnSpan: block.columnSpan, width: width)
+    }
+
+    /// A list item's left / first-line indent is *derived* from its nesting level by
+    /// the builder, not authored — so drop it from the model. Keeping it would bloat
+    /// the file and, worse, freeze a geometry that must track the list level. The
+    /// right indent (a genuine override) is left intact.
+    private static func stripDerivedListIndent(_ p: inout Paragraph) {
+        guard p.list != nil, var indent = p.indent else { return }
+        indent.left = nil
+        indent.firstLine = nil
+        p.indent = indent.right == nil ? nil : indent
     }
 
     private static func emptyParagraph(role: String,

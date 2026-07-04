@@ -21,7 +21,8 @@ public enum AttributedStringBuilder {
             if index < model.body.count - 1 {
                 let sep = runAttributes(Run(text: "\n"), style: style,
                                         paragraphStyle: paragraphStyle,
-                                        role: paragraph.style, paragraphID: paragraph.id)
+                                        role: paragraph.style, paragraphID: paragraph.id,
+                                        list: paragraph.list)
                 out.append(NSAttributedString(string: "\n", attributes: sep))
             }
             if paragraph.pageBreakBefore == true, start < out.length { pageBreakStarts.append(start) }
@@ -36,24 +37,33 @@ public enum AttributedStringBuilder {
         // otherwise live only on the terminating "\n" — which carries the *preceding*
         // paragraph's role. Stamp that newline with the trailing paragraph's own id +
         // role (two inert keys only; its paragraph style still belongs to the
-        // preceding paragraph) so the reader rebuilds it faithfully (review 1.8).
+        // preceding paragraph) so the reader rebuilds it faithfully (review 1.8). A
+        // trailing empty *list* item likewise stamps its membership so an empty last
+        // bullet round-trips (and draws) instead of collapsing to a plain paragraph.
         if let last = model.body.last, last.plainText.isEmpty, out.length > 0,
            (out.string as NSString).character(at: out.length - 1) == 0x0A {
             let terminator = NSRange(location: out.length - 1, length: 1)
             out.addAttribute(.lucerneTrailingParagraphID, value: last.id, range: terminator)
             out.addAttribute(.lucerneTrailingStyleRole, value: last.style, range: terminator)
+            if let list = last.list, let encoded = ListItemCodec.encode(list) {
+                out.addAttribute(.lucerneTrailingList, value: encoded, range: terminator)
+            }
         }
         return out
     }
 
     /// Attributes a brand-new typed character should inherit for a given role —
     /// used as the text view's typing attributes so new text picks up the style.
+    /// `list` (when non-nil) makes the typed paragraph a list item, so a fresh list
+    /// begun by clicking the button, or continued past a Return, keeps its marker.
     public static func typingAttributes(role: String, in model: LucerneDocumentModel,
-                                        paragraphID: String) -> [NSAttributedString.Key: Any] {
+                                        paragraphID: String,
+                                        list: ListItemModel? = nil) -> [NSAttributedString.Key: Any] {
         let style = model.resolvedStyle(for: role)
-        let ps = makeParagraphStyle(Paragraph(id: paragraphID, style: role, runs: []), style: style)
+        let ps = makeParagraphStyle(Paragraph(id: paragraphID, style: role, list: list, runs: []),
+                                    style: style)
         return runAttributes(Run(text: ""), style: style, paragraphStyle: ps,
-                             role: role, paragraphID: paragraphID)
+                             role: role, paragraphID: paragraphID, list: list)
     }
 
     // MARK: - Runs
@@ -67,7 +77,8 @@ public enum AttributedStringBuilder {
         // attributes once the user starts typing).
         for run in paragraph.runs where !run.text.isEmpty {
             let attrs = runAttributes(run, style: style, paragraphStyle: paragraphStyle,
-                                      role: paragraph.style, paragraphID: paragraph.id)
+                                      role: paragraph.style, paragraphID: paragraph.id,
+                                      list: paragraph.list)
             out.append(NSAttributedString(string: run.text, attributes: attrs))
         }
     }
@@ -76,7 +87,8 @@ public enum AttributedStringBuilder {
                                       style: ParagraphStyleDef,
                                       paragraphStyle: NSParagraphStyle,
                                       role: String,
-                                      paragraphID: String) -> [NSAttributedString.Key: Any] {
+                                      paragraphID: String,
+                                      list: ListItemModel? = nil) -> [NSAttributedString.Key: Any] {
         let bold = run.bold ?? style.bold ?? false
         let italic = run.italic ?? style.italic ?? false
         let family = run.font ?? style.font ?? "Helvetica"
@@ -95,6 +107,9 @@ public enum AttributedStringBuilder {
         ]
         if run.underline ?? style.underline ?? false {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+        if let list, let encoded = ListItemCodec.encode(list) {
+            attrs[.lucerneList] = encoded
         }
         // If the font system substituted (missing family → fallback), preserve the
         // *requested* identity so the reader persists it instead of the substitute —
@@ -180,7 +195,24 @@ public enum AttributedStringBuilder {
         // of inheriting NSParagraphStyle's built-in default stops.
         ps.tabStops = (paragraph.tabStops?.map(makeTab)) ?? []
         ps.defaultTabInterval = 36
+
+        // A list item's hanging indent is derived from its nesting level and wins
+        // over the style's / paragraph's own left indent (the list owns that gutter,
+        // which is where the marker is drawn). The right indent still applies.
+        if let list = paragraph.list {
+            applyListIndent(to: ps, level: list.level)
+        }
         return ps
+    }
+
+    /// Sets a list item's hanging indent for `level`: both the first line and the
+    /// wrapped lines start at the content indent, leaving the gutter to its left for
+    /// the marker (which the layout manager draws). Shared with the editor so an
+    /// apply/indent command produces the exact geometry the load path does.
+    public static func applyListIndent(to ps: NSMutableParagraphStyle, level: Int) {
+        let indent = CGFloat(ListGeometry.contentIndent(level: level))
+        ps.headIndent = indent
+        ps.firstLineHeadIndent = indent
     }
 
     static func alignment(from string: String?) -> NSTextAlignment {
