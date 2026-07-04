@@ -48,6 +48,25 @@ public final class PageTextView: NSTextView {
         super.insertBacktab(sender)
     }
 
+    // Markdown block shortcuts: typing a space right after a start-of-line marker
+    // ("# ", "## ", "### ", "#### ", "> ") converts the paragraph to the matching
+    // paragraph style and swallows the space, instead of inserting a literal one.
+    // Anything but a lone space — and this behaviour when the preference is off, or a
+    // marker the stylesheet has no style for — types normally. Paste routes through a
+    // different path, so it is never affected. See applyMarkdownShortcutOnSpace.
+    public override func insertText(_ string: Any, replacementRange: NSRange) {
+        if Self.isPlainSpace(string), editor?.applyMarkdownShortcutOnSpace(in: self) == true {
+            return
+        }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    private static func isPlainSpace(_ string: Any) -> Bool {
+        if let s = string as? String { return s == " " }
+        if let s = string as? NSAttributedString { return s.string == " " }
+        return false
+    }
+
     // MARK: - Context menu
 
     // Augment the standard editing menu (Cut/Copy/Paste/…) with Lucerne's formatting

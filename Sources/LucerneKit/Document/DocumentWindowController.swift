@@ -436,6 +436,11 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         editor.applySubstitutionPreferences()
     }
 
+    // No per-view apply needed: the shortcut reads the preference at typing time.
+    @objc func lucerneToggleMarkdownShortcuts(_ sender: Any?) {
+        Preferences.markdownShortcuts.toggle()
+    }
+
     // Take the active page's selection as the search term (⌘E) so ⌘G can chase it,
     // without opening the panel. Mirrors showPanel's "reasonable length" guard.
     @objc func lucerneUseSelectionForFind(_ sender: Any?) {
@@ -638,6 +643,9 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
             return true
         case #selector(lucerneToggleSmartDashes(_:)):
             menuItem.state = Preferences.smartDashes ? .on : .off
+            return true
+        case #selector(lucerneToggleMarkdownShortcuts(_:)):
+            menuItem.state = Preferences.markdownShortcuts ? .on : .off
             return true
         case #selector(lucerneInsertRowAbove(_:)), #selector(lucerneInsertRowBelow(_:)),
              #selector(lucerneInsertColumnBefore(_:)), #selector(lucerneInsertColumnAfter(_:)),
