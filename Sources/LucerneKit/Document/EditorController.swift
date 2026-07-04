@@ -893,6 +893,71 @@ public final class EditorController: NSObject {
         }
     }
 
+    // MARK: - Markdown block shortcuts
+
+    /// The block-level Markdown markers we honour as typing shortcuts, mapped to the
+    /// paragraph-style `markdown` hint they stand for — the inverse of the Markdown
+    /// *export*. Only block markers that map to a paragraph style are here: inline
+    /// emphasis (`**bold**`) is deliberately excluded because it would rewrite text
+    /// you've finished typing, and list markers are excluded until real lists exist.
+    static let markdownShortcutMarkers: [(marker: String, hint: String)] = [
+        ("#", "h1"), ("##", "h2"), ("###", "h3"), ("####", "h4"), (">", "blockquote"),
+    ]
+
+    /// The document style a just-typed marker should apply, or nil if the marker
+    /// isn't one we handle or the stylesheet defines no style for its hint (so a
+    /// document without a Heading 3 simply leaves "### " as literal text). Pure and
+    /// stylesheet-driven, so it's unit-testable without a GUI.
+    static func markdownShortcutRole(forMarker marker: String,
+                                     in styles: [String: ParagraphStyleDef]) -> String? {
+        guard let hint = markdownShortcutMarkers.first(where: { $0.marker == marker })?.hint
+        else { return nil }
+        return LucerneDocumentModel.orderedStyleRoles(in: styles).first { styles[$0]?.markdown == hint }
+    }
+
+    /// Called by `PageTextView` when the user types a space: if the caret sits right
+    /// after a recognised marker at the very start of its paragraph, convert that
+    /// paragraph to the marker's style, delete the marker, and return true so the
+    /// space is swallowed. Returns false — leaving the space to be typed normally —
+    /// everywhere else, when the preference is off, or inside a table cell. The whole
+    /// conversion is one undo step, so a single ⌘Z (or Backspace-then-retype) brings
+    /// the literal marker back.
+    func applyMarkdownShortcutOnSpace(in tv: PageTextView) -> Bool {
+        guard Preferences.markdownShortcuts, let storage = tv.textStorage else { return false }
+        let selection = tv.selectedRange()
+        guard selection.length == 0, selection.location <= storage.length else { return false }
+        let ns = storage.string as NSString
+        let caret = selection.location
+        let paragraph = ns.paragraphRange(for: NSRange(location: caret, length: 0))
+        // The marker must be exactly the text between the paragraph start and the caret.
+        let markerLength = caret - paragraph.location
+        guard markerLength > 0 else { return false }
+        let marker = ns.substring(with: NSRange(location: paragraph.location, length: markerLength))
+        guard let role = Self.markdownShortcutRole(forMarker: marker, in: model.styles) else { return false }
+        // Never restructure a table cell into a heading/quote.
+        if tableBlock(atCharacterIndex: paragraph.location) != nil { return false }
+
+        withUndo("Markdown Shortcut") {
+            storage.beginEditing()
+            storage.deleteCharacters(in: NSRange(location: paragraph.location, length: markerLength))
+            // The paragraph keeps whatever followed the caret; re-find it post-delete.
+            let shifted = (storage.string as NSString)
+                .paragraphRange(for: NSRange(location: paragraph.location, length: 0))
+            let existingID = shifted.length > 0
+                ? storage.attribute(.lucerneParagraphID, at: shifted.location, effectiveRange: nil) as? String
+                : nil
+            let attrs = AttributedStringBuilder.typingAttributes(
+                role: role, in: model, paragraphID: existingID ?? IDGenerator.next("p"))
+            if shifted.length > 0 { storage.setAttributes(attrs, range: shifted) }
+            storage.endEditing()
+            // An empty (e.g. brand-new) paragraph carries its style in the typing
+            // attributes until a character is typed.
+            tv.typingAttributes = attrs
+            tv.setSelectedRange(NSRange(location: paragraph.location, length: 0))
+        }
+        return true
+    }
+
     /// Inserts a forced page break at the caret: the text from here on starts on a
     /// new page. Implemented by flagging the paragraph that begins at the caret
     /// (splitting the current paragraph first if the caret is mid-paragraph).

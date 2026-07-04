@@ -146,6 +146,10 @@ enum MainMenu {
             let substitutionsMenu = NSMenu(title: "Substitutions")
             add(substitutionsMenu, "Smart Quotes", "lucerneToggleSmartQuotes:")
             add(substitutionsMenu, "Smart Dashes", "lucerneToggleSmartDashes:")
+            substitutionsMenu.addItem(.separator())
+            // Typing "## " etc. at the start of a line applies the matching paragraph
+            // style. On by default (unlike smart quotes) — see Preferences.
+            add(substitutionsMenu, "Markdown Shortcuts", "lucerneToggleMarkdownShortcuts:")
             substitutions.submenu = substitutionsMenu
             menu.addItem(substitutions)
 

@@ -41,6 +41,7 @@ public enum Preferences {
     private static let rulerUnitKey = "rulerUnit"
     private static let smartQuotesKey = "smartQuotes"
     private static let smartDashesKey = "smartDashes"
+    private static let markdownShortcutsKey = "markdownShortcuts"
 
     /// The ruler unit. Defaults to centimetres.
     public static var rulerUnit: RulerUnit {
@@ -66,6 +67,25 @@ public enum Preferences {
         get { UserDefaults.standard.bool(forKey: smartDashesKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: smartDashesKey)
+            NotificationCenter.default.post(name: didChange, object: nil)
+        }
+    }
+
+    /// Markdown block shortcuts in the editor: typing a marker + space at the start
+    /// of a paragraph ("# " → Heading 1, "> " → the quote style, …) applies the
+    /// matching paragraph style and swallows the marker. Unlike the substitutions
+    /// above this is **on** by default — it fires only on an explicit marker you
+    /// just typed, the change is immediately visible, and a single ⌘Z restores the
+    /// literal text, so it isn't a silent rewrite of anything already on the page.
+    public static var markdownShortcuts: Bool {
+        get {
+            let defaults = UserDefaults.standard
+            return defaults.object(forKey: markdownShortcutsKey) == nil
+                ? true
+                : defaults.bool(forKey: markdownShortcutsKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: markdownShortcutsKey)
             NotificationCenter.default.post(name: didChange, object: nil)
         }
     }
