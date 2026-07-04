@@ -67,4 +67,24 @@ final class ListRoundTripTests: XCTestCase {
         ])
         XCTAssertNil(out[0].list)
     }
+
+    /// The trailing-paragraph fallback (storage lacking the trailing keys) must not
+    /// inherit the final newline's `.lucerneList` — that belongs to the *preceding*
+    /// list item, so copying it would conjure a spurious extra list item.
+    func testTrailingFallbackDoesNotInheritPrecedingList() throws {
+        let encoded = try XCTUnwrap(ListItemCodec.encode(
+            ListItemModel(list: "L", ordered: false, marker: "disc")))
+        // A bullet paragraph whose terminating newline carries the bullet's membership
+        // but NO trailing-paragraph keys (as non-builder storage might).
+        let attrs: [NSAttributedString.Key: Any] = [
+            .lucerneStyleRole: "body", .lucerneParagraphID: "p1", .lucerneList: encoded,
+        ]
+        let attributed = NSMutableAttributedString(string: "Item", attributes: attrs)
+        attributed.append(NSAttributedString(string: "\n", attributes: attrs))
+
+        let out = AttributedStringReader.paragraphs(from: attributed, styles: styles)
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(out[0].list?.list, "L")   // the real bullet survives
+        XCTAssertNil(out[1].list)                // the trailing empty paragraph is NOT a bullet
+    }
 }

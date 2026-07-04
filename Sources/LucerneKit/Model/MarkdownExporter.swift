@@ -29,11 +29,14 @@ public enum MarkdownExporter {
                 blocks.append(tableBlock(for: group, model: model))
                 continue
             }
-            // A run of list items becomes one tight list block (nested by indentation,
-            // ordered items numbered). Cells never join a list (they render as tables).
-            if paragraph.list != nil, paragraph.cell == nil {
+            // A run of list items sharing one list id becomes one tight block (nested
+            // by indentation, ordered items numbered). Grouping by id — not merely "has
+            // a list" — keeps two distinct adjacent lists as separate blocks (a blank
+            // line between them), so a Markdown viewer restarts the second list's
+            // numbering instead of continuing it. Cells never join a list.
+            if let listID = paragraph.list?.list, paragraph.cell == nil {
                 var group: [Paragraph] = []
-                while i < body.count, body[i].list != nil, body[i].cell == nil {
+                while i < body.count, body[i].list?.list == listID, body[i].cell == nil {
                     group.append(body[i])
                     i += 1
                 }
