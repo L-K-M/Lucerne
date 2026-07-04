@@ -1099,6 +1099,26 @@ public final class EditorController: NSObject {
         }
     }
 
+    /// The caret's list-style identity for the toolbar chooser: the current marker
+    /// ("disc", "decimal", …), or "none" when the caret isn't in a list.
+    public func currentListStyleID() -> String {
+        currentListItem()?.marker ?? "none"
+    }
+
+    /// Sets the selection's list style from the toolbar chooser (or its live preview):
+    /// nil removes the list; otherwise applies — or restyles an existing list to — that
+    /// marker, inferring ordered/unordered from it and keeping any existing list's id
+    /// and nesting level. The single entry point the toolbar's try-on picker drives.
+    public func setListStyle(_ marker: String?) {
+        guard let marker else { removeListFromSelection(); return }
+        let ordered = ListMarkers.orderedStyles.contains { $0.marker == marker }
+        let newID = IDGenerator.next("list")
+        updateListMembership(name: ordered ? "Numbered List" : "Bulleted List") { current in
+            ListItemModel(list: current?.list ?? newID, ordered: ordered, marker: marker,
+                          level: current?.level ?? 0, start: ordered ? current?.start : nil)
+        }
+    }
+
     /// Nudges the nesting level of the selection's list items. Outdenting below level 0
     /// drops the list (the universal "Shift-Tab off the left edge" behaviour).
     public func changeListIndent(by delta: Int) {

@@ -35,7 +35,7 @@ final class TryOnPopover: NSObject, NSPopoverDelegate {
     /// never starts a second preview session over a running one.
     var isActive: Bool { popover != nil }
 
-    func present(from anchor: NSView, palette: FloatingPalette,
+    func present(from anchor: NSView, palette: FloatingPalette?,
                  items: [PickerItem], currentID: String?,
                  specimenFont: @escaping (PickerItem) -> NSFont,
                  onPreview: @escaping (PickerItem) -> Void,
@@ -85,7 +85,9 @@ final class TryOnPopover: NSObject, NSPopoverDelegate {
 
     // MARK: - Tear-off → hand the session to the global palette
 
-    func popoverShouldDetach(_ popover: NSPopover) -> Bool { true }
+    // Only choosers backed by a floating palette can tear off; a palette-less
+    // picker (e.g. list styles) previews in place and can't be floated.
+    func popoverShouldDetach(_ popover: NSPopover) -> Bool { palette != nil }
 
     func detachableWindow(for popover: NSPopover) -> NSWindow? {
         // Configure-only: the detach commits (or doesn't) in popoverDidClose.

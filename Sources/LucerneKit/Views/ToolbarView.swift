@@ -18,9 +18,14 @@ public final class ToolbarView: NSView {
     public static let barHeight: CGFloat = 34
 
     private static let tryOnHint = "↑↓ try on your letter  ·  Return keep  ·  Esc revert  ·  drag off to float"
+    // The list picker previews in place (no floating palette), so its hint omits the
+    // tear-off line.
+    private static let listTryOnHint = "↑↓ try on your letter  ·  Return keep  ·  Esc revert"
 
     private let styleControl = ClassicChooserControl(width: 112)
     private let stylePicker = TryOnPopover(hint: ToolbarView.tryOnHint)
+    private let listControl = ClassicChooserControl(width: 96)
+    private let listPicker = TryOnPopover(hint: ToolbarView.listTryOnHint)
     private let fontControl = ClassicChooserControl(width: 146)
     private let fontPicker = TryOnPopover(hint: ToolbarView.tryOnHint)
     private var paletteObserver: NSObjectProtocol?
@@ -83,6 +88,9 @@ public final class ToolbarView: NSView {
         styleControl.title = "Body"
         styleControl.onPresent = { [weak self] in self?.presentStylePicker() }
 
+        listControl.title = "None"
+        listControl.onPresent = { [weak self] in self?.presentListPicker() }
+
         fontControl.onPresent = { [weak self] in self?.presentFontPicker() }
 
         sizeField.onCommit = { [weak self] raw in self?.applyFontSize(raw) }
@@ -104,6 +112,7 @@ public final class ToolbarView: NSView {
 
         stack = NSStackView(views: [
             styleControl, separator(),
+            listControl, separator(),
             fontControl, sizeField, separator(),
             formatControl, separator(),
             colorWell, separator(),
@@ -137,6 +146,7 @@ public final class ToolbarView: NSView {
             : "Typeface — try faces live on your letter: ↑↓ to browse, Return to keep, Esc to revert"
         let entries: [(NSView, String)] = [
             (styleControl, styleHelp),
+            (listControl, "List style — try bullets and numbers live on your letter: ↑↓ to browse, Return to keep, Esc to revert"),
             (fontControl, fontHelp),
             (sizeField, "Font size in points for the selected text"),
             (formatControl, "Bold (⌘B), Italic (⌘I), Underline (⌘U)"),
@@ -197,7 +207,7 @@ public final class ToolbarView: NSView {
         // asynchronously, so a session could begin over one still tearing down and
         // clobber its undo baseline (§1.17). Also settle any pending color-well
         // session before starting this one (§3.6).
-        guard let editor, !fontPicker.isActive, !stylePicker.isActive else { return }
+        guard let editor, !fontPicker.isActive, !stylePicker.isActive, !listPicker.isActive else { return }
         commitColorSession()
         let current = (editor.currentAttributes()[.font] as? NSFont)?.familyName
         editor.beginFormatPreview()
@@ -226,7 +236,7 @@ public final class ToolbarView: NSView {
         }
         // Cross-guard the sibling font picker (§1.17) and settle any pending
         // color-well session (§3.6) before starting this one.
-        guard let editor, !stylePicker.isActive, !fontPicker.isActive else { return }
+        guard let editor, !stylePicker.isActive, !fontPicker.isActive, !listPicker.isActive else { return }
         commitColorSession()
         editor.beginFormatPreview()
         stylePicker.present(from: styleControl, palette: .styles,
@@ -246,9 +256,61 @@ public final class ToolbarView: NSView {
             self.returnFocusToPage()
         }
     }
+    /// The list twin of the style/font pickers: every list style — None, the four
+    /// bullets, the five number formats — listed as its own specimen and previewed
+    /// live on the selected paragraphs, banked as one undo step. It has no floating
+    /// palette (palette: nil), so it previews in place rather than tearing off.
+    private func presentListPicker() {
+        guard let editor, !listPicker.isActive, !stylePicker.isActive, !fontPicker.isActive else { return }
+        commitColorSession()
+        editor.beginFormatPreview()
+        listPicker.present(from: listControl, palette: nil,
+                           items: ToolbarView.listStyleItems(),
+                           currentID: editor.currentListStyleID(),
+                           specimenFont: { _ in NSFont.systemFont(ofSize: 13) }) { [weak self] item in
+            self?.editor?.setListStyle(item.id == "none" ? nil : item.id)
+            self?.listControl.title = ToolbarView.listStyleTitle(for: item.id)
+        } onDetach: {
+            // No palette to hand off to; the picker previews in place.
+        } onFinish: { [weak self] commit in
+            guard let self else { return }
+            self.editor?.endFormatPreview(commit: commit, actionName: "List Style")
+            self.syncFromSelection()
+            self.returnFocusToPage()
+        }
+    }
     private func applyFontSize(_ raw: String) {
         if let value = UserNumber.parse(raw), value > 0 { editor?.setFontSize(CGFloat(value)) }
         returnFocusToPage()
+    }
+
+    // MARK: - List style items
+
+    /// The rows the List chooser offers: None, then the bullet styles, then the
+    /// number styles — each drawn as its own little specimen of the marker it makes.
+    static func listStyleItems() -> [PickerItem] {
+        var items: [PickerItem] = [PickerItem(id: "none", title: "None")]
+        items.append(.separator("Bullets"))
+        items += ListMarkers.unorderedStyles.map { style in
+            PickerItem(id: style.marker,
+                       title: "\(ListMarkers.bulletGlyph(style.marker, level: 0))   \(style.label)")
+        }
+        items.append(.separator("Numbers"))
+        items += ListMarkers.orderedStyles.map { style in
+            let sample = (1...3).map { ListMarkers.orderedLabel($0, style: style.marker) + "." }
+                .joined(separator: "  ")
+            return PickerItem(id: style.marker, title: sample)
+        }
+        return items
+    }
+
+    /// The concise label the chooser shows for the caret's current list style.
+    static func listStyleTitle(for id: String) -> String {
+        switch id {
+        case "none": return "None"
+        default:
+            return ListMarkers.orderedStyles.contains { $0.marker == id } ? "Numbered" : "Bulleted"
+        }
     }
     @objc private func formatChanged() {
         switch formatControl.selectedSegment {
@@ -268,7 +330,7 @@ public final class ToolbarView: NSView {
         // under suppressed undo (setTextColor → withUndo skips registration while
         // a preview is live), and commit once the drag settles (§3.6). Never start
         // over a running try-on picker, whose transient popover closes async.
-        guard !fontPicker.isActive, !stylePicker.isActive else { return }
+        guard !fontPicker.isActive, !stylePicker.isActive, !listPicker.isActive else { return }
         if !colorPreviewActive {
             editor.beginFormatPreview()
             colorPreviewActive = true
@@ -316,6 +378,7 @@ public final class ToolbarView: NSView {
             // (no definition) shows its raw key until the save path heals it.
             styleControl.title = editor.model.styles[role]?.name ?? role
         }
+        listControl.title = ToolbarView.listStyleTitle(for: editor.currentListStyleID())
 
         let attrs = editor.currentAttributes()
         if let font = attrs[.font] as? NSFont {
