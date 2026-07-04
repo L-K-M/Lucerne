@@ -236,6 +236,7 @@ public struct Paragraph: Codable, Equatable {
     public var spaceAfter: Double?           // points after paragraph
     public var pageBreakBefore: Bool?        // force this paragraph onto a new page
     public var cell: TableCellModel?         // present when this paragraph is a table cell
+    public var list: ListItemModel?          // present when this paragraph is a list item
     public var runs: [Run]
 
     public init(id: String,
@@ -248,6 +249,7 @@ public struct Paragraph: Codable, Equatable {
                 spaceAfter: Double? = nil,
                 pageBreakBefore: Bool? = nil,
                 cell: TableCellModel? = nil,
+                list: ListItemModel? = nil,
                 runs: [Run]) {
         self.id = id
         self.style = style
@@ -259,6 +261,7 @@ public struct Paragraph: Codable, Equatable {
         self.spaceAfter = spaceAfter
         self.pageBreakBefore = pageBreakBefore
         self.cell = cell
+        self.list = list
         self.runs = runs
     }
 
@@ -297,6 +300,48 @@ public struct TableCellModel: Codable, Equatable {
         rowSpan = try c.decodeIfPresent(Int.self, forKey: .rowSpan) ?? 1
         columnSpan = try c.decodeIfPresent(Int.self, forKey: .columnSpan) ?? 1
         width = try c.decodeIfPresent(Double.self, forKey: .width)
+    }
+}
+
+/// Marks a paragraph as an item of a list. Items sharing a `list` id, laid out
+/// contiguously, form one list; each carries its own `marker` style and nesting
+/// `level`, so a single list can mix depths. Unlike a table's `cell`, list
+/// membership is orthogonal to the paragraph's named style — a bulleted paragraph
+/// keeps its Body (or any) text style and merely gains a marker + hanging indent.
+/// The visible marker glyph/number is *derived* (never stored): the number an
+/// ordered item shows depends on its neighbours, so it is recomputed from the run
+/// of items rather than frozen into the file.
+public struct ListItemModel: Codable, Equatable {
+    public var list: String       // shared id grouping one list's items
+    public var ordered: Bool      // numbered (true) vs bulleted (false)
+    /// Unordered: "disc" | "circle" | "square" | "dash".
+    /// Ordered:   "decimal" | "lower-alpha" | "upper-alpha" | "lower-roman" | "upper-roman".
+    public var marker: String
+    public var level: Int         // 0-based nesting depth
+    public var start: Int?        // ordered lists: the first item's number (default 1)
+
+    public init(list: String, ordered: Bool, marker: String, level: Int = 0, start: Int? = nil) {
+        self.list = list
+        self.ordered = ordered
+        self.marker = marker
+        self.level = level
+        self.start = start
+    }
+
+    // Tolerate files that omit the defaulted level / start.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        list = try c.decode(String.self, forKey: .list)
+        ordered = try c.decode(Bool.self, forKey: .ordered)
+        marker = try c.decode(String.self, forKey: .marker)
+        level = try c.decodeIfPresent(Int.self, forKey: .level) ?? 0
+        start = try c.decodeIfPresent(Int.self, forKey: .start)
+    }
+
+    /// A copy at a different nesting depth (clamped at 0), used by indent/outdent.
+    public func atLevel(_ newLevel: Int) -> ListItemModel {
+        ListItemModel(list: list, ordered: ordered, marker: marker,
+                      level: max(0, newLevel), start: start)
     }
 }
 

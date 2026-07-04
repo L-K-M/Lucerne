@@ -38,13 +38,17 @@ public final class PageTextView: NSTextView {
     // In a table, Tab / Shift-Tab walk to the next / previous cell in row-major order
     // (the most ingrained table gesture). Outside a table — or at the table's first/last
     // cell — fall through to the normal tab behavior (inserting a tab / shifting focus).
+    // Tab / Shift-Tab first walk table cells, then nest / unnest a list item; only
+    // outside both do they insert a tab or shift focus.
     public override func insertTab(_ sender: Any?) {
         if editor?.moveCaretInTable(cellDelta: 1) == true { return }
+        if editor?.handleListTab(in: self, outdent: false) == true { return }
         super.insertTab(sender)
     }
 
     public override func insertBacktab(_ sender: Any?) {
         if editor?.moveCaretInTable(cellDelta: -1) == true { return }
+        if editor?.handleListTab(in: self, outdent: true) == true { return }
         super.insertBacktab(sender)
     }
 
@@ -67,16 +71,21 @@ public final class PageTextView: NSTextView {
         return false
     }
 
-    // A heading's "next style" is Body: pressing Return at the end of a heading
-    // starts the following paragraph in Body, like every word processor — after a
-    // heading you're writing body text, not another heading. (Shift-Return, which
-    // routes to insertLineBreak, is a soft break within the paragraph and is left
-    // alone.) The decision is taken before the newline is inserted; the demotion is
-    // applied to the new paragraph after.
+    // Return behaviour, in priority order:
+    //   • On an empty list item — outdent it, or drop the list (no blank line inserted).
+    //   • In a non-empty list item — continue the list on the next line.
+    //   • At the end of a heading — start the following paragraph in Body ("next style").
+    // Otherwise it's an ordinary paragraph break. (Shift-Return routes to
+    // insertLineBreak — a soft break within the paragraph — and is left alone.) Each
+    // decision is taken before the newline is inserted and applied to the new paragraph
+    // after, since only then does it exist.
     public override func insertNewline(_ sender: Any?) {
-        let demote = editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false
+        if editor?.handleEmptyListItemNewline(in: self) == true { return }
+        let continueList = editor?.caretWillContinueList(in: self) ?? false
+        let demote = !continueList && (editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false)
         super.insertNewline(sender)
-        if demote { editor?.startBodyParagraphAfterHeadingNewline(in: self) }
+        if continueList { editor?.didInsertListContinuationNewline(in: self) }
+        else if demote { editor?.startBodyParagraphAfterHeadingNewline(in: self) }
     }
 
     // MARK: - Context menu
@@ -102,6 +111,13 @@ public final class PageTextView: NSTextView {
         }
         styleItem.submenu = styleMenu
         menu.addItem(styleItem)
+
+        let listItem = NSMenuItem(title: "List", action: nil, keyEquivalent: "")
+        let listMenu = NSMenu(title: "List")
+        listMenu.addItem(item("Bulleted List", #selector(DocumentWindowController.lucerneToggleBulletedList(_:))))
+        listMenu.addItem(item("Numbered List", #selector(DocumentWindowController.lucerneToggleNumberedList(_:))))
+        listItem.submenu = listMenu
+        menu.addItem(listItem)
 
         menu.addItem(.separator())
         menu.addItem(item("Insert Image…", #selector(DocumentWindowController.lucerneInsertImage(_:))))

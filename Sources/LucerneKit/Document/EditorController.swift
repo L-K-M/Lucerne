@@ -16,7 +16,9 @@ public final class EditorController: NSObject {
     // MARK: Model + text system
     public private(set) var model: LucerneDocumentModel
     public let textStorage = NSTextStorage()
-    public let layoutManager = NSLayoutManager()
+    // Typed as NSLayoutManager (the public surface); the list-drawing subclass is an
+    // internal implementation detail.
+    public let layoutManager: NSLayoutManager = ListMarkerLayoutManager()
     private var metrics: PageMetrics
     public weak var document: EditorControllerDocument?
 
@@ -839,9 +841,12 @@ public final class EditorController: NSObject {
     public func applyStyleRole(_ role: String) {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         let ns = storage.string as NSString
+        // A style change leaves list membership intact (role and list are orthogonal —
+        // a bulleted heading is still bulleted), so carry any list forward.
         if storage.length == 0 {
             let id = model.body.first?.id ?? IDGenerator.next("p")
-            tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
+            let list = ListItemCodec.decode(tv.typingAttributes[.lucerneList])
+            tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id, list: list)
             return
         }
         // Caret on the trailing empty paragraph (after the final newline): its
@@ -851,7 +856,8 @@ public final class EditorController: NSObject {
         let caret = tv.selectedRange()
         if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
             let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
-            tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
+            let list = ListItemCodec.decode(tv.typingAttributes[.lucerneList])
+            tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id, list: list)
             return
         }
         withUndo("Apply Style") {
@@ -870,6 +876,7 @@ public final class EditorController: NSObject {
                     // delete a forced break. Re-attach both structural attributes
                     // (mirrors tableCellAttributes, which re-attaches the block).
                     var restorePageBreak = false
+                    var restoreList: String? = nil
                     if single.length > 0 {
                         let existing = storage.attributes(at: single.location, effectiveRange: nil)
                         if let oldPS = existing[.paragraphStyle] as? NSParagraphStyle, !oldPS.textBlocks.isEmpty {
@@ -879,11 +886,23 @@ public final class EditorController: NSObject {
                             attrs[.paragraphStyle] = ps
                         }
                         restorePageBreak = (existing[.lucernePageBreakBefore] as? Bool) == true
+                        restoreList = existing[.lucerneList] as? String
+                    }
+                    // A list item keeps its marker + hanging indent through a style
+                    // change: re-apply the list indent to the new role's paragraph style.
+                    if let restoreList, let item = ListItemCodec.decode(restoreList) {
+                        let ps = (attrs[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                            ?? NSMutableParagraphStyle()
+                        AttributedStringBuilder.applyListIndent(to: ps, level: item.level)
+                        attrs[.paragraphStyle] = ps
                     }
                     storage.setAttributes(attrs, range: single)
                     if restorePageBreak {
                         storage.addAttribute(.lucernePageBreakBefore, value: true,
                                              range: NSRange(location: single.location, length: 1))
+                    }
+                    if let restoreList {
+                        storage.addAttribute(.lucerneList, value: restoreList, range: single)
                     }
                     if NSMaxRange(single) == cursor { break }
                     cursor = NSMaxRange(single)
@@ -897,12 +916,27 @@ public final class EditorController: NSObject {
 
     /// The block-level Markdown markers we honour as typing shortcuts, mapped to the
     /// paragraph-style `markdown` hint they stand for — the inverse of the Markdown
-    /// *export*. Only block markers that map to a paragraph style are here: inline
-    /// emphasis (`**bold**`) is deliberately excluded because it would rewrite text
-    /// you've finished typing, and list markers are excluded until real lists exist.
+    /// *export*. Only markers that map to a paragraph style are here: inline emphasis
+    /// (`**bold**`) is deliberately excluded because it would rewrite text you've
+    /// finished typing. List markers (`- `, `* `, `+ `, `1. `) are handled separately
+    /// by `markdownListShortcut`, since a list is membership, not a paragraph style.
     static let markdownShortcutMarkers: [(marker: String, hint: String)] = [
         ("#", "h1"), ("##", "h2"), ("###", "h3"), ("####", "h4"), (">", "blockquote"),
     ]
+
+    /// The list a just-typed marker should start: "-", "*", "+" begin a bullet list;
+    /// a run of digits then "." or ")" (e.g. "1.", "3)") begins a numbered list at that
+    /// number. Pure and GUI-free, so it's unit-testable. Nil for anything else.
+    static func markdownListShortcut(forMarker marker: String) -> (ordered: Bool, marker: String, start: Int?)? {
+        if marker == "-" || marker == "*" || marker == "+" {
+            return (false, ListMarkers.defaultUnorderedMarker, nil)
+        }
+        let chars = Array(marker)
+        guard chars.count >= 2, let last = chars.last, last == "." || last == ")" else { return nil }
+        let digits = chars.dropLast()
+        guard !digits.isEmpty, digits.allSatisfy({ $0.isNumber }), let n = Int(String(digits)) else { return nil }
+        return (true, ListMarkers.defaultOrderedMarker, n == 1 ? nil : n)
+    }
 
     /// The document style a just-typed marker should apply, or nil if the marker
     /// isn't one we handle or the stylesheet defines no style for its hint (so a
@@ -933,9 +967,15 @@ public final class EditorController: NSObject {
         let markerLength = caret - paragraph.location
         guard markerLength > 0 else { return false }
         let marker = ns.substring(with: NSRange(location: paragraph.location, length: markerLength))
-        guard let role = Self.markdownShortcutRole(forMarker: marker, in: model.styles) else { return false }
-        // Never restructure a table cell into a heading/quote.
+        // Never restructure a table cell into a heading / quote / list.
         if tableBlock(atCharacterIndex: paragraph.location) != nil { return false }
+
+        // List markers start a list (membership, not a paragraph style); check them first.
+        if let spec = Self.markdownListShortcut(forMarker: marker) {
+            applyListMarkdownShortcut(spec, paragraph: paragraph, markerLength: markerLength, tv: tv, storage: storage)
+            return true
+        }
+        guard let role = Self.markdownShortcutRole(forMarker: marker, in: model.styles) else { return false }
 
         withUndo("Markdown Shortcut") {
             storage.beginEditing()
@@ -956,6 +996,322 @@ public final class EditorController: NSObject {
             tv.setSelectedRange(NSRange(location: paragraph.location, length: 0))
         }
         return true
+    }
+
+    /// Turns the caret's paragraph into a fresh list item, deleting the just-typed
+    /// marker text. Mirrors the role shortcut's mechanics (one undo step, style lives
+    /// in the typing attributes for an empty line), but stamps list membership.
+    private func applyListMarkdownShortcut(_ spec: (ordered: Bool, marker: String, start: Int?),
+                                           paragraph: NSRange, markerLength: Int,
+                                           tv: PageTextView, storage: NSTextStorage) {
+        withUndo("Markdown Shortcut") {
+            storage.beginEditing()
+            storage.deleteCharacters(in: NSRange(location: paragraph.location, length: markerLength))
+            let shifted = (storage.string as NSString)
+                .paragraphRange(for: NSRange(location: paragraph.location, length: 0))
+            let probe = shifted.length > 0 ? shifted.location : min(shifted.location, max(0, storage.length - 1))
+            let role = (shifted.length > 0
+                ? storage.attribute(.lucerneStyleRole, at: probe, effectiveRange: nil) as? String : nil)
+                ?? (tv.typingAttributes[.lucerneStyleRole] as? String) ?? LucerneDocumentModel.defaultStyleRole
+            let id = (shifted.length > 0
+                ? storage.attribute(.lucerneParagraphID, at: probe, effectiveRange: nil) as? String : nil)
+                ?? (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
+            let item = ListItemModel(list: IDGenerator.next("list"), ordered: spec.ordered,
+                                     marker: spec.marker, level: 0, start: spec.start)
+            let attrs = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id, list: item)
+            if shifted.length > 0 {
+                storage.setAttributes(attrs, range: shifted)
+            } else if storage.length > 0, let encoded = ListItemCodec.encode(item) {
+                // The marker was the whole line: the now-empty paragraph is trailing, so
+                // stamp the terminator to round-trip (and draw) the empty bullet.
+                let term = NSRange(location: storage.length - 1, length: 1)
+                storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
+                storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
+                storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
+            }
+            storage.endEditing()
+            tv.typingAttributes = attrs
+            tv.setSelectedRange(NSRange(location: paragraph.location, length: 0))
+        }
+        setPagesNeedDisplay()
+    }
+
+    // MARK: - Lists
+
+    /// The list membership at the caret: read from the caret's paragraph in the
+    /// storage, falling back to the typing attributes for the trailing empty paragraph
+    /// (and an empty document). Nil when the caret isn't in a list. Drives the List
+    /// menu's checkmarks and the toggle / indent commands.
+    public func currentListItem() -> ListItemModel? {
+        guard let tv = activeTextView else { return nil }
+        guard let storage = tv.textStorage, storage.length > 0 else {
+            return ListItemCodec.decode(tv.typingAttributes[.lucerneList])
+        }
+        let selection = tv.selectedRange()
+        let ns = storage.string as NSString
+        if selection.length == 0, selection.location >= ns.length {
+            return ListItemCodec.decode(tv.typingAttributes[.lucerneList])
+        }
+        let caret = min(selection.location, ns.length - 1)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: caret, length: 0))
+        let probe = contentsEnd > start ? start : min(start, ns.length - 1)
+        return ListItemCodec.decode(storage.attribute(.lucerneList, at: probe, effectiveRange: nil))
+    }
+
+    /// Toggle the selection between a bullet list and no list.
+    public func toggleBulletedList() {
+        if let item = currentListItem(), !item.ordered { removeListFromSelection() }
+        else { applyList(ordered: false, marker: ListMarkers.defaultUnorderedMarker) }
+    }
+
+    /// Toggle the selection between a numbered list and no list.
+    public func toggleNumberedList() {
+        if let item = currentListItem(), item.ordered { removeListFromSelection() }
+        else { applyList(ordered: true, marker: ListMarkers.defaultOrderedMarker) }
+    }
+
+    /// Makes every paragraph the selection touches an item of one new list — so a
+    /// block of typed lines becomes a single list numbered 1…n. (Continuing an
+    /// existing list is what Return does; this always starts a fresh list.)
+    public func applyList(ordered: Bool, marker: String) {
+        let listID = IDGenerator.next("list")
+        updateListMembership(name: ordered ? "Numbered List" : "Bulleted List") { current in
+            ListItemModel(list: listID, ordered: ordered, marker: marker, level: current?.level ?? 0)
+        }
+    }
+
+    /// Removes list membership from every paragraph the selection touches, restoring
+    /// each to its style's normal indent.
+    public func removeListFromSelection() {
+        updateListMembership(name: "Remove List") { _ in nil }
+    }
+
+    /// Restyles the caret's list (bullet glyph or number format). Choosing a number
+    /// style on a bullet list makes it ordered, and vice versa. No-op outside a list.
+    public func setListMarker(_ marker: String) {
+        let ordered = ListMarkers.orderedStyles.contains { $0.marker == marker }
+        updateListMembership(name: "List Style") { current in
+            guard let current else { return nil }
+            return ListItemModel(list: current.list, ordered: ordered, marker: marker,
+                                 level: current.level, start: ordered ? current.start : nil)
+        }
+    }
+
+    /// Nudges the nesting level of the selection's list items. Outdenting below level 0
+    /// drops the list (the universal "Shift-Tab off the left edge" behaviour).
+    public func changeListIndent(by delta: Int) {
+        let maxLevel = 8
+        updateListMembership(name: delta < 0 ? "Decrease List Level" : "Increase List Level") { current in
+            guard let current else { return nil }
+            let newLevel = current.level + delta
+            return newLevel < 0 ? nil : current.atLevel(min(newLevel, maxLevel))
+        }
+    }
+
+    /// Runs `transform` over each paragraph the selection touches, replacing its list
+    /// membership with the result (nil removes it) and updating its hanging indent.
+    /// Table cells are skipped. The empty-document and trailing-empty-paragraph cases
+    /// are carried on the typing attributes (and, for the trailing case, stamped on the
+    /// final newline) so a command taken with no real text still holds.
+    private func updateListMembership(name: String,
+                                      transform: (ListItemModel?) -> ListItemModel?) {
+        guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
+        let ns = storage.string as NSString
+
+        if storage.length == 0 {
+            let role = (tv.typingAttributes[.lucerneStyleRole] as? String)
+                ?? model.body.first?.style ?? LucerneDocumentModel.defaultStyleRole
+            let id = (tv.typingAttributes[.lucerneParagraphID] as? String)
+                ?? model.body.first?.id ?? IDGenerator.next("p")
+            let updated = transform(ListItemCodec.decode(tv.typingAttributes[.lucerneList]))
+            tv.typingAttributes = AttributedStringBuilder.typingAttributes(
+                role: role, in: model, paragraphID: id, list: updated)
+            setPagesNeedDisplay()
+            return
+        }
+
+        let caret = tv.selectedRange()
+        if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
+            let role = (tv.typingAttributes[.lucerneStyleRole] as? String) ?? LucerneDocumentModel.defaultStyleRole
+            let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
+            let updated = transform(ListItemCodec.decode(tv.typingAttributes[.lucerneList]))
+            withUndo(name) {
+                tv.typingAttributes = AttributedStringBuilder.typingAttributes(
+                    role: role, in: model, paragraphID: id, list: updated)
+                let term = NSRange(location: storage.length - 1, length: 1)
+                storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
+                storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
+                if let updated, let encoded = ListItemCodec.encode(updated) {
+                    storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
+                } else {
+                    storage.removeAttribute(.lucerneTrailingList, range: term)
+                }
+            }
+            setPagesNeedDisplay()
+            return
+        }
+
+        withUndo(name) {
+            storage.beginEditing()
+            for selection in tv.selectedRanges.map({ $0.rangeValue }) {
+                let paragraphRange = ns.paragraphRange(for: selection)
+                var cursor = paragraphRange.location
+                while cursor < NSMaxRange(paragraphRange) {
+                    let single = ns.paragraphRange(for: NSRange(location: cursor, length: 0))
+                    applyListTransform(transform, toParagraph: single, storage: storage)
+                    if NSMaxRange(single) == cursor { break }
+                    cursor = NSMaxRange(single)
+                }
+            }
+            storage.endEditing()
+        }
+        // Keep continued typing in the list (or out of it): match the caret's paragraph.
+        let probe = min(tv.selectedRange().location, storage.length - 1)
+        if probe >= 0, probe < storage.length {
+            tv.typingAttributes = storage.attributes(at: probe, effectiveRange: nil)
+        }
+        setPagesNeedDisplay()
+    }
+
+    /// Applies one paragraph's list transform: rewrites `.lucerneList` and re-derives
+    /// the hanging indent (or restores the style's own indent when the list is removed).
+    /// Skips table cells. `single` spans the paragraph including its terminating newline,
+    /// so the separator carries the membership too (empty items depend on it).
+    private func applyListTransform(_ transform: (ListItemModel?) -> ListItemModel?,
+                                    toParagraph single: NSRange, storage: NSTextStorage) {
+        guard single.length > 0, single.location < storage.length else { return }
+        if tableBlock(atCharacterIndex: single.location) != nil { return }
+        let probe = single.location
+        let current = ListItemCodec.decode(storage.attribute(.lucerneList, at: probe, effectiveRange: nil))
+        let updated = transform(current)
+
+        if let updated, let encoded = ListItemCodec.encode(updated) {
+            storage.addAttribute(.lucerneList, value: encoded, range: single)
+        } else {
+            storage.removeAttribute(.lucerneList, range: single)
+        }
+
+        let role = (storage.attribute(.lucerneStyleRole, at: probe, effectiveRange: nil) as? String)
+            ?? LucerneDocumentModel.defaultStyleRole
+        let style = model.resolvedStyle(for: role)
+        storage.enumerateAttribute(.paragraphStyle, in: single, options: []) { value, sub, _ in
+            let ps = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                ?? NSMutableParagraphStyle()
+            if let updated {
+                AttributedStringBuilder.applyListIndent(to: ps, level: updated.level)
+            } else {
+                let left = CGFloat(style.leftIndent ?? 0)
+                ps.headIndent = left
+                ps.firstLineHeadIndent = left + CGFloat(style.firstLineIndent ?? 0)
+            }
+            storage.addAttribute(.paragraphStyle, value: ps, range: sub)
+        }
+    }
+
+    // MARK: - List editing gestures (Return / Tab), called from PageTextView
+
+    /// Return on an *empty* list item: consume it to outdent one level (or, at the top
+    /// level, drop the list) instead of inserting a blank line — the universal way to
+    /// end or step out of a list. Returns true when it handled the key.
+    func handleEmptyListItemNewline(in tv: PageTextView) -> Bool {
+        guard let storage = tv.textStorage, tv.selectedRange().length == 0,
+              currentListItem() != nil else { return false }
+        let ns = storage.string as NSString
+        let caret = min(tv.selectedRange().location, ns.length)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: caret, length: 0))
+        guard contentsEnd == start else { return false }   // paragraph has text → normal Return
+        changeListIndent(by: -1)
+        return true
+    }
+
+    /// Whether Return in the caret's (non-empty) list item should continue the list —
+    /// checked by PageTextView before it inserts the newline.
+    func caretWillContinueList(in tv: PageTextView) -> Bool {
+        guard let storage = tv.textStorage, tv.selectedRange().length == 0 else { return false }
+        let ns = storage.string as NSString
+        let caret = min(tv.selectedRange().location, ns.length)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: caret, length: 0))
+        guard contentsEnd > start else { return false }
+        return currentListItem() != nil
+    }
+
+    /// Called after PageTextView inserts the newline that continues a list: the split
+    /// already carried list membership onto the new paragraph; when that paragraph is
+    /// the document's trailing empty one, stamp the terminator so it round-trips (and
+    /// draws its marker). Then refresh so an ordered list renumbers.
+    func didInsertListContinuationNewline(in tv: PageTextView) {
+        guard let storage = tv.textStorage else { return }
+        let ns = storage.string as NSString
+        let caret = min(tv.selectedRange().location, ns.length)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: caret, length: 0))
+        if contentsEnd == start, caret >= ns.length, ns.length > 0 {
+            // The inserted newline (the split's separator) carries the list item's role
+            // and membership; take them from there rather than the post-insert typing
+            // attributes, and mint a fresh id for the new empty paragraph.
+            let term = NSRange(location: ns.length - 1, length: 1)
+            let role = (storage.attribute(.lucerneStyleRole, at: ns.length - 1, effectiveRange: nil) as? String)
+                ?? LucerneDocumentModel.defaultStyleRole
+            storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
+            storage.addAttribute(.lucerneTrailingParagraphID, value: IDGenerator.next("p"), range: term)
+            if let encoded = storage.attribute(.lucerneList, at: ns.length - 1, effectiveRange: nil) as? String {
+                storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
+            }
+        }
+        setPagesNeedDisplay()
+    }
+
+    /// Tab / Shift-Tab in a list: indent (Tab, only at the item's start so a mid-line
+    /// Tab still inserts a tab) or outdent (Shift-Tab, from anywhere), including across
+    /// a multi-line selection. Returns true when it handled the key.
+    func handleListTab(in tv: PageTextView, outdent: Bool) -> Bool {
+        guard let storage = tv.textStorage else { return false }
+        let ns = storage.string as NSString
+        let selection = tv.selectedRange()
+        if selection.length > 0 {
+            guard selectionTouchesList(in: tv, storage: storage, ns: ns) else { return false }
+            changeListIndent(by: outdent ? -1 : 1)
+            return true
+        }
+        guard currentListItem() != nil else { return false }
+        if outdent { changeListIndent(by: -1); return true }
+        let caret = min(selection.location, ns.length)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: caret, length: 0))
+        guard caret == start else { return false }   // not at the item's start → normal tab
+        changeListIndent(by: 1)
+        return true
+    }
+
+    private func selectionTouchesList(in tv: PageTextView, storage: NSTextStorage, ns: NSString) -> Bool {
+        for range in tv.selectedRanges.map({ $0.rangeValue }) {
+            let paragraphRange = ns.paragraphRange(for: range)
+            var cursor = paragraphRange.location
+            while cursor < NSMaxRange(paragraphRange) {
+                let single = ns.paragraphRange(for: NSRange(location: cursor, length: 0))
+                let probe = single.length > 0 ? single.location : min(single.location, max(0, ns.length - 1))
+                if probe < storage.length,
+                   storage.attribute(.lucerneList, at: probe, effectiveRange: nil) != nil { return true }
+                if NSMaxRange(single) == cursor { break }
+                cursor = NSMaxRange(single)
+            }
+        }
+        return false
+    }
+
+    /// Forces every page's text view to redraw, so list markers whose *number* shifted
+    /// without a text-length change (apply / remove / indent / restyle a list) are
+    /// repainted. Typing already reflows and repaints the text below the caret.
+    private func setPagesNeedDisplay() {
+        for page in pages { page.textView.needsDisplay = true }
     }
 
     // MARK: - Heading "next style"

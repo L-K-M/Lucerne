@@ -29,6 +29,17 @@ public enum MarkdownExporter {
                 blocks.append(tableBlock(for: group, model: model))
                 continue
             }
+            // A run of list items becomes one tight list block (nested by indentation,
+            // ordered items numbered). Cells never join a list (they render as tables).
+            if paragraph.list != nil, paragraph.cell == nil {
+                var group: [Paragraph] = []
+                while i < body.count, body[i].list != nil, body[i].cell == nil {
+                    group.append(body[i])
+                    i += 1
+                }
+                blocks.append(listBlock(for: group))
+                continue
+            }
             let style = model.resolvedStyle(for: paragraph.style)
             let inline = inlineMarkdown(for: paragraph)
             blocks.append(block(inline: inline, markdownRole: style.markdown))
@@ -67,6 +78,29 @@ public enum MarkdownExporter {
         case "code": return "    " + inline      // indented code block
         default:   return blockEscape(inline)    // "p" and anything unknown
         }
+    }
+
+    // MARK: - Lists
+
+    /// Renders a run of list-item paragraphs as one tight Markdown list: bullets as
+    /// "- ", ordered items numbered (always decimal — Markdown has no alpha/roman),
+    /// each nested by four spaces per level. Numbering is resolved the same way the
+    /// editor draws it, so the recovery file matches what was on the page.
+    private static func listBlock(for items: [Paragraph]) -> String {
+        let resolved = ListMarkers.resolve(items.map(\.list))
+        var lines: [String] = []
+        for (index, paragraph) in items.enumerated() {
+            guard let item = paragraph.list else { continue }
+            let indent = String(repeating: "    ", count: max(0, item.level))
+            let inline = inlineMarkdown(for: paragraph)
+            if item.ordered {
+                let number = resolved[index]?.number ?? 1
+                lines.append("\(indent)\(number). \(inline)")
+            } else {
+                lines.append("\(indent)- \(inline)")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Tables

@@ -216,6 +216,33 @@ enum MainMenu {
             menu.addItem(styles)
             add(menu, "Style Library…", "lucerneShowStyleLibrary:", symbol: "paintpalette")
 
+            let list = NSMenuItem(title: "List", action: nil, keyEquivalent: "")
+            let listMenu = NSMenu(title: "List")
+            add(listMenu, "Bulleted List", "lucerneToggleBulletedList:", key: "8",
+                modifiers: [.command, .shift], symbol: "list.bullet")
+            add(listMenu, "Numbered List", "lucerneToggleNumberedList:", key: "7",
+                modifiers: [.command, .shift], symbol: "list.number")
+            listMenu.addItem(.separator())
+            let bullet = NSMenuItem(title: "Bullet Style", action: nil, keyEquivalent: "")
+            let bulletMenu = NSMenu(title: "Bullet Style")
+            for (marker, label) in ListMarkers.unorderedStyles {
+                add(bulletMenu, label, "lucerneSetListMarker:", represented: marker)
+            }
+            bullet.submenu = bulletMenu
+            listMenu.addItem(bullet)
+            let number = NSMenuItem(title: "Number Style", action: nil, keyEquivalent: "")
+            let numberMenu = NSMenu(title: "Number Style")
+            for (marker, label) in ListMarkers.orderedStyles {
+                add(numberMenu, label, "lucerneSetListMarker:", represented: marker)
+            }
+            number.submenu = numberMenu
+            listMenu.addItem(number)
+            listMenu.addItem(.separator())
+            add(listMenu, "Increase List Level", "lucerneListIndent:", key: "]")
+            add(listMenu, "Decrease List Level", "lucerneListOutdent:", key: "[")
+            list.submenu = listMenu
+            menu.addItem(list)
+
             let table = NSMenuItem(title: "Table", action: nil, keyEquivalent: "")
             let tableMenu = NSMenu(title: "Table")
             add(tableMenu, "Select Table", "lucerneSelectTable:")
