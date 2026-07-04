@@ -69,4 +69,19 @@ final class ListMarkdownExportTests: XCTestCase {
         ]))
         XCTAssertEqual(md, "- Old bullet\n")
     }
+
+    /// Two adjacent lists with different ids must export as separate blocks (a blank
+    /// line between), so a Markdown viewer restarts the second list rather than
+    /// treating the two as one continuous list.
+    func testAdjacentDistinctListsAreSeparateBlocks() {
+        let md = MarkdownExporter.export(model([
+            Paragraph(id: "1", style: "body",
+                      list: ListItemModel(list: "A", ordered: true, marker: "decimal"),
+                      runs: [Run(text: "First list")]),
+            Paragraph(id: "2", style: "body",
+                      list: ListItemModel(list: "B", ordered: true, marker: "decimal"),
+                      runs: [Run(text: "Second list")]),
+        ]))
+        XCTAssertEqual(md, "1. First list\n\n1. Second list\n")
+    }
 }

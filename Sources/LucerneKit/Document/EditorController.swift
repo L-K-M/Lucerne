@@ -850,14 +850,26 @@ public final class EditorController: NSObject {
             return
         }
         // Caret on the trailing empty paragraph (after the final newline): its
-        // paragraphRange has length 0 so the loop below can't reach it. Set the
-        // typing attributes for the new role — preserving the paragraph id already
-        // in the typing attributes — so the next typed character adopts it.
+        // paragraphRange has length 0 so the loop below can't reach it. Set the typing
+        // attributes for the new role, and stamp the final newline so the change
+        // round-trips on save — without the stamp the reader rebuilds the paragraph
+        // from the stale trailing role and the restyle is silently lost.
         let caret = tv.selectedRange()
         if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
             let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
             let list = ListItemCodec.decode(tv.typingAttributes[.lucerneList])
-            tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id, list: list)
+            withUndo("Apply Style") {
+                tv.typingAttributes = AttributedStringBuilder.typingAttributes(
+                    role: role, in: model, paragraphID: id, list: list)
+                let term = NSRange(location: storage.length - 1, length: 1)
+                storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
+                storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
+                if let list, let encoded = ListItemCodec.encode(list) {
+                    storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
+                } else {
+                    storage.removeAttribute(.lucerneTrailingList, range: term)
+                }
+            }
             return
         }
         withUndo("Apply Style") {
@@ -1183,6 +1195,23 @@ public final class EditorController: NSObject {
                     applyListTransform(transform, toParagraph: single, storage: storage)
                     if NSMaxRange(single) == cursor { break }
                     cursor = NSMaxRange(single)
+                }
+            }
+            // The trailing empty paragraph's membership lives on the terminating
+            // newline, which the paragraph loop can't reach. When the selection runs
+            // to the end of the document and that paragraph is a list item, reconcile
+            // it too — otherwise removing or restyling a list strands a phantom
+            // trailing marker that also round-trips into the saved file.
+            let last = ns.length > 0 ? ns.character(at: ns.length - 1) : 0
+            let reachesEnd = tv.selectedRanges.contains { NSMaxRange($0.rangeValue) >= ns.length }
+            if (last == 0x0A || last == 0x0D), reachesEnd,
+               let current = ListItemCodec.decode(
+                   storage.attribute(.lucerneTrailingList, at: ns.length - 1, effectiveRange: nil)) {
+                let term = NSRange(location: ns.length - 1, length: 1)
+                if let updated = transform(current), let encoded = ListItemCodec.encode(updated) {
+                    storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
+                } else {
+                    storage.removeAttribute(.lucerneTrailingList, range: term)
                 }
             }
             storage.endEditing()

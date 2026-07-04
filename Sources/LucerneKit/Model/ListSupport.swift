@@ -82,9 +82,10 @@ public enum ListMarkers {
                 result[index] = ResolvedMarker(text: orderedLabel(counters[level], style: item.marker) + ".",
                                                number: counters[level])
             } else {
-                // A bullet doesn't count, but mark the slot "started" so an ordered
-                // sibling that follows at this level doesn't read it as unstarted.
-                counters[level] = max(counters[level], 1)
+                // A bullet doesn't count: leave the counter untouched. An ordered item
+                // that follows keeps counting from where the numbers left off (its slot
+                // is still non-zero), while an ordered item with only bullets before it
+                // at this level correctly starts at 1 (or its `start`).
                 result[index] = ResolvedMarker(text: bulletGlyph(item.marker, level: level), number: nil)
             }
             previousID = item.list

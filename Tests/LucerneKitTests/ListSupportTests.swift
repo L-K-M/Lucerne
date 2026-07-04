@@ -42,6 +42,27 @@ final class ListSupportTests: XCTestCase {
         XCTAssertEqual(markers(list), ["1.", nil, "1."])
     }
 
+    func testBulletBeforeOrderedDoesNotBumpTheFirstNumber() {
+        // A bullet doesn't count, so the first numbered item after it is still 1.
+        let list: [ListItemModel?] = [item("a", false, "disc"),
+                                      item("a", true, "decimal"),
+                                      item("a", true, "decimal")]
+        XCTAssertEqual(markers(list), ["\u{2022}", "1.", "2."])
+    }
+
+    func testOrderedContinuesAcrossAnInterveningBullet() {
+        let list: [ListItemModel?] = [item("a", true, "decimal"),
+                                      item("a", false, "disc"),
+                                      item("a", true, "decimal")]
+        XCTAssertEqual(markers(list), ["1.", "\u{2022}", "2."])
+    }
+
+    func testBulletBeforeOrderedStillHonoursStart() {
+        let list: [ListItemModel?] = [item("a", false, "disc"),
+                                      item("a", true, "decimal", start: 5)]
+        XCTAssertEqual(markers(list), ["\u{2022}", "5."])
+    }
+
     func testNestingRestartsAndResumesCounters() {
         // 1.  a
         //   1.  b   (nested restarts)

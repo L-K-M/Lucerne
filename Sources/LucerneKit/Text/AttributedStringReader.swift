@@ -52,14 +52,15 @@ public enum AttributedStringReader {
                 paragraphs.append(trailing)
             } else {
                 // Fallback (storage without the trailing keys): inherit the final
-                // newline's role and formatting, minting a fresh id.
+                // newline's role and formatting, minting a fresh id. It deliberately
+                // does NOT inherit list membership — the newline's `.lucerneList`
+                // belongs to the *preceding* paragraph, so copying it would conjure a
+                // spurious extra list item. A genuine trailing empty list item always
+                // carries `.lucerneTrailingList` and takes the branch above.
                 let role = (attr.attribute(.lucerneStyleRole, at: length - 1, effectiveRange: nil) as? String)
                     ?? defaultRole(in: styles)
                 let ps = attr.attribute(.paragraphStyle, at: length - 1, effectiveRange: nil) as? NSParagraphStyle
-                var trailing = emptyParagraph(role: role, paragraphStyle: ps, styleDef: model.resolved(role))
-                trailing.list = ListItemCodec.decode(attr.attribute(.lucerneList, at: length - 1, effectiveRange: nil))
-                stripDerivedListIndent(&trailing)
-                paragraphs.append(trailing)
+                paragraphs.append(emptyParagraph(role: role, paragraphStyle: ps, styleDef: model.resolved(role)))
             }
         }
         return paragraphs
