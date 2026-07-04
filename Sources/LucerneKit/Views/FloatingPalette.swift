@@ -10,10 +10,11 @@ import AppKit
 // the controls to their normal popover behavior everywhere.
 final class FloatingPalette: NSObject {
 
-    enum Kind { case typefaces, styles }
+    enum Kind { case typefaces, styles, lists }
 
     static let typefaces = FloatingPalette(kind: .typefaces, title: "Typefaces")
     static let styles = FloatingPalette(kind: .styles, title: "Styles")
+    static let lists = FloatingPalette(kind: .lists, title: "Lists")
 
     /// Posted (object = the palette) when a palette opens or closes, so every
     /// window's format bar can flip its chooser between "opens the picker" and
@@ -227,7 +228,7 @@ final class FloatingPalette: NSObject {
     /// Lets document windows nudge every open palette when the active selection
     /// or main window changes, so the highlighted face/style tracks the caret.
     static func syncOpenPalettes() {
-        for palette in [typefaces, styles] where palette.isOpen {
+        for palette in [typefaces, styles, lists] where palette.isOpen {
             palette.refreshFromActiveDocument()
         }
         StyleEditorPanel.shared.noteSelectionChanged()
@@ -249,6 +250,10 @@ final class FloatingPalette: NSObject {
             newItems = wc == nil
                 ? []
                 : Self.styleItems(styles: wc?.editor.model.styles, includeLibrary: true)
+        case .lists:
+            // The list styles are fixed (they don't come from the document's
+            // stylesheet), so the palette lists them whether or not a letter is open.
+            newItems = Self.listItems()
         }
         if newItems != list.items { list.setItems(newItems) }
         list.select(id: preferredID ?? currentID(of: wc?.editor))
@@ -265,6 +270,8 @@ final class FloatingPalette: NSObject {
             return (editor.currentAttributes()[.font] as? NSFont)?.familyName
         case .styles:
             return editor.currentStyleRole()
+        case .lists:
+            return editor.currentListStyleID()
         }
     }
 
@@ -284,6 +291,8 @@ final class FloatingPalette: NSObject {
             } else {
                 wc.editor.applyStyleRole(item.id)
             }
+        case .lists:
+            wc.editor.setListStyle(item.id == "none" ? nil : item.id)
         }
         // Put the caret back on the page so a caret-only change (typing
         // attributes) is immediately usable — without moving key status.
@@ -384,7 +393,28 @@ final class FloatingPalette: NSObject {
             return Self.styleSpecimenFont(
                 role: item.id,
                 styles: Self.activeDocumentWindowController()?.editor.model.styles)
+        case .lists:
+            return .systemFont(ofSize: 13)
         }
+    }
+
+    /// The fixed list-style rows shared by the toolbar chooser and the Lists
+    /// palette: None, then the four bullets, then the five number formats — each
+    /// drawn as its own little specimen of the marker it makes.
+    static func listItems() -> [PickerItem] {
+        var items: [PickerItem] = [PickerItem(id: "none", title: "None")]
+        items.append(.separator("Bullets"))
+        items += ListMarkers.unorderedStyles.map { style in
+            PickerItem(id: style.marker,
+                       title: "\(ListMarkers.bulletGlyph(style.marker, level: 0))   \(style.label)")
+        }
+        items.append(.separator("Numbers"))
+        items += ListMarkers.orderedStyles.map { style in
+            let sample = (1...3).map { ListMarkers.orderedLabel($0, style: style.marker) + "." }
+                .joined(separator: "  ")
+            return PickerItem(id: style.marker, title: sample)
+        }
+        return items
     }
 }
 

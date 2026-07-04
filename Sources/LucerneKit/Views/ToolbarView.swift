@@ -88,7 +88,7 @@ public final class ToolbarView: NSView {
         styleControl.title = "Body"
         styleControl.onPresent = { [weak self] in self?.presentStylePicker() }
 
-        listControl.title = "None"
+        listControl.title = "List"
         listControl.onPresent = { [weak self] in self?.presentListPicker() }
 
         fontControl.onPresent = { [weak self] in self?.presentFontPicker() }
@@ -112,11 +112,11 @@ public final class ToolbarView: NSView {
 
         stack = NSStackView(views: [
             styleControl, separator(),
-            listControl, separator(),
             fontControl, sizeField, separator(),
             formatControl, separator(),
             colorWell, separator(),
             alignControl, separator(),
+            listControl, separator(),
             lineSpacingPopup
         ])
         stack.orientation = .horizontal
@@ -144,9 +144,12 @@ public final class ToolbarView: NSView {
         let fontHelp = FloatingPalette.typefaces.isOpen
             ? "Typefaces live in the floating palette — click to bring it to the front"
             : "Typeface — try faces live on your letter: ↑↓ to browse, Return to keep, Esc to revert"
+        let listHelp = FloatingPalette.lists.isOpen
+            ? "List styles live in the floating palette — click to bring it to the front"
+            : "List style — try bullets and numbers live on your letter: ↑↓ to browse, Return to keep, Esc to revert"
         let entries: [(NSView, String)] = [
             (styleControl, styleHelp),
-            (listControl, "List style — try bullets and numbers live on your letter: ↑↓ to browse, Return to keep, Esc to revert"),
+            (listControl, listHelp),
             (fontControl, fontHelp),
             (sizeField, "Font size in points for the selected text"),
             (formatControl, "Bold (⌘B), Italic (⌘I), Underline (⌘U)"),
@@ -163,6 +166,7 @@ public final class ToolbarView: NSView {
     private func paletteVisibilityChanged() {
         fontControl.representsOpenPalette = FloatingPalette.typefaces.isOpen
         styleControl.representsOpenPalette = FloatingPalette.styles.isOpen
+        listControl.representsOpenPalette = FloatingPalette.lists.isOpen
         registerHelp()
     }
 
@@ -258,20 +262,25 @@ public final class ToolbarView: NSView {
     }
     /// The list twin of the style/font pickers: every list style — None, the four
     /// bullets, the five number formats — listed as its own specimen and previewed
-    /// live on the selected paragraphs, banked as one undo step. It has no floating
-    /// palette (palette: nil), so it previews in place rather than tearing off.
+    /// live on the selected paragraphs, banked as one undo step. Backed by the global
+    /// Lists palette, so it can be dragged off the control to float (and, while that
+    /// palette is open, the control summons it instead of spawning a second picker).
     private func presentListPicker() {
+        guard FloatingPalette.lists.isOpen == false else {
+            FloatingPalette.lists.bringToFront()
+            return
+        }
         guard let editor, !listPicker.isActive, !stylePicker.isActive, !fontPicker.isActive else { return }
         commitColorSession()
         editor.beginFormatPreview()
-        listPicker.present(from: listControl, palette: nil,
-                           items: ToolbarView.listStyleItems(),
+        listPicker.present(from: listControl, palette: .lists,
+                           items: FloatingPalette.listItems(),
                            currentID: editor.currentListStyleID(),
                            specimenFont: { _ in NSFont.systemFont(ofSize: 13) }) { [weak self] item in
             self?.editor?.setListStyle(item.id == "none" ? nil : item.id)
             self?.listControl.title = ToolbarView.listStyleTitle(for: item.id)
-        } onDetach: {
-            // No palette to hand off to; the picker previews in place.
+        } onDetach: { [weak self] in
+            self?.editor?.endFormatPreview(commit: true, actionName: "List Style")
         } onFinish: { [weak self] commit in
             guard let self else { return }
             self.editor?.endFormatPreview(commit: commit, actionName: "List Style")
@@ -284,30 +293,14 @@ public final class ToolbarView: NSView {
         returnFocusToPage()
     }
 
-    // MARK: - List style items
+    // MARK: - List style label
 
-    /// The rows the List chooser offers: None, then the bullet styles, then the
-    /// number styles — each drawn as its own little specimen of the marker it makes.
-    static func listStyleItems() -> [PickerItem] {
-        var items: [PickerItem] = [PickerItem(id: "none", title: "None")]
-        items.append(.separator("Bullets"))
-        items += ListMarkers.unorderedStyles.map { style in
-            PickerItem(id: style.marker,
-                       title: "\(ListMarkers.bulletGlyph(style.marker, level: 0))   \(style.label)")
-        }
-        items.append(.separator("Numbers"))
-        items += ListMarkers.orderedStyles.map { style in
-            let sample = (1...3).map { ListMarkers.orderedLabel($0, style: style.marker) + "." }
-                .joined(separator: "  ")
-            return PickerItem(id: style.marker, title: sample)
-        }
-        return items
-    }
-
-    /// The concise label the chooser shows for the caret's current list style.
+    /// The concise label the chooser shows for the caret's current list style. When
+    /// the caret isn't in a list, it names the control ("List") rather than "None",
+    /// so the button says what it does at rest.
     static func listStyleTitle(for id: String) -> String {
         switch id {
-        case "none": return "None"
+        case "none": return "List"
         default:
             return ListMarkers.orderedStyles.contains { $0.marker == id } ? "Numbered" : "Bulleted"
         }
