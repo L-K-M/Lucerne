@@ -958,6 +958,64 @@ public final class EditorController: NSObject {
         return true
     }
 
+    // MARK: - Heading "next style"
+
+    /// Whether pressing Return right now should start the *next* paragraph in Body:
+    /// true when the caret sits (with no selection) at the very end of a heading-
+    /// styled paragraph. This is the classic "style for the following paragraph" that
+    /// every word processor gives headings — after a heading you're writing body
+    /// text, not another heading. Splitting a heading mid-way (caret not at the end)
+    /// keeps both halves as the heading, matching Word/Pages. Never fires in a table.
+    /// Checked by PageTextView *before* it inserts the newline.
+    func caretIsAtHeadingParagraphEnd(in tv: PageTextView) -> Bool {
+        let selection = tv.selectedRange()
+        guard selection.length == 0, let storage = tv.textStorage, storage.length > 0 else { return false }
+        let ns = storage.string as NSString
+        let caret = min(selection.location, ns.length)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: caret, length: 0))
+        guard caret == contentsEnd else { return false }          // only at the paragraph's end
+        guard let role = currentStyleRole(), headingLevel(for: role) != nil else { return false }
+        return tableBlock(atCharacterIndex: min(caret, ns.length - 1)) == nil
+    }
+
+    /// Called by PageTextView *after* it inserts the newline (when
+    /// `caretIsAtHeadingParagraphEnd` was true): switch the freshly created paragraph
+    /// — the one the caret now sits in — to Body. It is empty (we split at the
+    /// heading's end), so its style lives in the typing attributes; when it is the
+    /// document's trailing paragraph we also stamp the terminator so a save before
+    /// any further typing round-trips as Body (mirrors the builder's trailing-
+    /// paragraph markers — see AttributedStringReader).
+    func startBodyParagraphAfterHeadingNewline(in tv: PageTextView) {
+        guard let storage = tv.textStorage else { return }
+        let bodyRole = LucerneDocumentModel.defaultStyleRole
+        let ns = storage.string as NSString
+        let caret = min(tv.selectedRange().location, ns.length)
+        let newID = IDGenerator.next("p")
+        let attrs = AttributedStringBuilder.typingAttributes(role: bodyRole, in: model, paragraphID: newID)
+
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: caret, length: 0))
+        let newParagraph = NSRange(location: start, length: end - start)
+        storage.beginEditing()
+        if newParagraph.length > 0 {
+            // A real paragraph (its own newline follows more text) — restyle it.
+            storage.setAttributes(attrs, range: newParagraph)
+        } else if caret > 0 {
+            // The trailing empty paragraph carries no character of its own; stamp the
+            // preceding newline so the reader reconstructs it as Body.
+            storage.addAttribute(.lucerneTrailingStyleRole, value: bodyRole,
+                                 range: NSRange(location: caret - 1, length: 1))
+            storage.addAttribute(.lucerneTrailingParagraphID, value: newID,
+                                 range: NSRange(location: caret - 1, length: 1))
+        }
+        storage.endEditing()
+        tv.typingAttributes = attrs
+        document?.editorDidChange()
+    }
+
     /// Inserts a forced page break at the caret: the text from here on starts on a
     /// new page. Implemented by flagging the paragraph that begins at the caret
     /// (splitting the current paragraph first if the caret is mid-paragraph).

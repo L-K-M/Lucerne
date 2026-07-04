@@ -67,6 +67,18 @@ public final class PageTextView: NSTextView {
         return false
     }
 
+    // A heading's "next style" is Body: pressing Return at the end of a heading
+    // starts the following paragraph in Body, like every word processor — after a
+    // heading you're writing body text, not another heading. (Shift-Return, which
+    // routes to insertLineBreak, is a soft break within the paragraph and is left
+    // alone.) The decision is taken before the newline is inserted; the demotion is
+    // applied to the new paragraph after.
+    public override func insertNewline(_ sender: Any?) {
+        let demote = editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false
+        super.insertNewline(sender)
+        if demote { editor?.startBodyParagraphAfterHeadingNewline(in: self) }
+    }
+
     // MARK: - Context menu
 
     // Augment the standard editing menu (Cut/Copy/Paste/…) with Lucerne's formatting
