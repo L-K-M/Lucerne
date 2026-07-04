@@ -125,7 +125,7 @@ final class ListSupportTests: XCTestCase {
 
     // MARK: - Attribute codec
 
-    func testListItemCodecRoundTrips() {
+    func testListItemCodecRoundTrips() throws {
         let original = item("list-7", true, "lower-roman", level: 2, start: 4)
         let encoded = try XCTUnwrap(ListItemCodec.encode(original))
         XCTAssertEqual(ListItemCodec.decode(encoded), original)
