@@ -16,7 +16,9 @@ public final class EditorController: NSObject {
     // MARK: Model + text system
     public private(set) var model: LucerneDocumentModel
     public let textStorage = NSTextStorage()
-    public let layoutManager = ListMarkerLayoutManager()
+    // Typed as NSLayoutManager (the public surface); the list-drawing subclass is an
+    // internal implementation detail.
+    public let layoutManager: NSLayoutManager = ListMarkerLayoutManager()
     private var metrics: PageMetrics
     public weak var document: EditorControllerDocument?
 
