@@ -166,4 +166,14 @@ final class ListSupportTests: XCTestCase {
         XCTAssertEqual(ListGeometry.contentIndent(level: 2), 72)
         XCTAssertEqual(ListGeometry.contentIndent(level: -3), 24)   // clamped
     }
+
+    func testContentIndentClampsMalformedExtremeLevel() {
+        XCTAssertEqual(ListGeometry.contentIndent(level: Int.max), 216)
+        XCTAssertEqual(markers([item("a", false, "auto", level: Int.max)]), ["\u{25AA}"])
+    }
+
+    func testListItemCodecRejectsOutOfRangeLevel() throws {
+        let encoded = try XCTUnwrap(ListItemCodec.encode(item("a", false, "disc", level: Int.max)))
+        XCTAssertNil(ListItemCodec.decode(encoded))
+    }
 }

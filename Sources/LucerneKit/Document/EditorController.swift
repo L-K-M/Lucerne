@@ -47,7 +47,7 @@ public final class EditorController: NSObject {
 
     private var isUpdatingLayout = false
     private var relayoutScheduled = false
-    private let maxPages = 2000     // safety cap against pathological geometry
+    private let maxPages = LucerneDocumentModel.maximumPageCount
 
     /// The image-wrap exclusion rects last assigned to each page's container, keyed
     /// by the container. Assigning `container.exclusionPaths` invalidates layout
@@ -213,11 +213,12 @@ public final class EditorController: NSObject {
         // Grow to cover page-anchored objects, not just text: an image can be anchored
         // to a page past where the body text reaches (e.g. a freshly loaded document),
         // and it would otherwise be dropped. Text overflow below adds any further pages.
-        if let maxObjectPage = model.objects
-            .filter({ $0.anchorMode == .page && $0.frame != nil })
-            .compactMap({ $0.page })
-            .max() {
-            while pages.count < min(maxObjectPage + 1, maxPages) { addPage() }
+        if let maxObjectPage = model.objects.compactMap({ object -> Int? in
+            guard object.anchorMode == .page, object.frame != nil,
+                  let page = object.page, (0..<maxPages).contains(page) else { return nil }
+            return page
+        }).max() {
+            while pages.count <= maxObjectPage { addPage() }
         }
 
         let breaks = pageBreakCharIndices()
@@ -385,7 +386,7 @@ public final class EditorController: NSObject {
         var present = Set<String>()
         for object in model.objects where object.type == "image" {
             guard object.anchorMode == .page,
-                  let pageIndex = object.page, pageIndex < pages.count,
+                  let pageIndex = object.page, pages.indices.contains(pageIndex),
                   let frame = object.frame else { continue }
             present.insert(object.id)
 
@@ -1131,14 +1132,15 @@ public final class EditorController: NSObject {
         }
     }
 
-    /// Nudges the nesting level of the selection's list items. Outdenting below level 0
-    /// drops the list (the universal "Shift-Tab off the left edge" behaviour).
+    /// Nudges the nesting level of the selection's list items within the supported
+    /// geometry. Outdenting below level 0 drops the list (the universal
+    /// "Shift-Tab off the left edge" behaviour).
     public func changeListIndent(by delta: Int) {
-        let maxLevel = 8
         updateListMembership(name: delta < 0 ? "Decrease List Level" : "Increase List Level") { current in
             guard let current else { return nil }
-            let newLevel = current.level + delta
-            return newLevel < 0 ? nil : current.atLevel(min(newLevel, maxLevel))
+            let (newLevel, overflow) = current.level.addingReportingOverflow(delta)
+            if overflow { return current.atLevel(delta < 0 ? 0 : ListGeometry.maximumLevel) }
+            return newLevel < 0 ? nil : current.atLevel(newLevel)
         }
     }
 

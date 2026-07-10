@@ -94,7 +94,7 @@ public enum MarkdownExporter {
         var lines: [String] = []
         for (index, paragraph) in items.enumerated() {
             guard let item = paragraph.list else { continue }
-            let indent = String(repeating: "    ", count: max(0, item.level))
+            let indent = String(repeating: "    ", count: ListGeometry.clampedLevel(item.level))
             let inline = inlineMarkdown(for: paragraph)
             if item.ordered {
                 let number = resolved[index]?.number ?? 1

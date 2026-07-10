@@ -39,6 +39,65 @@ final class FormatSafetyTests: XCTestCase {
         XCTAssertNoThrow(try DocumentCoding.decode(try DocumentCoding.encode(model)))
     }
 
+    // MARK: - Post-decode semantic validation
+
+    func testNegativePageAnchoredObjectPageIsRefused() throws {
+        var model = makeModel()
+        model.objects = [PlacedObject(id: "negative-page", page: -1,
+                                      frame: RectModel(x: 0, y: 0, width: 10, height: 10))]
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidObjectPage(let id, let found) = error else {
+                return XCTFail("expected invalidObjectPage, got \(error)")
+            }
+            XCTAssertEqual(id, "negative-page")
+            XCTAssertEqual(found, -1)
+            XCTAssertTrue(error.localizedDescription.contains("between 0 and 1999"))
+        }
+    }
+
+    func testExtremePageAnchoredObjectPageIsRefused() throws {
+        var model = makeModel()
+        model.objects = [PlacedObject(id: "extreme-page", page: Int.max,
+                                      frame: RectModel(x: 0, y: 0, width: 10, height: 10))]
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidObjectPage(let id, let found) = error else {
+                return XCTFail("expected invalidObjectPage, got \(error)")
+            }
+            XCTAssertEqual(id, "extreme-page")
+            XCTAssertEqual(found, Int.max)
+        }
+    }
+
+    func testExtremeListLevelIsRefused() throws {
+        var model = makeModel()
+        model.body[0].list = ListItemModel(list: "list-1", ordered: false,
+                                          marker: "disc", level: Int.max)
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidListLevel(let id, let found) = error else {
+                return XCTFail("expected invalidListLevel, got \(error)")
+            }
+            XCTAssertEqual(id, model.body[0].id)
+            XCTAssertEqual(found, Int.max)
+            XCTAssertTrue(error.localizedDescription.contains("between 0 and 8"))
+        }
+    }
+
+    func testMaximumPageAndListLevelDecode() throws {
+        var model = makeModel()
+        model.objects = [PlacedObject(
+            id: "last-page", page: LucerneDocumentModel.maximumPageCount - 1,
+            frame: RectModel(x: 0, y: 0, width: 10, height: 10))]
+        model.body[0].list = ListItemModel(list: "list-1", ordered: false,
+                                          marker: "disc", level: ListGeometry.maximumLevel)
+
+        let decoded = try DocumentCoding.decode(try DocumentCoding.encode(model))
+        XCTAssertEqual(decoded.objects[0].page, 1999)
+        XCTAssertEqual(decoded.body[0].list?.level, 8)
+    }
+
     // MARK: - Archive image-name validation
 
     func testTraversalImageNamesAreIgnoredOnRead() throws {
