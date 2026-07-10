@@ -256,6 +256,45 @@ final class TableRoundTripTests: XCTestCase {
         XCTAssertTrue(cells.filter { $0.column == 0 }.allSatisfy { abs(($0.width ?? 0) - 70) < 0.5 })
         XCTAssertTrue(cells.filter { $0.column == 1 }.allSatisfy { abs(($0.width ?? 0) - 30) < 0.5 })
     }
+
+    func testRowInsertionPreservesEveryParagraphInMultiParagraphCell() throws {
+        func cell(_ id: String, _ column: Int, _ text: String,
+                  italic: Bool? = nil) -> Paragraph {
+            Paragraph(id: id, style: "body",
+                      cell: TableCellModel(table: "t1", row: 0, column: column),
+                      runs: [Run(text: text, italic: italic)])
+        }
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [
+                cell("first", 0, "First paragraph"),
+                cell("second", 0, "Second paragraph", italic: true),
+                cell("right", 1, "Right cell"),
+                Paragraph(id: "after", style: "body", runs: [Run(text: "After table")]),
+            ],
+            objects: [])
+        let editor = EditorController(model: model)
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        editor.textViewBecameActive(textView)
+
+        editor.insertTableRow(below: true)
+
+        let restored = editor.snapshotModel()
+        let firstCell = restored.body.filter { paragraph in
+            paragraph.cell?.row == 0 && paragraph.cell?.column == 0
+        }
+        XCTAssertEqual(firstCell.map(\.id), ["first", "second"])
+        XCTAssertEqual(firstCell.map(\.plainText), ["First paragraph", "Second paragraph"])
+        let secondParagraph = try XCTUnwrap(firstCell.last)
+        XCTAssertEqual(secondParagraph.runs.first?.italic, true,
+                       "later paragraphs must retain their attributed runs")
+        XCTAssertEqual(restored.body.filter { $0.cell?.row == 1 }.count, 2,
+                       "the requested row should still be inserted")
+        XCTAssertTrue(restored.body.contains { $0.id == "right" && $0.plainText == "Right cell" })
+        XCTAssertTrue(restored.body.contains { $0.id == "after" && $0.plainText == "After table" })
+    }
 }
 
 final class FurnitureModelTests: XCTestCase {

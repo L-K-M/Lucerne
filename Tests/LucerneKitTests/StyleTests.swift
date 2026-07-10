@@ -202,6 +202,76 @@ final class StyleRedefinitionTests: XCTestCase {
     }
 }
 
+final class ApplyStyleRoleBridgeTests: XCTestCase {
+
+    func testApplyingRolePreservesDirectRunsAndParagraphStructure() throws {
+        var model = DefaultDocuments.empty()
+        model.styles["alternate"] = ParagraphStyleDef(
+            name: "Alternate", font: "Helvetica", size: 22,
+            color: "#2244aa", markdown: "p")
+        let list = ListItemModel(list: "list-1", ordered: false, marker: "disc", level: 2)
+        let cell = TableCellModel(table: "table-1", row: 0, column: 0)
+        let paragraph = Paragraph(
+            id: "styled", style: "body", pageBreakBefore: true, cell: cell, list: list,
+            runs: [
+                Run(text: "plain "),
+                Run(text: "bold ", bold: true),
+                Run(text: "italic ", italic: true),
+                Run(text: "underlined ", underline: true),
+                Run(text: "font ", font: "Courier"),
+                Run(text: "size ", size: 19),
+                Run(text: "color", color: "#cc1122"),
+            ])
+        model.body = [
+            paragraph,
+            Paragraph(id: "after", style: "body", runs: [Run(text: "after")]),
+        ]
+
+        let storage = AttributedStringBuilder.attributedString(for: model)
+        let range = (storage.string as NSString).paragraphRange(for: NSRange(location: 0, length: 0))
+        let source = storage.attributedSubstring(from: range)
+        let oldStyle = try XCTUnwrap(source.attribute(.paragraphStyle, at: 0,
+                                                       effectiveRange: nil) as? NSParagraphStyle)
+        let oldBlock = try XCTUnwrap(oldStyle.textBlocks.first as? NSTextTableBlock)
+        let restyled = try XCTUnwrap(
+            EditorController.restyledParagraph(source, role: "alternate", in: model))
+
+        XCTAssertEqual(restyled.string, source.string, "applying a role must not rewrite text")
+        let restored = try XCTUnwrap(
+            AttributedStringReader.paragraphs(from: restyled, styles: model.styles).first)
+        XCTAssertEqual(restored.id, paragraph.id)
+        XCTAssertEqual(restored.style, "alternate")
+        XCTAssertEqual(restored.plainText, paragraph.plainText)
+        XCTAssertEqual(restored.pageBreakBefore, true)
+        XCTAssertEqual(restored.list, list)
+        XCTAssertEqual(restored.cell?.row, cell.row)
+        XCTAssertEqual(restored.cell?.column, cell.column)
+        XCTAssertEqual(restored.runs.first { $0.bold == true }?.text, "bold ")
+        XCTAssertEqual(restored.runs.first { $0.italic == true }?.text, "italic ")
+        XCTAssertEqual(restored.runs.first { $0.underline == true }?.text, "underlined ")
+        XCTAssertEqual(restored.runs.first { $0.font == "Courier" }?.text, "font ")
+        XCTAssertEqual(restored.runs.first { $0.size == 19 }?.text, "size ")
+        XCTAssertEqual(restored.runs.first { $0.color?.lowercased() == "#cc1122" }?.text, "color")
+
+        let plainFont = try XCTUnwrap(restyled.attribute(.font, at: 0,
+                                                         effectiveRange: nil) as? NSFont)
+        let plainColor = try XCTUnwrap(restyled.attribute(.foregroundColor, at: 0,
+                                                          effectiveRange: nil) as? NSColor)
+        XCTAssertEqual(plainFont.pointSize, 22, accuracy: 0.01,
+                       "unformatted text must follow the new role's size")
+        XCTAssertEqual(plainColor.lucerneHexString.lowercased(), "#2244aa")
+
+        let newStyle = try XCTUnwrap(restyled.attribute(.paragraphStyle, at: 0,
+                                                        effectiveRange: nil) as? NSParagraphStyle)
+        let newBlock = try XCTUnwrap(newStyle.textBlocks.first as? NSTextTableBlock)
+        XCTAssertTrue(newBlock === oldBlock, "restyling one cell must not split it into a new table")
+        XCTAssertEqual(restyled.attribute(.lucernePageBreakBefore, at: 0,
+                                          effectiveRange: nil) as? Bool, true)
+        XCTAssertEqual(ListItemCodec.decode(restyled.attribute(.lucerneList, at: 0,
+                                                                effectiveRange: nil)), list)
+    }
+}
+
 final class StyleLibraryTests: XCTestCase {
 
     private func temporaryLibrary() -> StyleLibrary {

@@ -844,9 +844,14 @@ public final class EditorController: NSObject {
         // A style change leaves list membership intact (role and list are orthogonal —
         // a bulleted heading is still bulleted), so carry any list forward.
         if storage.length == 0 {
+            let oldRole = (tv.typingAttributes[.lucerneStyleRole] as? String)
+                ?? model.body.first?.style ?? LucerneDocumentModel.defaultStyleRole
             let id = model.body.first?.id ?? IDGenerator.next("p")
             let list = ListItemCodec.decode(tv.typingAttributes[.lucerneList])
-            tv.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id, list: list)
+            var current = AttributedStringBuilder.typingAttributes(
+                role: oldRole, in: model, paragraphID: id, list: list)
+            for (key, value) in tv.typingAttributes { current[key] = value }
+            tv.typingAttributes = Self.restyledTypingAttributes(current, role: role, in: model)
             return
         }
         // Caret on the trailing empty paragraph (after the final newline): its
@@ -859,8 +864,12 @@ public final class EditorController: NSObject {
             let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
             let list = ListItemCodec.decode(tv.typingAttributes[.lucerneList])
             withUndo("Apply Style") {
-                tv.typingAttributes = AttributedStringBuilder.typingAttributes(
-                    role: role, in: model, paragraphID: id, list: list)
+                let oldRole = (tv.typingAttributes[.lucerneStyleRole] as? String)
+                    ?? LucerneDocumentModel.defaultStyleRole
+                var current = AttributedStringBuilder.typingAttributes(
+                    role: oldRole, in: model, paragraphID: id, list: list)
+                for (key, value) in tv.typingAttributes { current[key] = value }
+                tv.typingAttributes = Self.restyledTypingAttributes(current, role: role, in: model)
                 let term = NSRange(location: storage.length - 1, length: 1)
                 storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
                 storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
@@ -880,41 +889,16 @@ public final class EditorController: NSObject {
                 var cursor = paragraphRange.location
                 while cursor < NSMaxRange(paragraphRange) {
                     let single = ns.paragraphRange(for: NSRange(location: cursor, length: 0))
-                    let id = (storage.attribute(.lucerneParagraphID, at: single.location, effectiveRange: nil) as? String)
-                        ?? IDGenerator.next("p")
-                    var attrs = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
-                    // typingAttributes never carries an NSTextTableBlock or a page
-                    // break, so setAttributes would strip a cell out of its grid and
-                    // delete a forced break. Re-attach both structural attributes
-                    // (mirrors tableCellAttributes, which re-attaches the block).
-                    var restorePageBreak = false
-                    var restoreList: String? = nil
-                    if single.length > 0 {
-                        let existing = storage.attributes(at: single.location, effectiveRange: nil)
-                        if let oldPS = existing[.paragraphStyle] as? NSParagraphStyle, !oldPS.textBlocks.isEmpty {
-                            let ps = (attrs[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
-                                ?? NSMutableParagraphStyle()
-                            ps.textBlocks = oldPS.textBlocks
-                            attrs[.paragraphStyle] = ps
+                    let source = storage.attributedSubstring(from: single)
+                    if let rebuilt = Self.restyledParagraph(source, role: role, in: model) {
+                        rebuilt.enumerateAttributes(
+                            in: NSRange(location: 0, length: rebuilt.length), options: []
+                        ) { attrs, range, _ in
+                            storage.setAttributes(
+                                attrs,
+                                range: NSRange(location: single.location + range.location,
+                                               length: range.length))
                         }
-                        restorePageBreak = (existing[.lucernePageBreakBefore] as? Bool) == true
-                        restoreList = existing[.lucerneList] as? String
-                    }
-                    // A list item keeps its marker + hanging indent through a style
-                    // change: re-apply the list indent to the new role's paragraph style.
-                    if let restoreList, let item = ListItemCodec.decode(restoreList) {
-                        let ps = (attrs[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
-                            ?? NSMutableParagraphStyle()
-                        AttributedStringBuilder.applyListIndent(to: ps, level: item.level)
-                        attrs[.paragraphStyle] = ps
-                    }
-                    storage.setAttributes(attrs, range: single)
-                    if restorePageBreak {
-                        storage.addAttribute(.lucernePageBreakBefore, value: true,
-                                             range: NSRange(location: single.location, length: 1))
-                    }
-                    if let restoreList {
-                        storage.addAttribute(.lucerneList, value: restoreList, range: single)
                     }
                     if NSMaxRange(single) == cursor { break }
                     cursor = NSMaxRange(single)
@@ -922,6 +906,93 @@ public final class EditorController: NSObject {
             }
             storage.endEditing()
         }
+    }
+
+    /// Re-applies one paragraph through the normal model bridge: the reader captures
+    /// direct formatting as diffs against the old role, then the builder lays those
+    /// diffs over the new role. The original table block object is retained because
+    /// independently rebuilding one cell with a fresh NSTextTable would split its grid.
+    static func restyledParagraph(_ source: NSAttributedString, role: String,
+                                  in model: LucerneDocumentModel) -> NSAttributedString? {
+        guard source.length > 0 else { return nil }
+        let ns = source.string as NSString
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: 0, length: 0))
+        guard start == 0, end == ns.length,
+              var paragraph = AttributedStringReader.paragraphs(
+                  from: source, styles: model.styles).first else { return nil }
+
+        let probe = contentsEnd > 0 ? 0 : min(contentsEnd, source.length - 1)
+        let oldBlocks = (source.attribute(.paragraphStyle, at: probe,
+                                          effectiveRange: nil) as? NSParagraphStyle)?.textBlocks ?? []
+        let trailingKeys: [NSAttributedString.Key] = [
+            .lucerneTrailingParagraphID, .lucerneTrailingStyleRole, .lucerneTrailingList,
+        ]
+        var trailingValues: [NSAttributedString.Key: Any] = [:]
+        for key in trailingKeys {
+            if let value = source.attribute(key, at: source.length - 1,
+                                            effectiveRange: nil) {
+                trailingValues[key] = value
+            }
+        }
+
+        paragraph.style = role
+        var temp = model
+        temp.objects = []
+        let terminatorLength = end - contentsEnd
+        if terminatorLength > 0 {
+            let sentinel = Paragraph(id: IDGenerator.next("p"), style: role,
+                                     runs: [Run(text: "x")])
+            temp.body = [paragraph, sentinel]
+        } else {
+            temp.body = [paragraph]
+        }
+        let canonical = AttributedStringBuilder.attributedString(for: temp)
+        let canonicalLength = contentsEnd + (terminatorLength > 0 ? 1 : 0)
+        guard canonical.length >= canonicalLength,
+              (canonical.string as NSString).substring(to: contentsEnd)
+                == ns.substring(to: contentsEnd) else { return nil }
+
+        let result = NSMutableAttributedString(attributedString: source)
+        if contentsEnd > 0 {
+            canonical.enumerateAttributes(
+                in: NSRange(location: 0, length: contentsEnd), options: []
+            ) { attrs, range, _ in
+                result.setAttributes(attrs, range: range)
+            }
+        }
+        if terminatorLength > 0 {
+            let attrs = canonical.attributes(at: contentsEnd, effectiveRange: nil)
+            result.setAttributes(attrs, range: NSRange(location: contentsEnd,
+                                                        length: terminatorLength))
+            for (key, value) in trailingValues {
+                result.addAttribute(key, value: value,
+                                    range: NSRange(location: contentsEnd,
+                                                   length: terminatorLength))
+            }
+        }
+        if !oldBlocks.isEmpty {
+            result.enumerateAttribute(.paragraphStyle,
+                                      in: NSRange(location: 0, length: result.length),
+                                      options: []) { value, range, _ in
+                let ps = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                    ?? NSMutableParagraphStyle()
+                ps.textBlocks = oldBlocks
+                result.addAttribute(.paragraphStyle, value: ps, range: range)
+            }
+        }
+        return result
+    }
+
+    private static func restyledTypingAttributes(
+        _ attributes: [NSAttributedString.Key: Any], role: String,
+        in model: LucerneDocumentModel
+    ) -> [NSAttributedString.Key: Any] {
+        let probe = NSAttributedString(string: "x", attributes: attributes)
+        return restyledParagraph(probe, role: role, in: model)?
+            .attributes(at: 0, effectiveRange: nil)
+            ?? attributes
     }
 
     // MARK: - Markdown block shortcuts
@@ -1585,8 +1656,8 @@ public final class EditorController: NSObject {
         return tableStart
     }
 
-    /// Reads a table's grid out of the storage as a rectangular array of cell content
-    /// (single paragraph per cell — multi-paragraph cells collapse to their first),
+    /// Reads a table's grid out of the storage as a rectangular array of cell content,
+    /// preserving every consecutive attributed paragraph in a multi-paragraph cell,
     /// plus each real cell's span (positions covered by a span are nil in `spans`).
     ///
     /// `nearCharacterIndex` (the caret, when known) avoids scanning the whole document
@@ -1595,7 +1666,8 @@ public final class EditorController: NSObject {
     /// there. Without a hint (or if the hint isn't in this table) we scan from 0.
     private func parseTable(containing table: NSTextTable, nearCharacterIndex: Int? = nil) -> ParsedTable? {
         let ns = textStorage.string as NSString
-        var contentByCell: [String: NSAttributedString] = [:]
+        var contentByCell: [String: NSMutableAttributedString] = [:]
+        var terminatorLengthByCell: [String: Int] = [:]
         var spanByCell: [String: (Int, Int)] = [:]
         var widthByColumn: [Int: Double] = [:]
         var maxRow = 0, maxColumn = 0
@@ -1611,11 +1683,15 @@ public final class EditorController: NSObject {
                 if rangeStart < 0 { rangeStart = start }
                 rangeEnd = end
                 let key = "\(block.startingRow),\(block.startingColumn)"
-                if contentByCell[key] == nil {
-                    contentByCell[key] = textStorage.attributedSubstring(
-                        from: NSRange(location: start, length: contentsEnd - start))
+                let paragraph = textStorage.attributedSubstring(
+                    from: NSRange(location: start, length: end - start))
+                if let existing = contentByCell[key] {
+                    existing.append(paragraph)
+                } else {
+                    contentByCell[key] = NSMutableAttributedString(attributedString: paragraph)
                     spanByCell[key] = (max(1, block.rowSpan), max(1, block.columnSpan))
                 }
+                terminatorLengthByCell[key] = end - contentsEnd
                 if widthByColumn[block.startingColumn] == nil,
                    block.valueType(for: .width) == .percentageValueType {
                     let w = Double(block.value(for: .width))
@@ -1630,9 +1706,19 @@ public final class EditorController: NSObject {
             location = end
         }
         guard rangeStart >= 0 else { return nil }
+        var finalizedContent: [String: NSAttributedString] = [:]
+        for (key, content) in contentByCell {
+            let terminatorLength = terminatorLengthByCell[key] ?? 0
+            if terminatorLength > 0, terminatorLength <= content.length {
+                content.deleteCharacters(
+                    in: NSRange(location: content.length - terminatorLength,
+                                length: terminatorLength))
+            }
+            finalizedContent[key] = NSAttributedString(attributedString: content)
+        }
         let rows = maxRow + 1, columns = maxColumn + 1
         let grid = (0 ..< rows).map { r in
-            (0 ..< columns).map { c in contentByCell["\(r),\(c)"] ?? NSAttributedString(string: "") }
+            (0 ..< columns).map { c in finalizedContent["\(r),\(c)"] ?? NSAttributedString(string: "") }
         }
         var spans = Array(repeating: Array<(Int, Int)?>(repeating: nil, count: columns), count: rows)
         for (key, span) in spanByCell {
