@@ -5,6 +5,13 @@ import CoreGraphics
 // pure functions and unit-tested. Everything is in points, origin top-left, y down
 // (the page-view and text-container convention; both are flipped).
 public struct PageMetrics: Equatable {
+    /// DIN 5008 fold guides are measured from the top edge, not derived from the
+    /// page height. 1 point is 1/72 inch and 1 inch is 25.4 millimetres.
+    public static let din5008FoldMarkOffsetsFromTop: [CGFloat] = {
+        let pointsPerMillimetre: CGFloat = 72 / 25.4
+        return [105, 210].map { CGFloat($0) * pointsPerMillimetre }
+    }()
+
     public let pageSize: CGSize
     public let marginTop: CGFloat
     public let marginLeft: CGFloat
