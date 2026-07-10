@@ -324,7 +324,7 @@ be duplicated in the paragraph's `runs` by a conforming writer.
 | `list` | string | REQUIRED | — | Non-empty opaque id grouping one list's items. |
 | `ordered` | boolean | REQUIRED | — | `true` for numbered items; `false` for bullets. |
 | `marker` | string | REQUIRED | — | Marker format, constrained by `ordered` below. |
-| `level` | integer | optional | `0` | Zero-based nesting depth; **MUST** be nonnegative. |
+| `level` | integer | optional | `0` | Zero-based nesting depth from `0` through `8`. |
 | `start` | integer | optional | `1` | Positive initial number when an ordered counter first starts at this level. Has no effect on unordered items. |
 
 For `ordered: false`, `marker` **MUST** be one of `"disc"`, `"circle"`,
@@ -632,7 +632,7 @@ prose in §7 is authoritative over the schema here).
         "list": { "type": "string", "minLength": 1 },
         "ordered": { "type": "boolean" },
         "marker": { "type": "string" },
-        "level": { "type": "integer", "minimum": 0 },
+        "level": { "type": "integer", "minimum": 0, "maximum": 8 },
         "start": { "type": "integer", "minimum": 1 }
       },
       "allOf": [

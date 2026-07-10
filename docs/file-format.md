@@ -146,7 +146,7 @@ The marker shown beside the paragraph is derived and is never inserted into `run
 | `list` | required | Non-empty opaque id shared by items in one list. |
 | `ordered` | required | `true` for numbering; `false` for bullets. |
 | `marker` | required | Ordered: `decimal`, `lower-alpha`, `upper-alpha`, `lower-roman`, or `upper-roman`. Unordered: `disc`, `circle`, `square`, or `dash`. |
-| `level` | optional | Zero-based nesting depth; default `0`. |
+| `level` | optional | Zero-based nesting depth from `0` through `8`; default `0`. |
 | `start` | optional | Positive starting number for the first ordered item whose counter begins at that level; default `1`. Ignored for unordered items. |
 
 A list is the **maximal contiguous run** of body paragraphs carrying the same

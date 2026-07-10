@@ -13,11 +13,11 @@ magnitude, and interaction quality still require on-device QA.
 Effort uses **S** (hours to about one day), **M** (roughly 2-5 days), and **L**
 (one or more weeks). Risk describes data-loss or architectural danger, not effort.
 
-## Pending companion PRs (review/CI)
+## Pending companion PRs (CI green, awaiting review/merge)
 
-These PRs are open and remain pending review/CI acceptance. They are not described
-as merged or completed, and their fixes are deliberately not duplicated in the
-unresolved backlog below.
+These PRs are open and their macOS build-and-test checks pass. They remain pending
+review/merge, are not described as completed, and their fixes are deliberately not
+duplicated in the unresolved backlog below.
 
 | PR | Findings addressed | Scope boundary |
 |---|---|---|

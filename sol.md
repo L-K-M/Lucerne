@@ -19,10 +19,10 @@ responder-chain details, VoiceOver behavior, and performance magnitude still nee
 on-device Mac QA. Current GitHub CI and the v0.5.0 release workflow are green; that
 does not substitute for interactive testing.
 
-## Pending companion PRs (review/CI)
+## Pending companion PRs (CI green, awaiting review/merge)
 
-The following companion PRs implement bounded findings from this audit. They are
-open and pending review/CI acceptance; they are not described as merged or
+The following companion PRs implement bounded findings from this audit. Their macOS
+build-and-test checks pass; they remain open and are not described as merged or
 completed. [`ANALYSIS.md`](ANALYSIS.md) keeps them separate from the unresolved live
 backlog so their fixes are not duplicated as future work.
 
