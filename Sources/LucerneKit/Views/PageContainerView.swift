@@ -7,6 +7,7 @@ import AppKit
 public final class PageContainerView: NSView {
 
     public let pageIndex: Int
+    private var shadowPathBounds = CGRect.null
 
     // Margins (points) — the bands where header/footer text is drawn.
     public var marginTop: CGFloat = 72
@@ -44,10 +45,22 @@ public final class PageContainerView: NSView {
             layer.shadowRadius = 12
             layer.shadowOffset = CGSize(width: 0, height: -2)
         }
+        updateShadowPath()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    public override func layout() {
+        super.layout()
+        updateShadowPath()
+    }
+
+    private func updateShadowPath() {
+        guard bounds != shadowPathBounds, let layer else { return }
+        layer.shadowPath = CGPath(rect: bounds, transform: nil)
+        shadowPathBounds = bounds
+    }
 
     public override func draw(_ dirtyRect: NSRect) {
         NSColor.white.setFill()

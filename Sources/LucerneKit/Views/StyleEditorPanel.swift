@@ -105,7 +105,10 @@ final class StyleEditorPanel: NSObject {
     /// Opens (or retargets) the panel. `library: true` edits the library's copy.
     func open(key: String, library: Bool, focusName: Bool = false) {
         let newTarget: Target = library ? .library(key: key) : .document(key: key)
-        if target != newTarget { sealUndoSession() }
+        if target != newTarget {
+            flushPendingColorEdit()
+            sealUndoSession()
+        }
         target = newTarget
         let panel = ensurePanel()
         installObservers()
@@ -187,6 +190,7 @@ final class StyleEditorPanel: NSObject {
     /// which copy is edited (§6.5).
     private func retarget() {
         guard isOpen else { return }
+        flushPendingColorEdit()
         sealUndoSession()
         reloadFromTarget()
     }
@@ -752,12 +756,18 @@ final class StyleEditorPanel: NSObject {
         guard observers.isEmpty else { return }
         let center = NotificationCenter.default
         observers.append(center.addObserver(
+            forName: NSWindow.willResignMainNotification, object: nil, queue: .main) { [weak self] note in
+                guard (note.object as? NSWindow)?.delegate is DocumentWindowController else { return }
+                self?.flushPendingColorEdit()
+            })
+        observers.append(center.addObserver(
             forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.retarget()
             })
         observers.append(center.addObserver(
             forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
                 guard (note.object as? NSWindow)?.delegate is DocumentWindowController else { return }
+                self?.flushPendingColorEdit()
                 DispatchQueue.main.async { self?.retarget() }
             })
         observers.append(center.addObserver(

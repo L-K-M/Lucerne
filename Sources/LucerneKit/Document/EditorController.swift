@@ -459,8 +459,12 @@ public final class EditorController: NSObject {
 
         let maxW = metrics.contentSize.width * 0.5
         let nativeSize = image?.size ?? .zero
-        let w = min(nativeSize.width > 0 ? nativeSize.width : maxW, maxW)
-        let h = nativeSize.width > 0 ? nativeSize.height * (w / nativeSize.width) : w * 0.75
+        let fallbackSize = CGSize(width: maxW, height: maxW * 0.75)
+        let sourceSize = nativeSize.width > 0 && nativeSize.height > 0 ? nativeSize : fallbackSize
+        let fittedSize = aspectFitSize(
+            sourceSize, within: CGSize(width: maxW, height: metrics.pageSize.height))
+        let w = fittedSize.width
+        let h = fittedSize.height
         let origin: CGPoint = center.map { CGPoint(x: $0.x - w / 2, y: $0.y - h / 2) }
             ?? CGPoint(x: metrics.marginLeft + 24, y: metrics.marginTop + 24)
         let clamped = metrics.clampObjectFrame(CGRect(x: origin.x, y: origin.y, width: w, height: h))
