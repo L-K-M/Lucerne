@@ -148,11 +148,11 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     // MARK: - PDF export
 
     @objc public func exportPDF(_ sender: Any?) {
-        export(data: { $0.makePDFData() }, contentType: .pdf, fileExtension: "pdf")
+        export(data: { try $0.makePDFData() }, contentType: .pdf, fileExtension: "pdf")
     }
 
     @objc public func exportRTF(_ sender: Any?) {
-        export(data: { $0.makeRTFData() }, contentType: .rtf, fileExtension: "rtf")
+        export(data: { try $0.makeRTFData() }, contentType: .rtf, fileExtension: "rtf")
     }
 
     @objc public func exportMarkdown(_ sender: Any?) {
@@ -163,12 +163,12 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     @objc public func exportDOCX(_ sender: Any?) {
         // The DOCX UTI isn't OS-registered when run unbundled, so fall back to a
         // generic data type; the "docx" extension is still forced by `export`.
-        export(data: { $0.makeDOCXData() },
-               contentType: UTType("org.openxmlformats.wordprocessingml.document") ?? .data,
-               fileExtension: "docx")
+        export(data: { try $0.makeDOCXData() },
+                contentType: UTType("org.openxmlformats.wordprocessingml.document") ?? .data,
+                fileExtension: "docx")
     }
 
-    private func export(data make: @escaping (EditorController) -> Data,
+    private func export(data make: @escaping (EditorController) throws -> Data,
                         contentType: UTType, fileExtension ext: String) {
         guard let editor, let window = windowControllers.first?.window else { return }
         let panel = NSSavePanel()
@@ -178,7 +178,8 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
             guard response == .OK, let url = panel.url else { return }
             do {
                 // Atomic so a disk-full mid-write can't truncate an existing export (2.7).
-                try make(editor).write(to: url, options: .atomic)
+                let data = try make(editor)
+                try data.write(to: url, options: .atomic)
             } catch {
                 NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
             }
