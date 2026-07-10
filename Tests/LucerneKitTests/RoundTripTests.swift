@@ -89,6 +89,23 @@ final class MiniZipTests: XCTestCase {
 
 final class LuceArchiveRoundTripTests: XCTestCase {
 
+    func testSampleDocumentSavesWithValidWrappedImage() throws {
+        let document = LucerneDocument()
+        document.loadSampleContent()
+
+        let packaged = try document.data(ofType: LucerneUTI.document)
+        let contents = try LuceArchive.read(packaged)
+        let object = try XCTUnwrap(contents.model.objects.first)
+        let source = try XCTUnwrap(object.src)
+        let imageBytes = try XCTUnwrap(contents.images[source])
+        let image = try XCTUnwrap(NSBitmapImageRep(data: imageBytes))
+
+        XCTAssertEqual(object.wrap, "rectangular")
+        XCTAssertEqual(object.standoff, 12)
+        XCTAssertEqual(image.pixelsWide, 120)
+        XCTAssertEqual(image.pixelsHigh, 80)
+    }
+
     func testPackageRoundTripsModelAndImages() throws {
         let model = DefaultDocuments.sampleLetter()
         let imageBytes = Data((0 ..< 512).map { UInt8(($0 * 7) % 256) })

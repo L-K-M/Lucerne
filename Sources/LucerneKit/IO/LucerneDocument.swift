@@ -31,6 +31,7 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     /// Used for the first-launch demo document (see AppDelegate).
     public func loadSampleContent() {
         pendingModel = DefaultDocuments.sampleLetter()
+        pendingImages = DefaultDocuments.sampleLetterImages()
         pendingModel.styles = StyleLibrary.shared.seededStyles()
     }
 
