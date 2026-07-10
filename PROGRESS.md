@@ -6,8 +6,9 @@ Live checklist for the Avenue A build. Updated as work lands. Legend:
 > **Verification:** authored on Linux (no Swift toolchain). Compilation is checked
 > by the macOS CI workflow, not locally. **The macOS CI build + unit tests are
 > green** as of the latest commit, so "done" means *implemented, compiling, and
-> unit-tested* — pending interactive on-device QA on a Mac for the things tests
-> can't cover (live reflow feel, ruler dragging, pagination across many pages).
+> unit-tested where coverage exists* — pending interactive on-device QA on a Mac for
+> the things tests can't cover (live reflow feel, ruler dragging, pagination across
+> many pages).
 
 ## Current state at a glance
 
@@ -18,13 +19,15 @@ the defining feature — **free image placement with live text reflow** around
 rectangular wrap, including dragging images across page boundaries. On top of those:
 page zoom (incl. Fit Page / Fit Width), forced page breaks, running headers/footers, a
 heading navigator, a generated table of contents, find & replace, spell checking, a
-live word count, `.luce` (ZIP) read/write with Markdown version history, PDF + lossy
-RTF export, AppleScript, a welcome screen, an update checker, and crash/draft recovery.
+live word count, editable tables, nested ordered/unordered lists, `.luce` (ZIP)
+read/write with Markdown version history and GFM table/list rendering, PDF + lossy
+RTF/DOCX export, AppleScript, a welcome screen, an update checker, and crash/draft
+recovery.
 
-What's **not** done is tracked in Milestone 3 below and, with design notes and
-effort estimates, in [`docs/roadmap.md`](docs/roadmap.md) — chiefly tables, lists,
-cross-page selection, irregular wrap, dotted ToC leaders, and in-place header/footer
-editing. The whole app still needs on-device QA (CI only verifies compile + units).
+What's **not** done is tracked in Milestone 3 below and, canonically, in
+[`ANALYSIS.md`](ANALYSIS.md) — chiefly cross-page selection, irregular wrap, image
+overhang, in-place header/footer editing, table/list polish, and accessibility. The
+whole app still needs on-device QA (CI only verifies build + automated tests).
 
 ## Milestone 0 — scaffolding
 - [x] Package manifest (`Package.swift`), executable + library + test targets
@@ -100,16 +103,18 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [x] `content.md` derivation (write-only escape hatch)
 - [x] PDF export
 - [x] RTF lossy export (text/formatting survive; free-placed images flatten out)
-- [ ] DOCX lossy export
+- [x] DOCX lossy export (same interchange caveat as RTF)
+- [x] Markdown export/copy, including GFM pipe tables and nested list structure
 
 ## Milestone 3 — polish (later)
-> Design notes + effort estimates for these (and tables/lists) are in
-> [`docs/roadmap.md`](docs/roadmap.md).
+> Design notes + effort estimates for these and remaining table/list polish are in
+> [`ANALYSIS.md`](ANALYSIS.md) and [`docs/roadmap.md`](docs/roadmap.md).
 - [ ] Cross-page text selection
 - [ ] Image overhang at page boundary (currently clipped)
 - [ ] Irregular wrap from image alpha
-- [ ] Lists (numbering / nesting)
-- [ ] Document inspector (page size, margins) UI
+- [x] Lists — ordered/unordered markers, numbering starts, nesting, Return/Tab
+  editing, Markdown shortcuts, menus, toolbar chooser, and floating palette
+- [x] Page/document setup UI for paper size, margins, and fold marks
 - [x] Settings (⌘,) — modeless window with the ruler unit and update-check
   preferences (`PreferencesWindowController` / `Support/Preferences.swift`); the
   former "Preferences" placeholder
@@ -131,6 +136,12 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [x] **Update checker** — Check for Updates… in the app menu plus an "Automatically
   check for updates" toggle in Settings (`Updates/UpdateChecker`), comparing the
   bundled version against the latest GitHub release
+- [x] **Tables** — editable `NSTextTable` grids with row/column edits, cell
+  navigation/selection/merging, ruler resizing, flat-model round trips, and GFM
+  Markdown export. Row splitting and merge-preserving structure edits remain limited.
+- [x] **Lists** — ordered and unordered lists with nine marker formats, nesting,
+  live derived numbering, continuation/outdent gestures, `.luce` round trips, and
+  tight nested Markdown export. RTF/DOCX currently omit custom-drawn markers.
 
 ## Tests (run on macOS CI)
 - [x] Model JSON round-trip, geometry, Markdown export (`ModelTests`)
@@ -138,6 +149,8 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [x] `MiniZip` stored round-trip + non-zip rejection
 - [x] `.luce` package round-trip (model + image bytes + content.md present)
 - [x] `PageMetrics` exclusion-rect + clamp geometry
+- [x] List numbering/marker resolution, model-text round trips, Markdown output,
+  shortcuts, and toolbar item wiring
 
 ## On-device feedback (round 6)
 - [x] Ruler now spans the full window width (fixes the side rendering discontinuity);
@@ -153,7 +166,8 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 - [x] **Printed table of contents** (Insert ▸ Table of Contents) — entries with a
   **dotted leader** to a right-aligned page number (converged via relayout),
   persisted as a `toc` paragraph style; re-run to update
-- [ ] Editable header/footer click-zones, tables — `docs/roadmap.md`
+- [ ] Editable header/footer click-zones and remaining table polish —
+  `ANALYSIS.md` / `docs/roadmap.md`
 
 ## Design feedback (round 16)
 - [x] **Menu icons on the high-traffic commands** — a restrained set of template
@@ -299,8 +313,8 @@ editing. The whole app still needs on-device QA (CI only verifies compile + unit
 ## On-device feedback (round 8)
 - [x] **Tables** (Insert ▸ Table…) via `NSTextTable` — a rows×columns grid of
   editable cells that flows and paginates with the text. Cells round-trip to the
-  model as `Paragraph.cell` (a flat list, no nested block type). v1: rectangular
-  cells, no Tab-between-cells navigation or column resize yet
+  model as `Paragraph.cell` (a flat list, no nested block type). Later rounds added
+  Tab/arrow navigation, structural editing, merging, and column resizing.
 - [x] Formatting with **no selection** now works: a toolbar/menu command always has
   a target text view, sets the typing attributes, and returns focus to the page so
   the next typed text picks up the change

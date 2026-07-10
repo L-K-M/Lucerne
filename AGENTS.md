@@ -13,9 +13,9 @@ every subsequent edit. This is implemented the way the platform intends — via
 implements **Avenue A**).
 
 > **Status:** the four core areas below are implemented and the macOS CI build +
-> unit tests are green; the app is in interactive on-device QA. See
+> unit tests are green; interactive on-device QA remains required. See
 > [`PROGRESS.md`](PROGRESS.md) for the live feature checklist, [`AGENTS.md`](AGENTS.md)
-> for the engineering guide, and [`docs/roadmap.md`](docs/roadmap.md) for what's next.
+> for the engineering guide, and [`ANALYSIS.md`](ANALYSIS.md) for canonical forward work.
 
 ---
 
@@ -34,8 +34,9 @@ implements **Avenue A**).
 Built on top of those four pillars: named paragraph styles, forced page breaks,
 page zoom, running **headers & footers** with page-number / date / title tokens, a
 **heading navigator** sidebar, a generated **table of contents**, PDF and (lossy)
-RTF export, AppleScript scripting, a welcome screen with recent documents, and
-crash/draft recovery. See [`PROGRESS.md`](PROGRESS.md) for the full list.
+RTF/DOCX export, editable tables, ordered/unordered nested lists, Markdown table/list
+export, AppleScript scripting, a welcome screen with recent documents, and crash/
+draft recovery. See [`PROGRESS.md`](PROGRESS.md) for the full list.
 
 ## What this is
 
@@ -143,6 +144,10 @@ on these views.
   descriptor; `AttributedStringBuilder` regroups same-`table` cells into one shared
   `NSTextTable` (deriving the column count) and the reader maps the blocks back. The
   body stays a flat paragraph list — no nested block type in the model or file.
+- **Lists** use an optional `Paragraph.list` descriptor independent of the paragraph
+  style. Consecutive paragraphs with the same list id form a list; `ListMarkers`
+  derives bullets/numbers by level, and `ListMarkerLayoutManager` draws them in a
+  hanging-indent gutter without inserting marker text into the canonical body.
 - The structural features that need page numbers lean on the shared
   `EditorController.pageNumber(forCharacterAt:)` glyph→page primitive.
 
@@ -187,11 +192,15 @@ on these views.
   `cell.width`) — all via Format ▸ Table or the context menu. Deferred: page-boundary
   splitting relies on TextKit row-breaking (a single row taller than a page can't
   split); structural row/column edits reset merged cells (they rebuild a full grid);
-  cells are assumed single-paragraph. **Lists** aren't implemented yet (`NSTextList`).
-  See `docs/roadmap.md`.
+  the current v0.5 structural rebuild assumes one paragraph per cell (pending PR #44
+  addresses preservation). **Lists** are shipped through custom marker drawing rather
+  than `NSTextList`; markers are preserved in `.luce`, Markdown, PDF, and print, but
+  RTF/DOCX currently omit them, fixed gutters can crowd large labels, and marker
+  accessibility/performance need follow-up. See `ANALYSIS.md` and `docs/roadmap.md`.
 
-Future direction lives in [`docs/roadmap.md`](docs/roadmap.md); the live feature
-checklist is [`PROGRESS.md`](PROGRESS.md).
+Canonical forward work lives in [`ANALYSIS.md`](ANALYSIS.md), the concise product
+summary is [`docs/roadmap.md`](docs/roadmap.md), and the shipped-feature checklist is
+[`PROGRESS.md`](PROGRESS.md).
 
 ## Adding a feature — checklist
 
@@ -203,3 +212,4 @@ checklist is [`PROGRESS.md`](PROGRESS.md).
 2. If it affects layout, add/adjust a geometry test in `Tests/`.
 3. Update `PROGRESS.md` (and this file if architecture shifts).
 4. On a Mac: `swift build && swift test`. Otherwise rely on CI.
+5. Update `ANALYSIS.md` when work resolves, adds, or reprioritizes live backlog.

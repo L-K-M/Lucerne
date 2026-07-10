@@ -468,8 +468,9 @@ plain JSON with no comments.**
   rectangular wrap is solid.
 - *Color and font models.* Assume hex strings (`"#1a1a1a"`) and PostScript font
   names for now; revisit if you need font fallback or color spaces.
-- *Lists.* `listItem` covers the markdown round-trip, but real list numbering/nesting
-  (ordered vs unordered, indent levels) is unspecified here.
+- *Lists in this historical sketch.* The original `listItem` role did not specify
+  numbering/nesting. Lucerne v0.5 now ships `Paragraph.list`; the current contract is
+  in `docs/luce-format-spec.md`, which supersedes this planning sketch.
 - *IDs.* Stable per-paragraph/object IDs are assumed (needed for paragraph anchoring
   and undo); generation scheme is an implementation detail.
 

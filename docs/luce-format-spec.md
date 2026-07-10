@@ -210,8 +210,8 @@ concatenation of paragraphs in order, separated by paragraph breaks.
 > nested block type. Generated regions such as a printed table of contents are also
 > just **ordinary paragraphs** — a writer MAY group them under a dedicated style role
 > (the reference app uses `"toc"`), but they carry no special semantics, and a reader
-> treats an unrecognized role per §5 (fall back to `body`). Lists remain out of scope
-> for version 1 (see the project roadmap).
+> treats an unrecognized role per §5 (fall back to `body`). Lists likewise keep the
+> body flat through an optional paragraph `list` descriptor (§6.8).
 
 ### 6.1 Paragraph object
 
@@ -228,6 +228,7 @@ concatenation of paragraphs in order, separated by paragraph breaks.
 | `spaceAfter` | number | optional | Override of the style's `spaceAfter` (points). |
 | `pageBreakBefore` | boolean | optional | When `true`, this paragraph starts on a new page (a forced page break precedes it). Default `false`. |
 | `cell` | object | optional | Marks this paragraph as a table cell (§6.7). |
+| `list` | object | optional | Marks this paragraph as a list item (§6.8). Independent of `style`. |
 
 `indent.firstLine` is relative to the effective left indent; the first line begins
 at `leftIndent + firstLine` from the left margin. A negative `firstLine` yields a
@@ -310,6 +311,58 @@ order. A reader that does not implement tables **MUST** still render each cell
 paragraph's text as an ordinary paragraph (losing only the grid layout), per the
 "ignore what you don't understand" rule (§3).
 
+### 6.8 List items
+
+A paragraph **MAY** be a list item by carrying a `list` object. List membership is
+orthogonal to the paragraph's named `style`: applying a list does not imply the
+legacy `markdown: "li"` style, and any named style can be used on a list item. The
+visible marker is derived from the descriptor and neighboring items; it **MUST NOT**
+be duplicated in the paragraph's `runs` by a conforming writer.
+
+| Member | Type | Presence | Default | Notes |
+|---|---|---|---|---|
+| `list` | string | REQUIRED | — | Non-empty opaque id grouping one list's items. |
+| `ordered` | boolean | REQUIRED | — | `true` for numbered items; `false` for bullets. |
+| `marker` | string | REQUIRED | — | Marker format, constrained by `ordered` below. |
+| `level` | integer | optional | `0` | Zero-based nesting depth; **MUST** be nonnegative. |
+| `start` | integer | optional | `1` | Positive initial number when an ordered counter first starts at this level. Has no effect on unordered items. |
+
+For `ordered: false`, `marker` **MUST** be one of `"disc"`, `"circle"`,
+`"square"`, or `"dash"`. For `ordered: true`, it **MUST** be one of
+`"decimal"`, `"lower-alpha"`, `"upper-alpha"`, `"lower-roman"`, or
+`"upper-roman"`. The reference reader tolerates an unknown/mismatched marker by
+using the depth-based disc/circle/square cycle for unordered items and decimal for
+ordered items, but conforming writers **MUST NOT** rely on this repair behavior.
+The unordered marker glyphs are `disc` = `•`, `circle` = `◦`, `square` = `▪`, and
+`dash` = `–`.
+
+A logical list is the **maximal contiguous run** of body paragraphs whose
+`list.list` value is the same. A paragraph with no `list`, a paragraph with a
+different id ends the run. Reusing an id after such a boundary starts a new logical
+list and resets all counters. The reference editor does not apply list metadata to
+table cells. A writer **SHOULD NOT** put both `cell` and `list` on one paragraph; if
+both occur, table semantics take precedence for Markdown (§8) and a reader **MAY**
+ignore `list` for that paragraph.
+
+Within a run, counters are maintained independently by `level`:
+
+1. The first ordered item encountered at a level uses its positive `start`, or `1`
+   when `start` is absent; later ordered items at that level increment the counter.
+2. Descending to a deeper level creates fresh counters. Returning to a shallower
+   level resumes that level's counter and discards counters for deeper levels.
+3. An unordered item does not increment or reset the ordered counter at its level.
+   Thus an ordered item after an intervening bullet in the same run continues the
+   earlier number; if no ordered item has yet appeared at that level, it starts at
+   its own `start` or `1`.
+4. Items in one run **MAY** vary `ordered`, `marker`, and `level`. `start` has an
+   effect only when that item's ordered counter has not yet started.
+
+Ordered alpha labels use bijective base 26 (`a`...`z`, `aa`...), and Roman labels
+are defined for 1 through 3999; the reference renderer falls back to decimal outside
+that Roman range. Rendered ordered labels carry a trailing period. The reference
+layout derives a 24-point hanging-indent step per level, but that geometry is
+presentational and not part of the file contract.
+
 ## 7. `objects` — placed objects (decision D2 + free placement)
 
 `objects` is an array of **placed object** objects. Version 1 defines the image
@@ -369,8 +422,10 @@ This section is **informative** — `content.md` is a recovery convenience, and 
 writer MAY format it differently — but the following describes the reference
 derivation so tools can produce comparable output.
 
-1. Each body paragraph becomes one Markdown block; blocks are separated by one
-   blank line; the file ends with a trailing newline.
+1. Body paragraphs are walked in order. Ordinary paragraphs become Markdown blocks;
+   consecutive table cells (§6.7) or list items (§6.8) are grouped as described
+   below. Top-level blocks are separated by one blank line and the file ends with a
+   trailing newline.
 2. The block prefix is chosen by the paragraph's style `markdown` hint:
    `h1` → `# `, `h2` → `## `, `h3` → `### `, `h4` → `#### `, `li` → `- `,
    `blockquote` → `> `, `code` → four leading spaces (an indented code block),
@@ -407,6 +462,16 @@ derivation so tools can produce comparable output.
    four or more leading spaces, or a lone `---`/`===` — the leading marker is
    backslash-escaped (leading indentation is trimmed to three spaces) so the text
    round-trips as prose. This is in addition to item 4's inline escaping.
+9. A maximal contiguous same-id list run (§6.8) is emitted as one **tight** Markdown
+   list: no blank line separates its items, and a different adjacent list id begins
+   a new block separated by a blank line. Each level adds four leading spaces.
+   Unordered markers normalize to `- `. Ordered markers use the resolved raw number
+   followed by `. `; alpha and Roman on-page markers therefore become decimal in
+   Markdown, whose portable list syntax cannot express those formats. `start` and
+   per-level continuation are honored through §6.8's counter rules. Run-level inline
+   emphasis and escaping still apply. A paragraph with both `cell` and `list` joins
+   the table, not a list. A paragraph with no `list` but a style whose Markdown hint
+   is `li` retains item 2's legacy `- ` block behavior.
 
 ## 9. Versioning and migration
 
@@ -422,10 +487,25 @@ derivation so tools can produce comparable output.
   file or open it best-effort with a clear warning; it **MUST NOT** silently
   discard data it cannot represent on save.
 
+### 9.1 Version-1 list compatibility caveat
+
+Lucerne v0.5 added the optional paragraph `list` member (§6.8) while continuing to
+write `formatVersion: 1`. This follows the additive-member rule above, but exposes a
+practical downgrade hazard: pre-v0.5 version-1 readers can ignore `list`, and writers
+that do not preserve unknown members can then remove the metadata on save. Such a
+writer still recovers the paragraph text, but loses list identity, nesting, marker
+format, and numbering starts.
+
+A user or tool **SHOULD NOT** save a list-bearing v1 document through a pre-v0.5
+writer unless that writer preserves unknown JSON. Future semantic extensions must
+resolve version/capability signaling and unknown-field preservation before using the
+same additive pattern again. This caveat documents shipped v0.5 behavior and does
+not change `formatVersion`.
+
 ## 10. Conformance
 
 - A **conformant reader** MUST: open the ZIP container (§2), parse `document.json`
-  (§3) including the inheritance/default rules (§5–§7), honor authoritative page
+  (§3) including the inheritance/default/list rules (§5–§7), honor authoritative page
   dimensions (§4.2), support STORED entries (§2.2), tolerate unknown
   members/entries/object types, and never treat `content.md` as authoritative.
 - A **conformant writer** MUST: produce a valid ZIP containing a root
@@ -529,6 +609,7 @@ prose in §7 is authoritative over the schema here).
         "spaceAfter": { "type": "number" },
         "pageBreakBefore": { "type": "boolean" },
         "cell": { "$ref": "#/$defs/cell" },
+        "list": { "$ref": "#/$defs/listItem" },
         "runs": { "type": "array", "items": { "$ref": "#/$defs/run" } }
       }
     },
@@ -543,6 +624,33 @@ prose in §7 is authoritative over the schema here).
         "columnSpan": { "type": "integer", "minimum": 1 },
         "width": { "type": "number", "exclusiveMinimum": 0 }
       }
+    },
+    "listItem": {
+      "type": "object",
+      "required": ["list", "ordered", "marker"],
+      "properties": {
+        "list": { "type": "string", "minLength": 1 },
+        "ordered": { "type": "boolean" },
+        "marker": { "type": "string" },
+        "level": { "type": "integer", "minimum": 0 },
+        "start": { "type": "integer", "minimum": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "ordered": { "const": true } },
+                  "required": ["ordered"] },
+          "then": { "properties": { "marker": {
+            "enum": ["decimal", "lower-alpha", "upper-alpha", "lower-roman", "upper-roman"]
+          } } }
+        },
+        {
+          "if": { "properties": { "ordered": { "const": false } },
+                  "required": ["ordered"] },
+          "then": { "properties": { "marker": {
+            "enum": ["disc", "circle", "square", "dash"]
+          } } }
+        }
+      ]
     },
     "indent": {
       "type": "object",
@@ -703,6 +811,8 @@ absent from the Markdown — they live in `document.json`.)
 | object `z` | `0` |
 | run/style `bold`, `italic`, `underline` | `false` |
 | paragraph `pageBreakBefore` | `false` (absent) |
+| list `level` | `0` |
+| ordered-list `start` | `1` when that level's counter first starts |
 | effective `font` | `"Helvetica"` |
 | effective `size` | `12` |
 | effective `color` | `"#000000"` |
@@ -716,5 +826,7 @@ absent from the Markdown — they live in `document.json`.)
 | `alignment` / paragraph `align` | `"left"`, `"center"`, `"right"`, `"justified"` |
 | style `markdown` | `"p"`, `"h1"`, `"h2"`, `"h3"`, `"h4"`, `"li"`, `"blockquote"`, `"code"` |
 | tab `type` | `"left"`, `"center"`, `"right"`, `"decimal"` |
+| unordered list `marker` | `"disc"`, `"circle"`, `"square"`, `"dash"` |
+| ordered list `marker` | `"decimal"`, `"lower-alpha"`, `"upper-alpha"`, `"lower-roman"`, `"upper-roman"` |
 | object `anchor` | `"page"`, `"paragraph"` |
 | object `wrap` | `"none"`, `"rectangular"`, `"irregular"` |

@@ -19,6 +19,21 @@ responder-chain details, VoiceOver behavior, and performance magnitude still nee
 on-device Mac QA. Current GitHub CI and the v0.5.0 release workflow are green; that
 does not substitute for interactive testing.
 
+## Pending companion PRs (review/CI)
+
+The following companion PRs implement bounded findings from this audit. They are
+open and pending review/CI acceptance; they are not described as merged or
+completed. [`ANALYSIS.md`](ANALYSIS.md) keeps them separate from the unresolved live
+backlog so their fixes are not duplicated as future work.
+
+| PR | Audit findings addressed |
+|---|---|
+| [#41 — Make the sample letter self-contained](https://github.com/L-K-M/Lucerne/pull/41) | 1.1: bundle/load the sample image and cover the real sample save/open path. |
+| [#42 — Reject unsafe document indexes before layout](https://github.com/L-K-M/Lucerne/pull/42) | 1.2: reject unsafe page/list indexes and add runtime guards; broader semantic validation remains separate. |
+| [#43 — Preserve and correct page fold marks](https://github.com/L-K-M/Lucerne/pull/43) | 1.12 fold-mark preservation/no-op handling and 1.16 DIN 105/210 mm placement; page-setup undo/context restoration remains separate. |
+| [#44 — Preserve formatting and multi-paragraph table cells](https://github.com/L-K-M/Lucerne/pull/44) | 1.3 and 1.4: retain all cell paragraphs through structural rebuilds and preserve direct/structural formatting when applying styles. |
+| [#45 — Fail safely when exports are incomplete](https://github.com/L-K-M/Lucerne/pull/45) | 1.18: propagate RTF/DOCX/PDF conversion or assembly failures and validate output before replacement. |
+
 ## Overall assessment
 
 Lucerne is much better than a typical AI-authored application. Its central design is
