@@ -1,5 +1,17 @@
 import CoreGraphics
 
+/// Returns `sourceSize` scaled down by one factor to fit both dimensions of
+/// `maximumSize`. Smaller images retain their native size.
+func aspectFitSize(_ sourceSize: CGSize, within maximumSize: CGSize) -> CGSize {
+    guard sourceSize.width.isFinite, sourceSize.height.isFinite,
+          maximumSize.width.isFinite, maximumSize.height.isFinite,
+          sourceSize.width > 0, sourceSize.height > 0,
+          maximumSize.width > 0, maximumSize.height > 0 else { return .zero }
+    let scale = min(1, min(maximumSize.width / sourceSize.width,
+                           maximumSize.height / sourceSize.height))
+    return CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+}
+
 // All page geometry in one place. This is the "coordinate bookkeeping" the plan
 // (§3, Avenue A risks) warns is the main bug source — so it is isolated here as
 // pure functions and unit-tested. Everything is in points, origin top-left, y down
