@@ -2,9 +2,10 @@
 
 Forward-looking plan for Lucerne. For the full, granular feature checklist see
 [`PROGRESS.md`](../PROGRESS.md); for the file-format contract see
-[`luce-format-spec.md`](luce-format-spec.md). This document focuses on **what's
-next and why**, with rough effort estimates (developer-days) and how each item
-fits the architecture: TextKit 1, one layout manager + one container per page
+[`luce-format-spec.md`](luce-format-spec.md); for the canonical live backlog,
+priorities, risk, ideas, and QA plan see [`ANALYSIS.md`](../ANALYSIS.md). This
+document is the concise product roadmap: **what shipped and what comes next**, and
+how each item fits the architecture: TextKit 1, one layout manager + one container per page
 (D1), named paragraph styles (D3), and page-anchored objects that punch holes in
 the text frame.
 
@@ -19,12 +20,12 @@ the text frame.
 Almost every structural feature needs "which page is character *i* on?". That's
 shipped as `EditorController.pageNumber(forCharacterAt:)` (1-based; via
 `glyphIndexForCharacter → textContainer(forGlyphAt:) → pages.firstIndex`). Page
-numbers, the ToC's page column, and the navigator's "jump to heading" all use it,
-and tables will too (cells have character indices).
+numbers, the ToC's page column, and the navigator's "jump to heading" all use it.
 
 ## Shipped (the roadmap so far)
 
-The original exploration proposed five steps; the first four are done:
+The original exploration proposed five structural steps; all five are shipped, with
+lists and additional export paths added since:
 
 1. ✅ **`pageNumber(forCharacterAt:)`** — the shared glyph→page primitive above.
 2. ✅ **Headers & footers / page numbers** — three zones (left/center/right) with
@@ -49,9 +50,16 @@ The original exploration proposed five steps; the first four are done:
    paragraph list** — each cell is a paragraph with an optional `cell` descriptor
    (`table` id + `row`/`column` + spans) that the bridge regroups into shared
    `NSTextTable` instances on load. See "Table polish" below for what's deferred.
+6. ✅ **Lists** — ordered/unordered markers, live numbering, starts, nesting,
+   Return/Tab behavior, Markdown shortcuts, toolbar/menu/palette controls, and
+   model/text round trips. `Paragraph.list` remains independent of named style and
+   list markers are derived rather than canonical text.
+7. ✅ **Interchange/recovery exports** — PDF, lossy RTF and DOCX, Markdown export/
+   copy, nested Markdown lists, and GFM pipe-table rendering.
 
-What remains — **editable** headers/footers and **table polish** — plus items
-learned along the way, is below, roughly in priority order.
+What remains — **editable** headers/footers, **table/list polish**, accessibility,
+and editing integrity — plus items learned along the way, is below, roughly in
+priority order.
 
 ## Next up
 
@@ -68,7 +76,16 @@ Remaining:
   don't clip, and a single row taller than a page still can't split.
 - **Structure edits vs. merges** — insert/delete row & column currently rebuild a
   full grid, which resets any merged cells; making them span-aware is future work.
-- **Markdown** rendering of tables in `content.md` (today each cell is its own block).
+
+### List interchange and polish · ~2–5 days
+
+Lists are fully represented in `.luce`, Markdown, PDF, and print. Remaining work is
+caused by their deliberate custom drawing: RTF/DOCX do not receive marker semantics,
+VoiceOver cannot yet describe markers, fixed 24-point gutters can crowd large
+decimal/Roman labels, direct pre-list indents are displaced, and long-list drawing
+repeats prefix scans. Materialize interchange semantics, expose markers to
+accessibility, measure gutters, preserve displaced indents, and cache numbering by
+storage generation.
 
 ### Editable header/footer click-zones · ~3–5 days (almost all UI)
 
@@ -76,14 +93,6 @@ Headers/footers are edited in a dialog today. The richer experience is to click
 into the margin band and type in place, with three tab zones and a field-token
 insertion UI. This is hit-testing in the margins plus an inline editor overlay; **no
 model change** is needed — the `header`/`footer` zones already exist.
-
-### Lists (numbering / nesting) · ~2–4 days
-
-`NSTextList` attaches to a paragraph style's `textLists`, so TextKit renders the
-bullets/numbers and handles the indentation. Model: a per-paragraph list descriptor
-(marker format + nesting level); bridge it through the text storage; expose it on
-the Format menu + toolbar. The model round-trip is unit-testable. A natural
-companion to tables.
 
 ## Later / backlog
 
@@ -97,10 +106,13 @@ companion to tables.
 - **Paragraph-anchored objects in the UI.** The model supports `anchor: "paragraph"`
   (objects that move with their text); only page-anchored placement is wired into
   the UI so far.
-- **DOCX lossy export.** RTF export exists; DOCX is the next interchange target.
-- **Document inspector & preferences.** A panel for page size / margins, and
-  richer app-level preferences. (Paragraph styles got their own editor, palette
-  integration, and global library — see `STYLES.md`.)
+- **Richer document settings.** Page size, margins, fold marks, ruler units, and
+  update preferences ship; future settings should be driven by a concrete
+  letter-writing need rather than a generic inspector.
+- **Import.** Open plain text/Markdown first, then consider RTF/DOCX with an explicit
+  fidelity report.
+- **Document-wide commands and cross-page selection.** Add storage-relative command
+  surrogates before attempting unified drag/Shift selection across page text views.
 
 ## Architectural through-line
 

@@ -75,6 +75,11 @@ top-left, y increasing downward**.
         { "text": "wonderful", "italic": true },
         { "text": " afternoon." }
       ]
+    },
+    {
+      "id": "p3", "style": "body",
+      "list": { "list": "list1", "ordered": true, "marker": "decimal", "level": 0 },
+      "runs": [ { "text": "First numbered item" } ]
     }
   ],
 
@@ -130,10 +135,53 @@ top-left, y increasing downward**.
   ignores `cell` still gets every cell's text as a plain paragraph. Full rules in the
   spec, §6.7.
 
+### Lists
+
+Lists also keep `body` flat. A list item is an ordinary paragraph with an optional
+`list` object; list membership is independent of the paragraph's named `style`.
+The marker shown beside the paragraph is derived and is never inserted into `runs`.
+
+| `Paragraph.list` member | Presence | Meaning/default |
+|---|---|---|
+| `list` | required | Non-empty opaque id shared by items in one list. |
+| `ordered` | required | `true` for numbering; `false` for bullets. |
+| `marker` | required | Ordered: `decimal`, `lower-alpha`, `upper-alpha`, `lower-roman`, or `upper-roman`. Unordered: `disc`, `circle`, `square`, or `dash`. |
+| `level` | optional | Zero-based nesting depth from `0` through `8`; default `0`. |
+| `start` | optional | Positive starting number for the first ordered item whose counter begins at that level; default `1`. Ignored for unordered items. |
+
+A list is the **maximal contiguous run** of body paragraphs carrying the same
+`list.list` id. A paragraph without list metadata or with a different id ends the
+run; reusing the id later starts numbering again. Counters are tracked per nesting
+level. Entering a new level starts its counter, returning to a shallower level
+resumes that level's counter, and leaving a level discards deeper counters. An
+unordered item does not increment the ordered counter at its level, so numbering can
+continue across an intervening bullet in the same run. Individual items may change
+ordered state, marker, and level while retaining the list id.
+
+The unordered markers render as `disc` = `•`, `circle` = `◦`, `square` = `▪`, and
+`dash` = `–`. Ordered markers render the corresponding decimal, bijective alphabetic,
+or Roman label followed by a period.
+
+In `content.md`, each same-id run becomes one tight Markdown list with no blank lines
+between items. Nesting uses four spaces per level. Bullets normalize to `-`; ordered
+items use the resolved decimal number even when the on-page marker is alpha or Roman,
+because portable Markdown has no corresponding marker syntax. Different adjacent
+list ids are separated by a blank line. A legacy paragraph whose style has
+`markdown: "li"` but no `list` metadata still exports as an ordinary `- ` block.
+Table semantics take precedence if a paragraph carries both `cell` and `list`.
+
 ## Versioning
 
 `formatVersion` starts at `1`. Bump it for changes that aren't backward compatible
 and add a migration in the reader. Additive, optional fields don't require a bump.
+
+**Compatibility caveat:** Lucerne v0.5 began writing the optional paragraph `list`
+member while retaining `formatVersion: 1`. Pre-v0.5 v1 readers can open such files,
+but writers that ignore and do not preserve unknown members may discard list
+metadata when they save. Do not round-trip a list-bearing v1 file through an older
+writer if list structure must survive. The project must decide versioning/capability
+signaling and unknown-field preservation before its next semantic format extension;
+that decision is tracked in [`ANALYSIS.md`](../ANALYSIS.md).
 
 ## What this format deliberately is *not*
 

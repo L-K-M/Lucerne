@@ -102,10 +102,12 @@ is character *i* on?" use one shared primitive,
 | **Forced page breaks** | `pageBreakBefore` paragraph flag → a full-width exclusion *band* in `paginateAndExclude()` | Isolated, so break-free documents are byte-for-byte the plain overflow case. |
 | **Version history** | `IO/DocumentHistory.swift` appends a dated Markdown snapshot to `history/` on save; `HistoryPruner` thins with age | Recovery convenience; non-authoritative (`document.json` is the source of truth). |
 | **Tables** | `EditorController.insertTable` builds `NSTextTable` cells; the bridge stores each cell as a `Paragraph.cell` and regroups them on load | TextKit flows and paginates the table — no new layout engine. Body stays a flat paragraph list (no nested block type). |
+| **Lists** | `Paragraph.list` crosses the attributed-string bridge; `ListMarkers` derives counters/glyphs and `ListMarkerLayoutManager` draws the marker gutter | List membership is independent of named style. A list is a contiguous same-id paragraph run; markers are not canonical text. |
 
 ## Module boundaries
 
-- `Model/` — AppKit-free Codable model + Markdown export + geometry. Unit-tested.
+- `Model/` — AppKit-free Codable model + Markdown export + geometry/list numbering.
+  Unit-tested.
 - `Text/` — bridges the model to `NSAttributedString` and back, including the
   `.lucerneStyleRole` custom attribute that carries paragraph-style roles through
   round-trips.
@@ -115,16 +117,18 @@ is character *i* on?" use one shared primitive,
   format bar, status bar, ruler, and welcome screen, muting with window activation),
   and the live try-on pickers (`TryOnPopover.swift` + `PickerListView.swift`, the
   shared specimen-list UI behind the font/style popovers and floating palettes).
-- `IO/` — `MiniZip`, `.luce` archive, version history, `NSDocument` subclass, PDF/print.
+- `IO/` — `MiniZip`, `.luce` archive, version history, `NSDocument` subclass,
+  PDF/print, and lossy RTF/DOCX export.
 - `Document/` — `EditorController` (conductor: pagination, exclusions, furniture,
   outline, ToC) + `DocumentWindowController` (toolbar/ruler/canvas/status/navigator).
 - `Support/` — small AppKit helpers (color↔hex, image↔data, geometry bridge).
 
 ## Known limitations
 
-See `AGENTS.md` ▸ "Gotchas / known limitations" and `docs/roadmap.md` — cross-page
+See `AGENTS.md` ▸ "Gotchas / known limitations" and `ANALYSIS.md` — cross-page
 selection, boundary overhang, irregular wrap, the scope of `MiniZip`, dialog-only
-header/footer editing, and lists not yet implemented. (Tables and the printed ToC's
-dotted leader **are** implemented — see the structural-features table above; the
-leader is drawn as measured `.` text, since Cocoa tabs have no leader fill, and goes
-stale until the ToC command is re-run.)
+header/footer editing, table row/merge limitations, and custom-list marker
+interchange/accessibility. Tables, lists, Markdown table export, DOCX export, and the
+printed ToC's dotted leader **are** implemented. The leader is drawn as measured `.`
+text, since Cocoa tabs have no leader fill, and goes stale until the ToC command is
+re-run. Interactive rendering and responder behavior still require Mac QA.
