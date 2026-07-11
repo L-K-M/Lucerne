@@ -87,10 +87,7 @@ public enum DefaultDocuments {
     }
 
     /// The §6 milestone demo: a short letter with one page-anchored image so the
-    /// app demonstrates live reflow the moment it launches. The image src points
-    /// at a file that won't exist for a brand-new doc; the view layer renders a
-    /// labelled placeholder in that case (which also exercises the missing-image
-    /// path gracefully).
+    /// app demonstrates live reflow the moment it launches.
     public static func sampleLetter(page: PageConfig = .a4) -> LucerneDocumentModel {
         let body: [Paragraph] = [
             Paragraph(id: "p1", style: "heading1",
@@ -122,7 +119,7 @@ public enum DefaultDocuments {
         ]
 
         let image = PlacedObject(
-            id: "img1", type: "image", src: "images/lake.png",
+            id: "img1", type: "image", src: sampleLetterImageSource,
             anchor: "page", page: 0,
             frame: RectModel(x: 300, y: 300, width: 220, height: 150),
             wrap: "rectangular", standoff: 12, z: 1)
@@ -133,6 +130,28 @@ public enum DefaultDocuments {
             body: body,
             objects: [image])
     }
+
+    /// Original bytes for the sample letter's small, stylised lake illustration.
+    /// Keeping the payload beside its model makes the untitled sample self-contained
+    /// without adding bundle/resource lookup to LucerneKit.
+    public static func sampleLetterImages() -> [String: Data] {
+        guard let image = Data(base64Encoded: sampleLetterImageBase64) else {
+            preconditionFailure("The built-in sample letter image is invalid")
+        }
+        return [sampleLetterImageSource: image]
+    }
+
+    private static let sampleLetterImageSource = "images/lake.png"
+    // 120 x 80 indexed-colour PNG: sky, mountains, sun, and lake (389 bytes).
+    private static let sampleLetterImageBase64 = [
+        "iVBORw0KGgoAAAANSUhEUgAAAHgAAABQCAMAAADlRUG7AAAAG1BMVEWJwuv/4HdefI7e5+EtUFg3",
+        "ia1brsoeaJHGtH5OZNdCAAABJUlEQVR42u3XWxKCMAwFUHojdf87dhweFppQtAlgyf1DY04LjTN0",
+        "ncfj+ZeEc9QhZ7m8TAe4rExE9i4nE1nRe2ATugCDjOgQtmXAii7tGB/6eNiE3oRpgi1o2X07gB0t",
+        "uIOCXCZtmZ1fAJab7gL7t0FYwRKttJaZRQ5ztNJtSFgWXtOk8+gXrADP+cz5dFmKVJO3xlcpsUIN",
+        "1wmKslDENwK0aKFIagMtma+SuwAqdPlkasDY45ZaQEPGYfCe42MEo86tgEf65x+jTsYpcNWiHW4f",
+        "fpyUJuHkTeJKcG+XBM6/bBLuN9wFHLUzw+P15XbcDtzLrsOr1B3q3XCMNgOVrCSBo2mWcBqHDeTo",
+        "cNtwFNw7wk/jBOHze8Pmz9hvtcM+Tj5OKvALmkV2w3RUVbcAAAAASUVORK5CYII=",
+    ].joined()
 
     private static let loremA =
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod "
