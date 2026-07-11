@@ -60,8 +60,8 @@ public enum MarkdownExporter {
             }
         for object in images {
             guard let src = object.src else { continue }
-            let alt = altText(for: object)
-            blocks.append("![\(alt)](\(src))")
+            let alt = escapeImageAltText(altText(for: object))
+            blocks.append("![\(alt)](\(escapeImageDestination(src)))")
         }
 
         // Blocks separated by a blank line; trailing newline for a tidy file.
@@ -281,5 +281,45 @@ public enum MarkdownExporter {
             if !stem.isEmpty { return stem }
         }
         return object.id
+    }
+
+    /// Image labels are Markdown syntax, so brackets and backslashes must be
+    /// escaped. Line breaks are flattened to keep one image reference in one block.
+    private static func escapeImageAltText(_ text: String) -> String {
+        var out = ""
+        out.reserveCapacity(text.count)
+        for ch in text {
+            if ch.isNewline {
+                out.append(" ")
+            } else if ch == "\\" || ch == "[" || ch == "]" {
+                out.append("\\")
+                out.append(ch)
+            } else {
+                out.append(ch)
+            }
+        }
+        return out
+    }
+
+    /// Keep ordinary relative paths readable while percent-encoding bytes that can
+    /// terminate or otherwise change a Markdown inline-link destination.
+    private static func escapeImageDestination(_ destination: String) -> String {
+        let hex = Array("0123456789ABCDEF".utf8)
+        var out = ""
+        out.reserveCapacity(destination.utf8.count)
+        for byte in destination.utf8 {
+            let isASCIIAlphaNumeric = (byte >= 0x30 && byte <= 0x39)
+                || (byte >= 0x41 && byte <= 0x5a)
+                || (byte >= 0x61 && byte <= 0x7a)
+            if isASCIIAlphaNumeric || byte == 0x2d || byte == 0x2e
+                || byte == 0x2f || byte == 0x5f || byte == 0x7e {
+                out.unicodeScalars.append(UnicodeScalar(Int(byte))!)
+            } else {
+                out.append("%")
+                out.unicodeScalars.append(UnicodeScalar(Int(hex[Int(byte >> 4)]))!)
+                out.unicodeScalars.append(UnicodeScalar(Int(hex[Int(byte & 0x0f)]))!)
+            }
+        }
+        return out
     }
 }

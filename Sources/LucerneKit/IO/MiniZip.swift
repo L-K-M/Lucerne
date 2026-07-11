@@ -203,7 +203,7 @@ public enum MiniZip {
                                                  uncompressedSize: uncompressedSize)
                 // The central directory always carries the entry's CRC-32; checking
                 // it catches truncation and bit rot the structure checks can't.
-                if crc != 0, CRC32.checksum(payload) != crc {
+                if CRC32.checksum(payload) != crc {
                     throw ZipError.corrupt("CRC mismatch for \(name)")
                 }
                 result.append(Entry(name: name, data: payload))
@@ -254,7 +254,10 @@ public enum MiniZip {
         let minStart = max(0, bytes.count - 22 - 0xffff)
         var i = bytes.count - 22
         while i >= minStart {
-            if readLE32(bytes, i) == endOfCentralSig { return i }
+            if readLE32(bytes, i) == endOfCentralSig {
+                let commentLength = Int(readLE16(bytes, i + 20))
+                if i + 22 + commentLength == bytes.count { return i }
+            }
             i -= 1
         }
         return nil

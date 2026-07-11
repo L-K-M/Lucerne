@@ -22,6 +22,15 @@ final class MiniZipHardeningTests: XCTestCase {
         return range.lowerBound
     }
 
+    private func endOfCentralDirectoryOffset(in archive: Data) -> Int {
+        let sig = Data([0x50, 0x4b, 0x05, 0x06])
+        guard let range = archive.range(of: sig, options: .backwards) else {
+            XCTFail("end of central directory signature not found")
+            return 0
+        }
+        return range.lowerBound
+    }
+
     private func assertThrowsZipError(_ data: Data, _ message: String,
                                       file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertThrowsError(try MiniZip.entries(from: data), message, file: file, line: line) {
@@ -72,6 +81,18 @@ final class MiniZipHardeningTests: XCTestCase {
         assertThrowsZipError(data, "a flipped payload byte must fail the CRC check")
     }
 
+    func testExpectedZeroCRCIsStillValidated() {
+        var data = sampleArchive()
+        let central = centralDirectoryOffset(in: data)
+        for i in 0 ..< 4 { data[central + 16 + i] = 0 }
+        assertThrowsZipError(data, "a zero expected CRC must not disable CRC validation")
+    }
+
+    func testEmptyPayloadWithValidZeroCRCRoundTrips() throws {
+        let entry = MiniZip.Entry(name: "empty.txt", data: Data())
+        XCTAssertEqual(try MiniZip.entries(from: MiniZip.archive([entry])), [entry])
+    }
+
     func testBogusLocalHeaderOffsetThrows() {
         var data = sampleArchive()
         let central = centralDirectoryOffset(in: data)
@@ -85,6 +106,19 @@ final class MiniZipHardeningTests: XCTestCase {
         let data = sampleArchive()
         // Slicing off the tail removes the end-of-central-directory record.
         assertThrowsZipError(data.prefix(data.count - 8), "a truncated archive must throw")
+    }
+
+    func testEOCDSignatureInsideValidArchiveCommentIsIgnored() throws {
+        var data = sampleArchive()
+        let eocd = endOfCentralDirectoryOffset(in: data)
+        let signature: [UInt8] = [0x50, 0x4b, 0x05, 0x06]
+        let comment = Data(signature + Array(repeating: UInt8(0), count: 26))
+        data[eocd + 20] = UInt8(comment.count & 0xff)
+        data[eocd + 21] = UInt8(comment.count >> 8)
+        data.append(comment)
+
+        XCTAssertEqual(try MiniZip.entries(from: data),
+                       [MiniZip.Entry(name: "a.txt", data: payload)])
     }
 
     // MARK: - Droppable (best-effort) entries
