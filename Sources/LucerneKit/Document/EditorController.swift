@@ -2708,32 +2708,40 @@ public final class EditorController: NSObject {
     /// Lossy interchange export. Text, fonts, color, and paragraph formatting
     /// survive; free-placed images are dropped (RTF can't express page-anchored
     /// frames — plan §4). The pictures live on in the .luce package and the PDF.
-    public func makeRTFData() -> Data {
+    public func makeRTFData() throws -> Data {
         let range = NSRange(location: 0, length: textStorage.length)
-        return textStorage.rtf(from: range, documentAttributes: [:]) ?? Data()
+        return try ExportValidation.requireData(
+            textStorage.rtf(from: range, documentAttributes: [:]), format: "RTF")
     }
 
     /// Lossy Word (.docx) interchange export, mirroring `makeRTFData`. Text, fonts,
     /// color, and paragraph formatting survive; free-placed images are dropped
     /// (Office Open XML can't express page-anchored frames — plan §4). The pictures
     /// live on in the .luce package and the PDF.
-    public func makeDOCXData() -> Data {
+    public func makeDOCXData() throws -> Data {
         let range = NSRange(location: 0, length: textStorage.length)
         // The value dictionary is typed `[…: Any]`, so the document type is spelled
         // out in full (a leading-dot member can't infer its base against `Any`).
-        return (try? textStorage.data(
+        let data = try textStorage.data(
             from: range,
-            documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])) ?? Data()
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])
+        return try ExportValidation.requireData(data, format: "Word")
     }
 
     /// The whole document as a single multi-page PDF (share / print / export).
-    public func makePDFData() -> Data {
+    public func makePDFData() throws -> Data {
+        let pagePDFs = makePagePDFs()
         let document = PDFDocument()
-        for data in makePagePDFs() {
-            guard let pageDoc = PDFDocument(data: data), let page = pageDoc.page(at: 0) else { continue }
+        for (index, data) in pagePDFs.enumerated() {
+            guard let pageDoc = PDFDocument(data: data), pageDoc.pageCount == 1,
+                  let page = pageDoc.page(at: 0) else {
+                throw ExportError.invalidPDFPage(page: index + 1)
+            }
             document.insert(page, at: document.pageCount)
         }
-        return document.dataRepresentation() ?? Data()
+        try ExportValidation.requireCompletePDF(sourcePageCount: pagePDFs.count,
+                                                assembledPageCount: document.pageCount)
+        return try ExportValidation.requireData(document.dataRepresentation(), format: "PDF")
     }
 }
 
