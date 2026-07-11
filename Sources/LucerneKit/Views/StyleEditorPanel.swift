@@ -232,10 +232,16 @@ final class StyleEditorPanel: NSObject {
 
     /// If a color-well debounce is pending when the panel closes or retargets,
     /// apply it now so the last drag value isn't lost.
-    private func flushPendingColorEdit() {
+    private func flushPendingColorEdit(documentController: DocumentWindowController? = nil) {
         guard colorDebounceTimer != nil else { return }
         colorDebounceTimer?.invalidate()
         colorDebounceTimer = nil
+        if let documentController, case .document(let key)? = target,
+           var def = documentController.editor.model.styles[key] {
+            readControls(into: &def)
+            apply(def, to: .document(key: key), documentController: documentController)
+            return
+        }
         controlChanged()
     }
 
@@ -248,12 +254,13 @@ final class StyleEditorPanel: NSObject {
         populate(def)
     }
 
-    private func apply(_ def: ParagraphStyleDef, to target: Target) {
+    private func apply(_ def: ParagraphStyleDef, to target: Target,
+                       documentController: DocumentWindowController? = nil) {
         isApplyingChange = true
         defer { isApplyingChange = false }
         switch target {
         case .document(let key):
-            guard let wc = targetWindowController() else { return }
+            guard let wc = documentController ?? targetWindowController() else { return }
             noteWillChangeDocumentStyle(key: key, editor: wc.editor)
             wc.editor.redefineStyle(key, to: def, registerUndo: false)
             wc.paletteDidApplyFormatting()
@@ -756,9 +763,9 @@ final class StyleEditorPanel: NSObject {
         guard observers.isEmpty else { return }
         let center = NotificationCenter.default
         observers.append(center.addObserver(
-            forName: NSWindow.willResignMainNotification, object: nil, queue: .main) { [weak self] note in
-                guard (note.object as? NSWindow)?.delegate is DocumentWindowController else { return }
-                self?.flushPendingColorEdit()
+            forName: NSWindow.didResignMainNotification, object: nil, queue: .main) { [weak self] note in
+                guard let wc = (note.object as? NSWindow)?.delegate as? DocumentWindowController else { return }
+                self?.flushPendingColorEdit(documentController: wc)
             })
         observers.append(center.addObserver(
             forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { [weak self] _ in
