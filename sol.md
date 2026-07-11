@@ -33,6 +33,8 @@ backlog so their fixes are not duplicated as future work.
 | [#43 — Preserve and correct page fold marks](https://github.com/L-K-M/Lucerne/pull/43) | 1.12 fold-mark preservation/no-op handling and 1.16 DIN 105/210 mm placement; page-setup undo/context restoration remains separate. |
 | [#44 — Preserve formatting and multi-paragraph table cells](https://github.com/L-K-M/Lucerne/pull/44) | 1.3 and 1.4: retain all cell paragraphs through structural rebuilds and preserve direct/structural formatting when applying styles. |
 | [#45 — Fail safely when exports are incomplete](https://github.com/L-K-M/Lucerne/pull/45) | 1.18: propagate RTF/DOCX/PDF conversion or assembly failures and validate output before replacement. |
+| [#47 — Harden document recovery paths](https://github.com/L-K-M/Lucerne/pull/47) | 1.23, 1.25, and 1.26: escape Markdown image references, validate zero CRC/EOCD structure, and commit history only after a successful archive build. |
+| [#48 — Polish image placement and page rendering](https://github.com/L-K-M/Lucerne/pull/48) | 1.11, 1.14, and 3.2: flush delayed style color before retargeting, preserve inserted-image aspect ratio, and cache the page shadow shape. |
 
 ## Overall assessment
 

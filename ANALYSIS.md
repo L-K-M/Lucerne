@@ -26,6 +26,8 @@ duplicated in the unresolved backlog below.
 | [#43](https://github.com/L-K-M/Lucerne/pull/43) | Page Setup drops fold marks, reloads on no-op, and DIN marks use thirds rather than 105/210 mm (`sol.md` 1.12, 1.16) | Preserves fold marks, guards no-ops, and corrects geometry. Page-config undo and editing-context restoration remain backlog. |
 | [#44](https://github.com/L-K-M/Lucerne/pull/44) | Applying a style removes direct run formatting; table rebuilds discard later paragraphs in a cell (`sol.md` 1.3, 1.4) | Preserves direct/structural attributes and aggregates multi-paragraph cells, with regressions. Other table limitations remain backlog. |
 | [#45](https://github.com/L-K-M/Lucerne/pull/45) | RTF/DOCX/PDF conversion failures can be reported as successful empty or partial exports (`sol.md` 1.18) | Makes conversion/assembly fail safely and validates output before atomic replacement. |
+| [#47](https://github.com/L-K-M/Lucerne/pull/47) | Markdown image references can break, zero CRC/false EOCD handling is incomplete, and failed saves advance in-memory history (`sol.md` 1.23, 1.25, 1.26) | Escapes image references, tightens ZIP integrity checks, and commits history transactionally. Aggregate extraction budgets remain backlog. |
+| [#48](https://github.com/L-K-M/Lucerne/pull/48) | Delayed style color can target the wrong document, initial image fitting can distort, and page shadows lack a stable path (`sol.md` 1.11, 1.14; performance 3.2) | Flushes before retarget, aspect-fits with pure tested geometry, and caches rectangular shadow paths. Interactive Mac QA remains. |
 
 Review these independently, keep their CI signal visible, and perform targeted Mac
 QA before release. Do not re-open their implementation as generic future work unless
@@ -54,9 +56,6 @@ review rejects or materially changes the fix.
 - **Style Editor undo ordering (M, medium).** Seal a live style session before the
   first non-style text/undo transaction. Verify style-edit -> type -> undo/redo on a
   Mac.
-- **Delayed style color retargeting (S, medium).** Flush the 250 ms pending color
-  change before switching target documents so an event is neither lost nor applied
-  to the wrong letter.
 - **Page Setup transaction remainder (M, medium).** Add model-level undo and restore
   global caret/selection, typing state, first responder, scroll anchor, and image
   selection after a real geometry change. The no-op/fold-mark portion belongs to
@@ -69,8 +68,6 @@ review rejects or materially changes the fix.
 - **Table polish (M/L, medium).** Confirm page-boundary row behavior on-device;
   support rows taller than a page if TextKit permits; keep merges through structural
   row/column edits; and expose table/list semantics accessibly.
-- **Aspect-preserving image insertion (S, medium).** Fit extreme portrait images
-  with one scale factor rather than independently clamping width and height.
 - **Header/footer collision handling (M, medium).** Allocate collision-aware zones
   or measured truncation priorities and add a compact live preview.
 - **List interchange (M, medium).** Custom-drawn markers do not exist in exported
@@ -85,15 +82,10 @@ review rejects or materially changes the fix.
 - **Style-library failure UI (M, medium).** Expose corrupt/future/permission errors
   as a read-only state, disable mutation/export, offer Reveal/Back Up/Reset, and make
   library export atomic.
-- **Markdown image-path escaping (S, low-medium).** Escape alt text and encode or
-  angle-bracket destinations so `]`, `)`, slashes, whitespace, Unicode, backslashes,
-  and newlines cannot corrupt the recovery artifact.
-- **Archive parser hardening (M/L, medium-high for untrusted files).** Add aggregate
-  compressed/uncompressed budgets and entry-count limits, extract only required
-  entries, always validate CRC (including expected zero), and validate EOCD comment
-  length/end position.
-- **Save history transactionality (S, low).** Assign candidate history only after
-  archive generation succeeds; failed saves must not leave phantom snapshots.
+- **Archive extraction budgets (M/L, medium-high for untrusted files).** Add
+  aggregate compressed/uncompressed budgets and entry-count limits, and extract only
+  required entries instead of inflating every unknown payload. CRC-zero and EOCD
+  structure tightening belong to pending PR #47.
 - **Document-wide spelling state (S/M, low-medium).** Confirm on-device whether the
   standard toggle affects only the focused page; if so, store one editor-level flag
   and apply it to every page text view.
@@ -151,7 +143,6 @@ image-heavy stationery, scrolling, and autosave.
 | P1 | Long-list marker drawing repeatedly scans from the list start, approaching quadratic work. Cache resolved markers by storage generation and invalidate from the edited item. | M / medium |
 | P1 | Saves/autosaves snapshot, export Markdown, CRC images, and build the full ZIP in memory on the main thread. Capture AppKit state on main, reuse one Markdown rendering, then archive/write asynchronously; consider streaming. | L / concurrency risk |
 | P1 | Full-resolution image load/decode and resize drawing run on main. Validate/decode off-main and cache display-size representations with a lower-quality live-resize preview. | M/L / image fidelity risk |
-| P2 | Give each page layer a stable rectangular `shadowPath` and profile offscreen rendering. | S / low |
 | P2 | Table ruler state reparses the current table on each caret move. Cache by table identity and storage generation. | M / low |
 | P2 | Style Editor counts every paragraph of a role on each caret move. Cache role counts by text/attribute generation. | S/M / low |
 | P2 | Selection changes refresh the full toolbar/ruler and some setters redraw unchanged values. Diff one immutable UI-state snapshot before assignment. | M / low |
@@ -276,17 +267,16 @@ Ordered by fit and reuse of shipped machinery.
    duplicate IDs, table coordinates/spans/widths, furniture starts, and unknown
    objects, in addition to pending PR #42's object/list bounds.
 6. Corrupt/oversized image entries opening intact body text with placeholders.
-7. ZIP aggregate limits, entry count, expected CRC zero, EOCD-in-comment, duplicate
-   names, local/central disagreement, and a real external DEFLATE fixture.
+7. ZIP aggregate limits, entry count, duplicate names, local/central disagreement,
+   selective extraction, and a real external DEFLATE fixture. CRC-zero and
+   EOCD-in-comment coverage belongs to pending PR #47.
 8. List-schema golden files, pre-v0.5 v1 downgrade behavior, and the eventual
    version/capability migration decision.
 9. RTF/DOCX list preservation, including nesting, mixed marker formats, and starts.
-10. Markdown image names with brackets, parentheses, spaces, slashes, Unicode,
-    backslashes, and newlines.
-11. Style-library corrupt/future/permission-denied UI behavior.
-12. Canonical color, tab-stop, page-break, table equal-width, list, and empty-field
+10. Style-library corrupt/future/permission-denied UI behavior.
+11. Canonical color, tab-stop, page-break, table equal-width, list, and empty-field
     model/storage round trips.
-13. Menu action reachability and plist/SDEF validation from the assembled app.
+12. Menu action reachability and plist/SDEF validation from the assembled app.
 
 ### On-device matrix
 
@@ -307,7 +297,7 @@ Ordered by fit and reuse of shipped machinery.
 
 ## Recommended sequence
 
-1. Review and QA companion PRs #41-45; release their bounded correctness fixes.
+1. Review and QA companion PRs #41-45 and #47-48; release their bounded fixes.
 2. Resolve format evolution/unknown preservation, rich paste, paragraph identity,
    empty/trailing state, page-break stability, and document-wide commands.
 3. Build accessible keyboard behavior and trustworthy signed distribution before
