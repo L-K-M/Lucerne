@@ -25,6 +25,8 @@ public struct LucerneDocumentModel: Codable, Equatable {
 
     public static let canonicalFormat = "lucerne-document"
     public static let currentFormatVersion = 1
+    /// Pagination's safety cap; valid zero-based object page indexes end at 1999.
+    public static let maximumPageCount = 2000
 
     public init(format: String = LucerneDocumentModel.canonicalFormat,
                 formatVersion: Int = LucerneDocumentModel.currentFormatVersion,
@@ -338,10 +340,10 @@ public struct ListItemModel: Codable, Equatable {
         start = try c.decodeIfPresent(Int.self, forKey: .start)
     }
 
-    /// A copy at a different nesting depth (clamped at 0), used by indent/outdent.
+    /// A copy at a different nesting depth, clamped to the editor's supported range.
     public func atLevel(_ newLevel: Int) -> ListItemModel {
         ListItemModel(list: list, ordered: ordered, marker: marker,
-                      level: max(0, newLevel), start: start)
+                      level: ListGeometry.clampedLevel(newLevel), start: start)
     }
 }
 

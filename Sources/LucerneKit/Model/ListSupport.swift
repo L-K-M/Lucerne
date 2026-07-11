@@ -16,10 +16,17 @@ public enum ListGeometry {
     public static let indentStep: Double = 24
     /// Gap between a marker's right edge and the text it labels.
     public static let markerGap: Double = 6
+    /// The editor exposes at most nine nesting depths (levels 0 through 8).
+    public static let maximumLevel = 8
+    public static let validLevels = 0...maximumLevel
+
+    public static func clampedLevel(_ level: Int) -> Int {
+        min(max(0, level), maximumLevel)
+    }
 
     /// Where a level's text (and its wrapped lines) begin, in points from the margin.
     public static func contentIndent(level: Int) -> Double {
-        indentStep * Double(max(0, level) + 1)
+        indentStep * (Double(clampedLevel(level)) + 1)
     }
 }
 
@@ -36,7 +43,9 @@ public enum ListItemCodec {
 
     public static func decode(_ value: Any?) -> ListItemModel? {
         guard let string = value as? String, let data = string.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(ListItemModel.self, from: data)
+        guard let model = try? JSONDecoder().decode(ListItemModel.self, from: data),
+              ListGeometry.validLevels.contains(model.level) else { return nil }
+        return model
     }
 }
 
@@ -68,7 +77,7 @@ public enum ListMarkers {
                 counters = []; previousID = nil
                 continue
             }
-            let level = max(0, item.level)
+            let level = ListGeometry.clampedLevel(item.level)
             if previousID != item.list { counters = [] }   // new list (or broken by non-list)
 
             if level >= counters.count {
@@ -78,7 +87,12 @@ public enum ListMarkers {
             }
 
             if item.ordered {
-                counters[level] = counters[level] == 0 ? max(1, item.start ?? 1) : counters[level] + 1
+                if counters[level] == 0 {
+                    counters[level] = max(1, item.start ?? 1)
+                } else {
+                    let (next, overflow) = counters[level].addingReportingOverflow(1)
+                    counters[level] = overflow ? Int.max : next
+                }
                 result[index] = ResolvedMarker(text: orderedLabel(counters[level], style: item.marker) + ".",
                                                number: counters[level])
             } else {
@@ -104,7 +118,7 @@ public enum ListMarkers {
         default:
             // Unknown / "auto": cycle by depth like CSS's default bullet ramp.
             let cycle = ["\u{2022}", "\u{25E6}", "\u{25AA}"]
-            return cycle[max(0, level) % cycle.count]
+            return cycle[ListGeometry.clampedLevel(level) % cycle.count]
         }
     }
 

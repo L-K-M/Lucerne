@@ -14,6 +14,10 @@ public enum DocumentCoding {
         /// The file's `format` marker names something other than a Lucerne
         /// document. The spec (§3.1) says a reader MUST reject such a file.
         case wrongFormat(found: String)
+        /// A page-anchored object names a page the editor cannot create.
+        case invalidObjectPage(objectID: String, found: Int)
+        /// A list item names a nesting level outside the editor's supported geometry.
+        case invalidListLevel(paragraphID: String, found: Int)
 
         public var errorDescription: String? {
             switch self {
@@ -24,6 +28,13 @@ public enum DocumentCoding {
             case let .wrongFormat(found):
                 return "This is not a Lucerne document (its format is "
                     + "\"\(found)\", expected \"\(LucerneDocumentModel.canonicalFormat)\")."
+            case let .invalidObjectPage(objectID, found):
+                return "Placed object \"\(objectID)\" has page index \(found); "
+                    + "page indexes must be between 0 and "
+                    + "\(LucerneDocumentModel.maximumPageCount - 1)."
+            case let .invalidListLevel(paragraphID, found):
+                return "Paragraph \"\(paragraphID)\" has list level \(found); "
+                    + "list levels must be between 0 and \(ListGeometry.maximumLevel)."
             }
         }
     }
@@ -63,6 +74,26 @@ public enum DocumentCoding {
             throw DocumentError.formatTooNew(found: version,
                                              supported: LucerneDocumentModel.currentFormatVersion)
         }
-        return try makeDecoder().decode(LucerneDocumentModel.self, from: data)
+        let model = try makeDecoder().decode(LucerneDocumentModel.self, from: data)
+        try validateSemantics(of: model)
+        return model
+    }
+
+    /// Codable verifies representation and types, but not values whose validity
+    /// depends on editor constraints. Keep those checks at the canonical decode
+    /// boundary so malformed files fail before layout or view indexing begins.
+    private static func validateSemantics(of model: LucerneDocumentModel) throws {
+        for object in model.objects where object.anchorMode == .page {
+            guard let page = object.page else { continue }
+            guard (0..<LucerneDocumentModel.maximumPageCount).contains(page) else {
+                throw DocumentError.invalidObjectPage(objectID: object.id, found: page)
+            }
+        }
+        for paragraph in model.body {
+            guard let level = paragraph.list?.level else { continue }
+            guard ListGeometry.validLevels.contains(level) else {
+                throw DocumentError.invalidListLevel(paragraphID: paragraph.id, found: level)
+            }
+        }
     }
 }
