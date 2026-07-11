@@ -300,6 +300,19 @@ final class FurnitureModelTests: XCTestCase {
 
 final class PageMetricsTests: XCTestCase {
 
+    func testDIN5008FoldMarkOffsetsAre105And210MillimetresFromTop() {
+        let offsets = PageMetrics.din5008FoldMarkOffsetsFromTop
+        XCTAssertEqual(offsets.count, 2)
+        XCTAssertEqual(offsets[0], 297.6378, accuracy: 0.001)
+        XCTAssertEqual(offsets[1], 595.2756, accuracy: 0.001)
+    }
+
+    func testDIN5008FoldMarkOffsetsAreNotPageThirds() {
+        let offsets = PageMetrics.din5008FoldMarkOffsetsFromTop
+        XCTAssertGreaterThan(abs(offsets[0] - CGFloat(PageConfig.a4.height / 3)), 1)
+        XCTAssertGreaterThan(abs(offsets[1] - CGFloat(PageConfig.a4.height * 2 / 3)), 1)
+    }
+
     func testExclusionRectShiftsByMarginAndStandoff() {
         let metrics = PageMetrics(page: .a4)   // 72pt margins
         // Object at page (320, 180), 200x140, standoff 12.

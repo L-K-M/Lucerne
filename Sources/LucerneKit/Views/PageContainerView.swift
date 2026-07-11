@@ -69,14 +69,11 @@ public final class PageContainerView: NSView {
         if showFoldMarks { drawFoldMarks() }
     }
 
-    /// Two light 0.5-pt horizontal ticks in the outer left margin band (x 6→18) at
-    /// 1/3 and 2/3 of the page height — DIN 5008 tri-fold guides for windowed
-    /// envelopes. Drawn here so print/PDF capture them automatically. (Exact thirds
-    /// for v1; DIN's precise fold positions are 105 mm / 210 mm from the top.)
+    /// Two light 0.5-pt horizontal ticks in the outer left margin band at the DIN
+    /// 5008 offsets from the top. Drawn here so print/PDF capture them automatically.
     private func drawFoldMarks() {
         NSColor(calibratedWhite: 0.75, alpha: 1).setStroke()
-        for fraction in [1.0 / 3.0, 2.0 / 3.0] {
-            let y = bounds.height * CGFloat(fraction)
+        for y in PageMetrics.din5008FoldMarkOffsetsFromTop {
             let mark = NSBezierPath()
             mark.move(to: CGPoint(x: 6, y: y))
             mark.line(to: CGPoint(x: 18, y: y))

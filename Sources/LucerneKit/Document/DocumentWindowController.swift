@@ -599,7 +599,8 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         else if approxEqual(paper, 612, 792) { sizeKey = "Letter" }
         else { sizeKey = "custom" }
         applyPageConfig(PageConfig(size: sizeKey, width: Double(paper.width), height: Double(paper.height),
-                                   margins: editor.model.page.margins))
+                                   margins: editor.model.page.margins,
+                                   foldMarks: editor.model.page.foldMarks))
     }
 
     private func approxEqual(_ size: NSSize, _ width: CGFloat, _ height: CGFloat) -> Bool {

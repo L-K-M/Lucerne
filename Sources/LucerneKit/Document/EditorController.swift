@@ -2330,6 +2330,7 @@ public final class EditorController: NSObject {
     // MARK: - Page configuration
 
     public func updatePageConfig(_ page: PageConfig) {
+        guard page != model.page else { return }
         var snapshot = snapshotModel()
         snapshot.page = page
         load(model: snapshot)
