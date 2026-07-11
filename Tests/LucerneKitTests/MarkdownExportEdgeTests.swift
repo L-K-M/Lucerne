@@ -15,6 +15,13 @@ final class MarkdownExportEdgeTests: XCTestCase {
                              objects: [])
     }
 
+    private func makeModel(imageSource: String) -> LucerneDocumentModel {
+        LucerneDocumentModel(page: .a4,
+                             styles: DefaultDocuments.defaultStyles(),
+                             body: [],
+                             objects: [PlacedObject(id: "image", src: imageSource)])
+    }
+
     private func cellParagraph(_ text: String, table: String, row: Int, column: Int) -> Paragraph {
         Paragraph(id: "\(table)-\(row)-\(column)", style: "body",
                   cell: TableCellModel(table: table, row: row, column: column),
@@ -84,5 +91,17 @@ final class MarkdownExportEdgeTests: XCTestCase {
         XCTAssertTrue(md.contains("> Real Quote"), md)
         XCTAssertFalse(md.contains("\\> Real Quote"), md)
         XCTAssertTrue(md.contains("- Real Item"), md)
+    }
+
+    // MARK: - Image references
+
+    func testImageAltTextAndDestinationEscapeUnsafeFilenameCharacters() {
+        let source = "images/na]me)\\ snow 東京\nline.png"
+        let md = MarkdownExporter.export(makeModel(imageSource: source))
+
+        XCTAssertEqual(
+            md,
+            "![na\\]me)\\\\ snow 東京 line](images/na%5Dme%29%5C%20snow%20%E6%9D%B1%E4%BA%AC%0Aline.png)\n"
+        )
     }
 }

@@ -60,9 +60,11 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
         let model = editor?.snapshotModel() ?? pendingModel
         let images = editor?.imageData ?? pendingImages
         // Append the current text to the staggered Markdown backup trail.
-        history = HistoryPruner.updated(history: history,
-                                        addingMarkdown: MarkdownExporter.export(model), now: Date())
-        return try LuceArchive.write(model: model, images: images, history: history)
+        return try HistoryArchiveWriter.write(history: &history,
+                                               addingMarkdown: MarkdownExporter.export(model),
+                                               now: Date()) { updatedHistory in
+            try LuceArchive.write(model: model, images: images, history: updatedHistory)
+        }
     }
 
     public override func read(from data: Data, ofType typeName: String) throws {

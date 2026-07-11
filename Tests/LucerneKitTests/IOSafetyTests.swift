@@ -6,6 +6,8 @@ import XCTest
 /// image aborts the save, and two same-second history snapshots don't collide.
 final class IOSafetyTests: XCTestCase {
 
+    private enum ExpectedError: Error { case archiveFailed }
+
     // (a) An entry above the (injected) size cap is rejected, not written. The real
     // cap is 512 MiB; injecting a tiny cap keeps the test cheap.
     func testArchiveRejectsEntryOverSizeCap() {
@@ -75,5 +77,27 @@ final class IOSafetyTests: XCTestCase {
         XCTAssertEqual(updated.count, 2, "a differing snapshot must be appended")
         let names = updated.map { HistoryPruner.entryName(for: $0.timestamp) }
         XCTAssertEqual(Set(names).count, names.count, "history entry names must be unique")
+    }
+
+    func testHistoryUpdateCommitsOnlyAfterArchiveSucceeds() throws {
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let original = [HistorySnapshot(timestamp: timestamp, markdown: "old prose")]
+        var history = original
+
+        XCTAssertThrowsError(try HistoryArchiveWriter.write(
+            history: &history, addingMarkdown: "new prose", now: timestamp
+        ) { _ in
+            throw ExpectedError.archiveFailed
+        })
+        XCTAssertEqual(history, original, "a failed save must not advance in-memory history")
+
+        let data = try HistoryArchiveWriter.write(
+            history: &history, addingMarkdown: "new prose", now: timestamp
+        ) { updatedHistory in
+            Data(updatedHistory.last!.markdown.utf8)
+        }
+        XCTAssertEqual(data, Data("new prose".utf8))
+        XCTAssertEqual(history.last?.markdown, "new prose")
+        XCTAssertEqual(history.count, 2)
     }
 }
