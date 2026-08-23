@@ -602,7 +602,12 @@ void appendValue(QByteArray &out, const QJsonValue &v, int depth) {
         const QJsonObject o = v.toObject();
         QStringList keys = o.keys();
         std::sort(keys.begin(), keys.end());
-        if (keys.isEmpty()) { out += "{}"; return; }
+        // Empty containers keep the reference encoder's shape: an open brace,
+        // a BLANK line, then the closing brace at the parent indent. Swift's
+        // JSONEncoder(.prettyPrinted) writes it that way, and "{}" here would
+        // shift every later byte of document.json — the one thing that broke
+        // byte-identical cross-app saves.
+        if (keys.isEmpty()) { out += "{\n\n" + indent + "}"; break; }
         out += "{\n";
         for (int i = 0; i < keys.size(); ++i) {
             out += childIndent;
@@ -619,7 +624,7 @@ void appendValue(QByteArray &out, const QJsonValue &v, int depth) {
     }
     case QJsonValue::Array: {
         const QJsonArray a = v.toArray();
-        if (a.isEmpty()) { out += "[]"; return; }
+        if (a.isEmpty()) { out += "[\n\n" + indent + "]"; break; }   // see above
         out += "[\n";
         for (int i = 0; i < a.size(); ++i) {
             out += childIndent;

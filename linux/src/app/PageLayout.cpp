@@ -17,6 +17,9 @@ namespace {
 constexpr double minSegmentWidth = 12;
 /// Runaway guard for one line's placement search (bands + page hops).
 constexpr int maxPlacementSteps = 4000;
+/// "Nothing placed in this band yet" — below any real segment x (which is
+/// clamped to the content area, so never negative).
+constexpr double bandUnconsumed = -1;
 
 double lineSpacingMultiple(const QTextBlockFormat &bf) {
     if (bf.lineHeightType() == QTextBlockFormat::ProportionalHeight && bf.lineHeight() > 0)
@@ -155,8 +158,13 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
         int page = cursor.page;
         double bandTop = cursor.y;
         double bandAdvance = 0;
-        int segmentIndex = 0;
-        int segmentsInBand = 1;   // refreshed at each placement
+        // How far into the band the lines placed so far reach. A POSITION, not
+        // an index: availableSegments() is recomputed per line from that line's
+        // own minX (first lines carry the paragraph indent, later ones do not),
+        // so the same list index can address a different span from one line to
+        // the next — which used to stack two lines at one spot.
+        double bandConsumedX = bandUnconsumed;
+        bool bandHasMore = false;
         QRectF bounds;
         int lineIndex = 0;
 
@@ -184,15 +192,22 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
                     page += 1;
                     bandTop = 0;
                     bandAdvance = 0;
-                    segmentIndex = 0;
+                    bandConsumedX = bandUnconsumed;
                 }
 
                 const auto exclusions = exclusionsForPage(page);
                 const auto segments = ExclusionPathController::availableSegments(
                     bandTop, estimate, lineLeft, blockRight, exclusions, minSegmentWidth);
-                segmentsInBand = int(segments.size());
 
-                if (segmentIndex >= segments.size()) {
+                // The first span that starts at or after everything already
+                // placed in this band — reading order, immune to the list
+                // changing shape between lines.
+                int chosen = -1;
+                for (int i = 0; i < segments.size(); ++i) {
+                    if (segments[i].x + 0.001 >= bandConsumedX) { chosen = i; break; }
+                }
+
+                if (chosen < 0) {
                     // Band exhausted (or fully blocked). Advance: past the
                     // lines already placed, or past the shallowest obstacle
                     // bottom when the band was blocked outright.
@@ -207,11 +222,11 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
                     }
                     bandTop = nextTop;
                     bandAdvance = 0;
-                    segmentIndex = 0;
+                    bandConsumedX = bandUnconsumed;
                     continue;
                 }
 
-                const auto segment = segments[segmentIndex];
+                const auto segment = segments[chosen];
                 line.setLineWidth(segment.width);
                 const double lineHeight = std::max(4.0, line.height());
 
@@ -231,7 +246,8 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
                 bounds = bounds.united(QRectF(line.position(),
                                               QSizeF(segment.width, lineHeight)));
                 bandAdvance = std::max(bandAdvance, lineHeight * multiple);
-                segmentIndex += 1;
+                bandConsumedX = segment.x + segment.width;
+                bandHasMore = (chosen + 1 < segments.size());
                 placed = true;
             }
             if (!placed) {
@@ -244,14 +260,14 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
                 bounds = bounds.united(QRectF(line.position(),
                                               QSizeF(line.width(), h)));
                 bandAdvance = std::max(bandAdvance, h * multiple);
-                segmentIndex = segmentsInBand;   // band is spent
+                bandHasMore = false;   // band is spent
             }
             lineIndex += 1;
 
-            if (segmentIndex >= segmentsInBand) {
+            if (!bandHasMore) {
                 bandTop += std::max(1.0, bandAdvance);
                 bandAdvance = 0;
-                segmentIndex = 0;
+                bandConsumedX = bandUnconsumed;
             }
         }
         layout->endLayout();
@@ -265,7 +281,9 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
         // block's first line is placed — never here, so a document can't end
         // with a phantom empty page.
         cursor.page = page;
-        cursor.y = bandTop + (segmentIndex > 0 ? std::max(1.0, bandAdvance) : 0);
+        // A band still holding lines (not advanced past) must be closed here.
+        cursor.y = bandTop
+            + (bandConsumedX > bandUnconsumed ? std::max(1.0, bandAdvance) : 0);
         cursor.y += bf.bottomMargin();
     }
 

@@ -66,6 +66,51 @@ class tst_layout : public QObject {
     Q_OBJECT
 
 private slots:
+    void firstLineIndentDoesNotStackTwoLinesInOneBand() {
+        // Regression: the band's placement cursor used to be an INDEX into a
+        // segment list that availableSegments() recomputes per line from that
+        // line's own minX. A first-line indent that swallows a narrow leading
+        // gap gives later lines one MORE leading segment, so the surviving
+        // index addressed the span the first line already occupied and the two
+        // lines were drawn on top of each other (on screen, in print and in
+        // the PDF export). The cursor is a position now.
+        DocumentModel model = longDocument(1);
+        Paragraph p;
+        p.id = QStringLiteral("indented");
+        p.style = QStringLiteral("body");
+        IndentModel indent;
+        indent.firstLine = 87;
+        p.indent = indent;
+        p.runs.append(Run{QStringLiteral(
+            "Paragraph text that must wrap across several lines so the band's "
+            "segments are all exercised in reading order from left to right.")});
+        model.body.append(p);
+
+        auto place = [&](double x, double y, double w, double h, double standoff) {
+            PlacedObject o;
+            o.id = QStringLiteral("img%1").arg(model.objects.size());
+            o.src = QStringLiteral("images/lake.png");
+            o.page = 0;
+            o.frame = RectModel{x, y, w, h};
+            o.standoff = standoff;
+            model.objects.append(o);
+        };
+        place(177, 139, 36, 121, 14);
+        place(253, 122, 32, 156, 7);
+
+        Editor e(model);
+        const QVector<QRectF> rects = e.lineRects();
+        QVERIFY(rects.size() > 3);
+        for (int i = 0; i < rects.size(); ++i) {
+            for (int j = i + 1; j < rects.size(); ++j) {
+                const QRectF a = rects[i], b = rects[j];
+                QVERIFY2(!(std::abs(a.x() - b.x()) < 0.5 && std::abs(a.y() - b.y()) < 0.5),
+                         qPrintable(QStringLiteral("lines %1 and %2 share an origin (%3, %4)")
+                                        .arg(i).arg(j).arg(a.x()).arg(a.y())));
+            }
+        }
+    }
+
     void shortDocumentIsOnePage() {
         Editor e(longDocument(2));
         QCOMPARE(e.layout->pageCount(), 1);

@@ -166,6 +166,27 @@ private slots:
         QVERIFY(out.indexOf("\"objects\"") < out.indexOf("\"page\""));
     }
 
+    void emptyContainersKeepTheReferenceEncodersShape() {
+        // Swift's JSONEncoder(.prettyPrinted) writes an empty array/object as
+        // an open bracket, a BLANK line, then the close at the parent indent.
+        // Emitting "[]" instead shifts every later byte of document.json, so a
+        // no-op resave on Linux would rewrite a Mac-written file (and vice
+        // versa) — the one thing that broke byte-identical cross-app saves.
+        DocumentModel model = Coding::decode(minimalDocument());
+        model.objects.clear();   // every document without a placed image
+        const QByteArray out = Coding::encode(model);
+        QVERIFY2(out.contains("\"objects\" : [\n\n  ]"), out.constData());
+        QVERIFY2(!out.contains("[]"), out.constData());
+        QVERIFY2(!out.contains("{}"), out.constData());
+        // Nested containers close at their OWN depth, not the root's.
+        Paragraph empty;
+        empty.id = QStringLiteral("pEmpty");
+        empty.style = QStringLiteral("body");
+        model.body = {empty};
+        const QByteArray nested = Coding::encode(model);
+        QVERIFY2(nested.contains("\"runs\" : [\n\n      ]"), nested.constData());
+    }
+
     void slashesAreNotEscaped() {
         const DocumentModel model = Coding::decode(minimalDocument());
         QVERIFY(Coding::encode(model).contains("images/lake.png"));

@@ -75,6 +75,15 @@ Editor::Editor(QObject *parent) : QObject(parent) {
     m_undo = new QUndoStack(this);
 
     connect(m_doc, &QTextDocument::undoCommandAdded, this, [this] {
+        // A joined edit block adds NO undo step to the document, but Qt emits
+        // this anyway (joinPreviousEditBlock clears the previous item's
+        // block_end, so endEditBlock re-reports). Pushing for it would leave
+        // the unified stack longer than the document's own history and the two
+        // would drift apart on undo — see Editor::suppressNextTextCommand.
+        if (m_suppressTextCommand) {
+            m_suppressTextCommand = false;
+            return;
+        }
         m_undo->push(new TextCommand(m_doc, this));
     });
     connect(m_undo, &QUndoStack::cleanChanged, this, [this] { emit modifiedChanged(); });

@@ -63,10 +63,14 @@ QVector<TabStopModel> Ruler::currentTabs() const {
 void Ruler::beginCoalescedEdit(QTextCursor &cursor) {
     // Every application during one drag joins the previous one, so a whole
     // indent/tab drag is a single undo step instead of one per mouse-move.
-    if (m_dragEdits++ > 0)
+    if (m_dragEdits++ > 0) {
+        // The document folds this into the first block of the gesture, so the
+        // unified stack must not gain a command for it either.
+        m_canvas->editor()->suppressNextTextCommand();
         cursor.joinPreviousEditBlock();
-    else
+    } else {
         cursor.beginEditBlock();
+    }
 }
 
 void Ruler::applyTabs(const QVector<TabStopModel> &tabs) {

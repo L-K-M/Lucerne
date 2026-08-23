@@ -136,6 +136,8 @@ private slots:
 
         QCOMPARE(model.page.size, QStringLiteral("custom"));
         QCOMPARE(model.page.width, 500.0);
+        QCOMPARE(model.page.height, 700.0);
+        QCOMPARE(model.page.margins.right, 40.0);
         QCOMPARE(model.page.foldMarks, std::optional<bool>(true));
         QVERIFY(model.header && model.header->left == QLatin1String("{title}"));
         QVERIFY(model.footer && model.footer->center == QLatin1String("Page {page} of {pages}"));
@@ -150,10 +152,30 @@ private slots:
         for (const Paragraph &p : model.body)
             if (p.id == QLatin1String("p2")) p2 = &p;
         QVERIFY(p2);
+        // Every assertion the Swift twin makes (SpecFixtureTests.swift) must
+        // hold here too: the corpus is only a compatibility signal if BOTH
+        // readers are pinned to the same decoded values.
         QVERIFY(p2->tabStops && p2->tabStops->size() == 4);
+        QCOMPARE(p2->tabStops->at(0).type, QStringLiteral("left"));
+        QCOMPARE(p2->tabStops->at(1).type, QStringLiteral("center"));
+        QCOMPARE(p2->tabStops->at(2).type, QStringLiteral("right"));
         QCOMPARE(p2->tabStops->at(3).type, QStringLiteral("decimal"));
         QCOMPARE(p2->align, std::optional<QString>(QStringLiteral("right")));
+        QVERIFY(p2->indent && p2->indent->firstLine == std::optional<double>(18));
+        QCOMPARE(p2->lineSpacing, std::optional<double>(1.5));
+        QCOMPARE(p2->runs[1].italic, std::optional<bool>(true));
+        QCOMPARE(p2->runs[2].bold, std::optional<bool>(true));
         QCOMPARE(p2->runs[3].font, std::optional<QString>(QStringLiteral("Courier")));
+        QCOMPARE(p2->runs[3].color, std::optional<QString>(QStringLiteral("#123456")));
+
+        // Empty runs array tolerated (spec §6.1); explicit page break kept.
+        const Paragraph *p4 = nullptr, *p5 = nullptr;
+        for (const Paragraph &p : model.body) {
+            if (p.id == QLatin1String("p4")) p4 = &p;
+            if (p.id == QLatin1String("p5")) p5 = &p;
+        }
+        QVERIFY(p4 && p4->runs.isEmpty());
+        QVERIFY(p5 && p5->pageBreakBefore == std::optional<bool>(true));
 
         // Unknown style role resolves through the body fallback.
         QCOMPARE(model.resolvedStyle(QStringLiteral("unknownRole")).name,
@@ -170,6 +192,7 @@ private slots:
                 && img2->wrapMode() == PlacedObject::Wrap::None);
         QVERIFY(anchored && anchored->anchorMode() == PlacedObject::Anchor::Paragraph
                 && anchored->offset == std::optional<PointModel>(PointModel{10, 20}));
+        QCOMPARE(anchored->anchorParagraph, std::optional<QString>(QStringLiteral("p2")));
         QVERIFY2(future, "unknown object types must be kept, not dropped");
 
         QVERIFY(contents.images.contains(QStringLiteral("images/lake.png")));

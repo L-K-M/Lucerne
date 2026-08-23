@@ -27,6 +27,10 @@ public:
     QTextDocument *document() const { return m_doc; }
     PageLayout *layout() const { return m_layout; }
     QUndoStack *undoStack() const { return m_undo; }
+    /// Call immediately before a QTextCursor::joinPreviousEditBlock(): that
+    /// edit folds into the previous undo step, so the undoCommandAdded it
+    /// still emits must not add a second command to the unified stack.
+    void suppressNextTextCommand() { m_suppressTextCommand = true; }
 
     const DocumentModel &model() const { return m_model; }
     const QVector<PlacedObject> &objects() const { return m_model.objects; }
@@ -122,6 +126,7 @@ private:
     QTextDocument *m_doc;
     PageLayout *m_layout;
     QUndoStack *m_undo;
+    bool m_suppressTextCommand = false;
     QString m_filePath;
     bool m_inUndoRedo = false;
 };

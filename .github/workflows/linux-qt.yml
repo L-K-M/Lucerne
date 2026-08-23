@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+            qt6-base-dev qt6-base-dev-tools qt6-svg-dev libgl1-mesa-dev zlib1g-dev \
             ninja-build dpkg-dev
 
       - name: Configure
@@ -46,6 +46,10 @@ jobs:
 
       - name: Verify the package installs and launches
         run: |
+          # The SVG icon engine is loaded at runtime, never linked, so
+          # shlibdeps can't see it — assert the explicit dependency survives.
+          dpkg-deb -f linux/build/lucerne_*_amd64.deb Depends | grep -q libqt6svg6 \
+            || { echo "::error::the .deb lost its libqt6svg6 dependency; themed icons would render blank"; exit 1; }
           sudo apt-get install -y ./linux/build/lucerne_*_amd64.deb
           QT_QPA_PLATFORM=offscreen lucerne --version
 
@@ -65,7 +69,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+            qt6-base-dev qt6-base-dev-tools qt6-svg-dev libgl1-mesa-dev zlib1g-dev \
             ninja-build libfuse2 libxkbcommon-x11-0 qt6-wayland qt6-wayland-dev
 
       - name: Configure
@@ -89,6 +93,10 @@ jobs:
           curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
           export QMAKE=/usr/bin/qmake6
+          # Deploy the SVG icon engine: QIcon::fromTheme loads it at
+          # runtime, so nothing in the binary references it and
+          # linuxdeploy would otherwise leave every themed icon blank.
+          export EXTRA_QT_MODULES="svg"
           # Bundle wayland + offscreen alongside xcb so the AppImage feels at
           # home on modern GNOME sessions and stays testable headless.
           export EXTRA_PLATFORM_PLUGINS="libqwayland-generic.so;libqwayland-egl.so;libqoffscreen.so"
@@ -98,6 +106,10 @@ jobs:
       - name: Smoke-run the AppImage
         run: |
           cd linux/build
+          # The bundle must carry the SVG icon engine, or every themed toolbar
+          # icon paints blank on the SVG-only themes desktops actually ship.
+          test -f AppDir/usr/plugins/iconengines/libqsvgicon.so \
+            || { echo "::error::AppImage is missing the SVG icon engine; themed icons would render blank"; exit 1; }
           # No FUSE in CI containers is common; extract-and-run sidesteps it.
           QT_QPA_PLATFORM=offscreen ./lucerne-x86_64.AppImage --appimage-extract-and-run --version
 

@@ -26,7 +26,13 @@ find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/app/main.cpp")
     # Only the app target needs these; a core-only checkout stays buildable
     # against a minimal Qt (matching the guard on the lucerne target below).
-    find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets PrintSupport)
+    # Svg is not optional in practice: the toolbar and find bar take their
+    # icons from QIcon::fromTheme, and every mainstream Linux icon theme
+    # (Adwaita, Breeze, Papirus, Yaru) ships SVG only. Without the svg icon
+    # ENGINE Qt skips those entries and the buttons paint blank — and since
+    # linking is what makes shlibdeps depend on libqt6svg6 and makes
+    # linuxdeploy bundle iconengines/, the .deb and the AppImage need it too.
+    find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets PrintSupport Svg)
 endif()
 find_package(ZLIB REQUIRED)
 
@@ -62,7 +68,7 @@ add_executable(lucerne
     src/app/Dialogs.h           src/app/Dialogs.cpp
     resources/lucerne.qrc
 )
-target_link_libraries(lucerne PRIVATE lucerne-core Qt6::Widgets Qt6::PrintSupport)
+target_link_libraries(lucerne PRIVATE lucerne-core Qt6::Widgets Qt6::PrintSupport Qt6::Svg)
 target_compile_definitions(lucerne PRIVATE LUCERNE_VERSION="${PROJECT_VERSION}")
 endif()
 
@@ -128,6 +134,11 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
 set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_SECTION "editors")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# The SVG icon ENGINE (libqt6svg6's iconengines/libqsvgicon.so) is loaded at
+# runtime by QIcon::fromTheme, never linked, so shlibdeps cannot see it — and
+# without it every themed toolbar icon paints blank on the SVG-only icon themes
+# every mainstream desktop ships. Depend on it explicitly.
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6svg6")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/L-K-M/Lucerne")
 include(CPack)

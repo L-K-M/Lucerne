@@ -82,6 +82,75 @@ private slots:
         QCOMPARE(model.body.first().runs.first().font, std::optional<QString>());
     }
 
+    void bridgeRoundTripsTheKitchenSinkFixture() {
+        // Every save runs the model through DocumentBridge::build() into a
+        // QTextDocument and back out via readBody(); nothing tested that pair
+        // against a document carrying the full attribute set, so a dropped
+        // setProperty would erase tab stops, indents or alignment from every
+        // file a user saved — with ctest still green. The corpus fixture is
+        // the widest model available, so drive THAT through the bridge.
+        QFile file(QStringLiteral(LUCERNE_FIXTURES_DIR "/kitchen-sink.luce"));
+        QVERIFY2(file.open(QIODevice::ReadOnly), "kitchen-sink.luce missing");
+        DocumentModel before;
+        try {
+            before = LuceArchive::read(file.readAll()).model;
+        } catch (const std::exception &error) {
+            QFAIL(qPrintable(QStringLiteral("kitchen-sink.luce rejected: %1")
+                                 .arg(QString::fromUtf8(error.what()))));
+        }
+
+        Editor editor;
+        editor.loadModel(before, {});
+        const DocumentModel after = editor.snapshotModel();
+
+        auto find = [](const DocumentModel &m, const QString &id) -> const Paragraph * {
+            for (const Paragraph &p : m.body)
+                if (p.id == id) return &p;
+            return nullptr;
+        };
+
+        // Paragraph-level attributes that the bridge must carry both ways.
+        const Paragraph *a = find(after, QStringLiteral("p2"));
+        QVERIFY2(a, "p2 did not survive the bridge round-trip");
+        QCOMPARE(a->style, QStringLiteral("body"));
+        QCOMPARE(a->align, std::optional<QString>(QStringLiteral("right")));
+        QVERIFY2(a->indent && a->indent->firstLine == std::optional<double>(18),
+                 "first-line indent lost in the bridge");
+        QCOMPARE(a->lineSpacing, std::optional<double>(1.5));
+        QVERIFY2(a->tabStops && a->tabStops->size() == 4, "tab stops lost in the bridge");
+        QCOMPARE(a->tabStops->at(1).type, QStringLiteral("center"));
+        QCOMPARE(a->tabStops->at(3).type, QStringLiteral("decimal"));
+
+        // Run-level deltas.
+        QVERIFY(a->runs.size() >= 4);
+        QCOMPARE(a->runs[1].italic, std::optional<bool>(true));
+        QCOMPARE(a->runs[2].bold, std::optional<bool>(true));
+        QCOMPARE(a->runs[3].font, std::optional<QString>(QStringLiteral("Courier")));
+        QCOMPARE(a->runs[3].color, std::optional<QString>(QStringLiteral("#123456")));
+
+        // Custom and unknown style roles keep their names (an unknown role
+        // falls back for RENDERING, but must not be rewritten in the model).
+        const Paragraph *p6 = find(after, QStringLiteral("p6"));
+        QVERIFY2(p6 && p6->style == QLatin1String("fancy"),
+                 "a custom style role was rewritten by the bridge");
+        const Paragraph *p3 = find(after, QStringLiteral("p3"));
+        QVERIFY2(p3 && p3->style == QLatin1String("unknownRole"),
+                 "an unknown style role was rewritten by the bridge");
+
+        // Explicit page break, and the page setup itself.
+        const Paragraph *p5 = find(after, QStringLiteral("p5"));
+        QVERIFY2(p5 && p5->pageBreakBefore == std::optional<bool>(true),
+                 "explicit page break lost in the bridge");
+        QCOMPARE(after.page.width, before.page.width);
+        QCOMPARE(after.page.height, before.page.height);
+        QCOMPARE(after.page.margins.right, before.page.margins.right);
+
+        // Placed objects and furniture ride alongside the document, untouched.
+        QCOMPARE(after.objects.size(), before.objects.size());
+        QVERIFY(after.header && after.header->left == QLatin1String("{title}"));
+        QCOMPARE(after.pageNumberStart, before.pageNumberStart);
+    }
+
     void applyStylePreservesInlineDeltas() {
         Editor editor;
         DocumentModel model = DefaultDocuments::empty();
@@ -260,6 +329,81 @@ private slots:
         QCOMPARE(after.body.size(), 2);
         QVERIFY2(after.body[0].list.has_value(), "previous bullet lost its list");
         QVERIFY(!after.body[1].list.has_value());
+    }
+
+    void coalescedRulerDragIsOneUndoStep() {
+        // Regression: a ruler drag applies one block-format edit per mouse-move
+        // and joins them so the DOCUMENT gains a single undo step — but
+        // joinPreviousEditBlock still makes Qt emit undoCommandAdded, so the
+        // unified stack used to grow by one command per move. The two
+        // histories then drifted: undo presses were swallowed and interleaved
+        // object commands replayed out of order (an inserted image could be
+        // stranded out of the document and lost on the next edit).
+        // This mirrors Ruler::beginCoalescedEdit's exact sequence.
+        Editor editor;
+        editor.loadModel(DefaultDocuments::empty(), {});
+        QTextCursor typing(editor.document());
+        typing.insertText(QStringLiteral("Dear Sir"));
+        const int afterTyping = editor.undoStack()->count();
+
+        for (int move = 0; move < 8; ++move) {
+            QTextCursor cursor(editor.document());
+            if (move > 0) {
+                editor.suppressNextTextCommand();
+                cursor.joinPreviousEditBlock();
+            } else {
+                cursor.beginEditBlock();
+            }
+            QTextBlockFormat format;
+            format.setLeftMargin(4.0 * (move + 1));
+            cursor.mergeBlockFormat(format);
+            cursor.endEditBlock();
+        }
+
+        // Eight moves, ONE undo step — matching what the document itself holds.
+        QCOMPARE(editor.undoStack()->count(), afterTyping + 1);
+        editor.undoStack()->undo();          // the whole drag
+        QCOMPARE(editor.document()->firstBlock().blockFormat().leftMargin(), 0.0);
+        QCOMPARE(editor.document()->toPlainText(), QStringLiteral("Dear Sir"));
+        editor.undoStack()->undo();          // the typing
+        QCOMPARE(editor.document()->toPlainText(), QString());
+        QVERIFY(!editor.undoStack()->canUndo());
+    }
+
+    void objectSurvivesUndoRedoAcrossACoalescedDrag() {
+        // The consequence the desync actually caused: with the stack longer
+        // than the document's history, redo replayed out of order and an
+        // image could sit in a command the document never got back.
+        Editor editor;
+        editor.loadModel(DefaultDocuments::empty(), {});
+        QTextCursor typing(editor.document());
+        typing.insertText(QStringLiteral("abc"));
+        for (int move = 0; move < 5; ++move) {
+            QTextCursor cursor(editor.document());
+            if (move > 0) {
+                editor.suppressNextTextCommand();
+                cursor.joinPreviousEditBlock();
+            } else {
+                cursor.beginEditBlock();
+            }
+            QTextBlockFormat format;
+            format.setLeftMargin(4.0 * (move + 1));
+            cursor.mergeBlockFormat(format);
+            cursor.endEditBlock();
+        }
+        const QByteArray pixel = DefaultDocuments::sampleLetterImages().first();
+        editor.insertImage(pixel, QStringLiteral("lake.png"), 0, QPointF(300, 300));
+        QCOMPARE(editor.objects().size(), 1);
+
+        // Unwind everything, then replay: the image must come back exactly once
+        // and the text must be intact at every step.
+        while (editor.undoStack()->canUndo()) editor.undoStack()->undo();
+        QCOMPARE(editor.objects().size(), 0);
+        QCOMPARE(editor.document()->toPlainText(), QString());
+        while (editor.undoStack()->canRedo()) editor.undoStack()->redo();
+        QCOMPARE(editor.document()->toPlainText(), QStringLiteral("abc"));
+        QCOMPARE(editor.objects().size(), 1);
+        QCOMPARE(editor.document()->firstBlock().blockFormat().leftMargin(), 20.0);
     }
 
     void typingAfterAnObjectCommandUndoesInOrder() {
