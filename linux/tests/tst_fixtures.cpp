@@ -25,6 +25,13 @@ QByteArray fixture(const QString &name) {
     return file.readAll();
 }
 
+/// fixture() with a loud failure when the file is missing, so a moved or
+/// renamed fixture fails with "file missing", never with a misleading
+/// downstream parse error.
+#define REQUIRE_FIXTURE(var, name)                                              \
+    const QByteArray var = fixture(QStringLiteral(name));                       \
+    QVERIFY2(!var.isEmpty(), name " missing - check LUCERNE_FIXTURES_DIR")
+
 const QStringList validFixtures = {
     QStringLiteral("minimal.luce"),      QStringLiteral("kitchen-sink.luce"),
     QStringLiteral("lists.luce"),        QStringLiteral("tables.luce"),
@@ -87,8 +94,8 @@ private slots:
     }
 
     void kitchenSinkDecodesEveryModelledFeature() {
-        const LuceArchive::Contents contents =
-            LuceArchive::read(fixture(QStringLiteral("kitchen-sink.luce")));
+        REQUIRE_FIXTURE(data, "kitchen-sink.luce");
+        const LuceArchive::Contents contents = LuceArchive::read(data);
         const DocumentModel &model = contents.model;
 
         QCOMPARE(model.page.size, QStringLiteral("custom"));
@@ -139,8 +146,8 @@ private slots:
     }
 
     void listsFixtureNumbering() {
-        const DocumentModel model =
-            LuceArchive::read(fixture(QStringLiteral("lists.luce"))).model;
+        REQUIRE_FIXTURE(data, "lists.luce");
+        const DocumentModel model = LuceArchive::read(data).model;
         QVector<std::optional<ListItemModel>> items;
         for (const Paragraph &p : model.body) items.append(p.list);
         const auto resolved = ListMarkers::resolve(items);
@@ -158,8 +165,8 @@ private slots:
     }
 
     void tablesFixtureMarkdown() {
-        const DocumentModel model =
-            LuceArchive::read(fixture(QStringLiteral("tables.luce"))).model;
+        REQUIRE_FIXTURE(data, "tables.luce");
+        const DocumentModel model = LuceArchive::read(data).model;
         const QString markdown = MarkdownExporter::exportModel(model);
         QVERIFY2(markdown.contains("| Header A | Header B | Header C |"),
                  qPrintable(markdown));
@@ -167,14 +174,15 @@ private slots:
     }
 
     void historyFixtureSnapshots() {
-        const LuceArchive::Contents contents =
-            LuceArchive::read(fixture(QStringLiteral("history.luce")));
+        REQUIRE_FIXTURE(data, "history.luce");
+        const LuceArchive::Contents contents = LuceArchive::read(data);
         QCOMPARE(contents.history.size(), 2);   // the unparseable name is skipped
     }
 
     void wrongFormatIsRejected() {
+        REQUIRE_FIXTURE(data, "invalid/wrong-format.luce");
         try {
-            LuceArchive::read(fixture(QStringLiteral("invalid/wrong-format.luce")));
+            LuceArchive::read(data);
             QFAIL("expected CodingError");
         } catch (const CodingError &error) {
             QCOMPARE(int(error.kind()), int(CodingError::Kind::WrongFormat));
@@ -182,8 +190,9 @@ private slots:
     }
 
     void tooNewFormatVersionIsRejected() {
+        REQUIRE_FIXTURE(data, "invalid/format-too-new.luce");
         try {
-            LuceArchive::read(fixture(QStringLiteral("invalid/format-too-new.luce")));
+            LuceArchive::read(data);
             QFAIL("expected CodingError");
         } catch (const CodingError &error) {
             QCOMPARE(int(error.kind()), int(CodingError::Kind::FormatTooNew));

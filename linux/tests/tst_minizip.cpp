@@ -100,9 +100,14 @@ private slots:
         QCOMPARE(entries.first().data, expected);
     }
 
-    void truncatedDeflateStreamFailsCleanly() {
+    void corruptDeflateStreamFailsCleanly() {
+        // Flip a byte INSIDE the compressed payload (data starts at 42 =
+        // 30-byte header + 12-byte name): every record length stays valid and
+        // the central directory stays reachable, so only the inflate/CRC path
+        // can throw. (Removing bytes instead would desync the EOCD's central-
+        // directory offset and fail before inflate ever ran.)
         QByteArray corrupt = deflateFixture();
-        corrupt.remove(50, 10);   // bytes out of the middle of the payload
+        corrupt[60] = char(quint8(corrupt[60]) ^ 0xFF);
         EXPECT_THROW(MiniZip::entries(corrupt), MiniZip::ZipError);
     }
 };

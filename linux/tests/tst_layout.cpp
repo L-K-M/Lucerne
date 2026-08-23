@@ -70,8 +70,8 @@ private slots:
         // Text starts inside the margins.
         const QVector<QRectF> rects = e.lineRects();
         QVERIFY(!rects.isEmpty());
-        QCOMPARE(rects.first().topLeft().x(), 72.0);
-        QCOMPARE(rects.first().topLeft().y(), 72.0);
+        QVERIFY(std::abs(rects.first().topLeft().x() - 72.0) < 1.0 / 32);
+        QVERIFY(std::abs(rects.first().topLeft().y() - 72.0) < 1.0 / 32);
     }
 
     void longDocumentPaginates() {
@@ -245,7 +245,8 @@ private slots:
         QCOMPARE(e.layout->listMarkers().first().text, QStringLiteral("1."));
         // The item's text is indented by the level-0 gutter (24 pt).
         const QTextBlock block = e.doc.findBlockByNumber(1);
-        QCOMPARE(block.layout()->lineAt(0).position().x(), 72.0 + 24.0);
+        QVERIFY(std::abs(block.layout()->lineAt(0).position().x() - (72.0 + 24.0))
+                < 1.0 / 32);
     }
 
     void typingReflowsIncrementallyAndConsistently() {

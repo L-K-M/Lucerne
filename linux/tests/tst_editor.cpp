@@ -80,15 +80,32 @@ private slots:
 
         QTextCursor cursor(editor.document());
         editor.applyStyle(cursor, QStringLiteral("heading1"));
-        const DocumentModel after = editor.snapshotModel();
+        DocumentModel after = editor.snapshotModel();
         QCOMPARE(after.body.first().style, QStringLiteral("heading1"));
-        // heading1 is bold by definition: the formerly-bold run needs no
-        // override, and the formerly-plain run must now be marked not-bold?
-        // No: the Mac semantics re-derive deltas against the OLD style, so
-        // "plain" (no delta) adopts the new style's bold, and "bold" (delta
-        // bold=true vs body) stays explicitly bold — equal on the page.
-        const QString text = after.body.first().plainText();
-        QCOMPARE(text, QStringLiteral("plain bold"));
+        // The Mac semantics re-derive deltas against the OLD style: "plain"
+        // (no delta) adopts heading1's bold, and "bold" (delta bold=true vs
+        // body) stays explicitly bold. heading1 IS bold, so on read-back both
+        // runs match the new style — no overrides, and they merge into one.
+        QCOMPARE(after.body.first().plainText(), QStringLiteral("plain bold"));
+        QCOMPARE(after.body.first().runs.size(), 1);
+        QCOMPARE(after.body.first().runs.first().bold, std::optional<bool>());
+
+        // Applying a NOT-bold style to the original paragraph is the real
+        // preservation check: the explicit bold survives as a run-level delta.
+        // (Going through a bold intermediate style absorbs the distinction —
+        // attributes are baked, exactly as on the Mac, where a bold word
+        // inside a bold heading is indistinguishable from the style's bold.)
+        Editor second;
+        second.loadModel(model, {});
+        QTextCursor quoteCursor(second.document());
+        second.applyStyle(quoteCursor, QStringLiteral("quote"));
+        after = second.snapshotModel();
+        QCOMPARE(after.body.first().style, QStringLiteral("quote"));
+        QCOMPARE(after.body.first().runs.size(), 2);
+        QCOMPARE(after.body.first().runs.first().text, QStringLiteral("plain "));
+        QCOMPARE(after.body.first().runs.first().bold, std::optional<bool>());
+        QCOMPARE(after.body.first().runs[1].text, QStringLiteral("bold"));
+        QCOMPARE(after.body.first().runs[1].bold, std::optional<bool>(true));
     }
 
     void objectCommandsAreUndoable() {

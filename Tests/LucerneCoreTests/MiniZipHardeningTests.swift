@@ -182,13 +182,16 @@ final class MiniZipDeflateReadTests: XCTestCase {
         XCTAssertEqual(entries.first?.data, expected)
     }
 
-    func testTruncatedDeflateStreamFailsCleanly() throws {
+    func testCorruptDeflateStreamFailsCleanly() throws {
         let archive = try XCTUnwrap(Data(base64Encoded: fixtureBase64))
-        // Chop bytes out of the middle of the compressed payload (after the
-        // 30-byte local header + 12-byte name): the inflate must fail, not trap
-        // or return short data — and the whole read throws (strict mode).
+        // Flip a byte INSIDE the compressed payload (data starts at 42 = 30-byte
+        // local header + 12-byte name): every record length stays valid and the
+        // central directory stays reachable, so only the inflate/CRC path can
+        // fail — the whole read throws (strict mode). Removing bytes instead
+        // would desync the EOCD's central-directory offset and fail on the
+        // directory walk before inflate ever ran.
         var corrupt = archive
-        corrupt.removeSubrange(50..<60)
+        corrupt[60] ^= 0xFF
         XCTAssertThrowsError(try MiniZip.entries(from: corrupt))
     }
 }

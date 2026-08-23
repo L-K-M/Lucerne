@@ -57,6 +57,10 @@ private slots:
         const QVector<HistorySnapshot> history = {{utc(2026, 1, 1), "same"}};
         const auto updated = HistoryPruner::updated(history, "same", utc(2026, 1, 2));
         QCOMPARE(updated.size(), 1);
+        // The ORIGINAL timestamp survives (the Swift reference appends nothing
+        // when the newest snapshot's markdown matches) - a no-op save must not
+        // rewrite history entry names.
+        QCOMPARE(updated.first().timestamp, utc(2026, 1, 1));
     }
 
     void newMarkdownIsAppendedSortedOldestFirst() {
