@@ -9,6 +9,8 @@
 
 #include "core/Geometry.h"
 
+#include <algorithm>
+
 #include <QMap>
 #include <QString>
 #include <QStringList>

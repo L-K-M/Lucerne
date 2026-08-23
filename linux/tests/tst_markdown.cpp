@@ -101,14 +101,23 @@ private slots:
         late.src = QStringLiteral("images/z space.png");
         late.page = 1;
         late.frame = RectModel{0, 0, 10, 10};
+        // A page-0 object with a HIGHER z, inserted between the others, pins
+        // the z half of the sort key (page alone would leave it before lake).
+        PlacedObject mid;
+        mid.id = "c";
+        mid.src = QStringLiteral("images/peak.png");
+        mid.page = 0;
+        mid.z = 5;
+        mid.frame = RectModel{0, 0, 10, 10};
         PlacedObject early;
         early.id = "a";
         early.src = QStringLiteral("images/lake.png");
         early.page = 0;
         early.frame = RectModel{0, 0, 10, 10};
-        model.objects = {late, early};
+        model.objects = {late, mid, early};
         QCOMPARE(MarkdownExporter::exportModel(model),
                  QStringLiteral("Prose.\n\n![lake](images/lake.png)\n\n"
+                                "![peak](images/peak.png)\n\n"
                                 "![z space](images/z%20space.png)\n"));
     }
 

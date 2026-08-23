@@ -85,13 +85,15 @@ private slots:
     }
 
     void rectsAreZSorted() {
+        // z runs AGAINST y here, so a sort keyed on geometry (or insertion
+        // order) fails: only a genuine z-ascending sort puts "back" first.
         QVector<PlacedObject> objects = {
-            object("front", 0, "rectangular", 2, RectModel{300, 300, 10, 10}),
-            object("back", 0, "rectangular", 1, RectModel{100, 100, 10, 10}),
+            object("front", 0, "rectangular", 2, RectModel{100, 100, 10, 10}),
+            object("back", 0, "rectangular", 1, RectModel{300, 300, 10, 10}),
         };
         const auto rects = exclusionRects(0, objects, metrics);
         QCOMPARE(rects.size(), 2);
-        QCOMPARE(rects.first().y, 100.0 - 72 - 12);   // z=1 first
+        QCOMPARE(rects.first().y, 300.0 - 72 - 12);   // z=1 first despite the larger y
     }
 
     void irregularWrapFallsBackToTheBoundingRect() {
@@ -116,6 +118,7 @@ private slots:
 
     // MARK: - Band subtraction (the per-line flow step)
 
+    // Segment is {x, width}: {220, 231} spans 220..451 — not {start, end}.
     void unobstructedBandIsOneFullSegment() {
         const auto segments = availableSegments(0, 14, 0, 451, {});
         QCOMPARE(segments, (QVector<Segment>{{0, 451}}));

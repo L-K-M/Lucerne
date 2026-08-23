@@ -80,8 +80,19 @@ void StyleLibrary::save(const QMap<QString, ParagraphStyle> &styles) {
         return;
     }
     QDir().mkpath(QFileInfo(m_filePath).absolutePath());
+    // encode() throws on non-finite values; the Swift reference catches its
+    // encoder's errors here too — a preferences-grade save must never let an
+    // exception escape into the event loop.
+    QByteArray payload;
+    try {
+        payload = encode(styles);
+    } catch (const std::exception &error) {
+        qWarning("Lucerne: could not encode the style library (%s); not saving",
+                 error.what());
+        return;
+    }
     QSaveFile file(m_filePath);
-    if (!file.open(QIODevice::WriteOnly) || file.write(encode(styles)) < 0
+    if (!file.open(QIODevice::WriteOnly) || file.write(payload) < 0
         || !file.commit()) {
         // Preferences-grade file: failing to persist must never take the app
         // down; the next save retries.

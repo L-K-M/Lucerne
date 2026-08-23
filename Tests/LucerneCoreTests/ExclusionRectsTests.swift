@@ -30,8 +30,16 @@ final class ExclusionRectsTests: XCTestCase {
         // The one-NSBezierPath-per-rect derivation is locked by
         // ExclusionPathsTests in LucerneKitTests (it needs AppKit); the portable
         // half of that old test — rect count and z-ascending order — lives here.
-        let objects = [object(id: "a", page: 0, z: 2), object(id: "b", page: 0, z: 1)]
+        // Distinct frames with z running AGAINST y, so only a genuine
+        // z-ascending sort (not geometry or insertion order) passes.
+        let low = RectModel(x: 100, y: 100, width: 10, height: 10)
+        let high = RectModel(x: 300, y: 300, width: 10, height: 10)
+        let objects = [object(id: "a", page: 0, z: 2, frame: low),
+                       object(id: "b", page: 0, z: 1, frame: high)]
         let rects = ExclusionPathController.exclusionRects(forPage: 0, objects: objects, metrics: metrics)
         XCTAssertEqual(rects.count, 2)
+        XCTAssertEqual(rects.first, metrics.exclusionRect(forObjectFrame: high, standoff: 12),
+                       "z=1 must come first despite its larger y")
+        XCTAssertEqual(rects.last, metrics.exclusionRect(forObjectFrame: low, standoff: 12))
     }
 }

@@ -11,7 +11,9 @@ directory, so a fixture added here is picked up by both suites.
 Deterministic on purpose: stored (uncompressed) entries, fixed DOS timestamps,
 sorted keys, so regeneration produces byte-identical files and diffs stay
 reviewable. deflate.luce is the one exception — its document.json is DEFLATE-
-compressed to exercise the readers' inflate path (spec §2.2 SHOULD).
+compressed to exercise the readers' inflate path (spec §2.2 SHOULD), and its
+exact bytes depend on the local zlib build: an isolated deflate.luce diff
+after regeneration is not a corpus change (tests read content, not bytes).
 
 Run from the repo root:  python3 Scripts/make-fixtures.py
 """

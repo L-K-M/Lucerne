@@ -297,9 +297,15 @@ QMap<QString, ParagraphStyle> decodeStyleTable(const QJsonObject &object) {
 DocumentModel decode(const QByteArray &json) {
     QJsonParseError parseError;
     const QJsonDocument doc = QJsonDocument::fromJson(json, &parseError);
-    if (doc.isNull() || !doc.isObject())
-        malformed(QStringLiteral("document.json is not a JSON object (%1)")
+    // Two distinct failures, two distinct messages: a syntax error carries the
+    // parser's reason and offset; valid JSON of the wrong shape (array,
+    // scalar, null) must not report "(no error occurred)".
+    if (parseError.error != QJsonParseError::NoError)
+        malformed(QStringLiteral("document.json is not valid JSON at offset %1: %2")
+                      .arg(parseError.offset)
                       .arg(parseError.errorString()));
+    if (!doc.isObject())
+        malformed(QStringLiteral("document.json is not a JSON object"));
     const QJsonObject root = doc.object();
 
     // Probe format/version before the full decode (spec §3.1 / §9): a foreign

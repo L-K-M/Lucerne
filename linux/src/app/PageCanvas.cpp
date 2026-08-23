@@ -286,6 +286,7 @@ int PageCanvas::handleAt(const QPointF &canvasPoint, const QRectF &rect) const {
 
 void PageCanvas::selectObject(const QString &id) {
     if (m_selectedObject == id) return;
+    commitPendingNudge();   // the burst belongs to the object being left
     m_selectedObject = id;
     emit selectionStateChanged();
     if (!id.isEmpty())
@@ -297,13 +298,26 @@ void PageCanvas::selectObject(const QString &id) {
 void PageCanvas::nudgeSelectedObject(double dx, double dy) {
     const PlacedObject *object = m_editor->objectById(m_selectedObject);
     if (!object || !object->frame || !object->page) return;
-    const RectModel before = *object->frame;
-    const int page = *object->page;
-    RectModel frame = before;
+    // Key auto-repeat delivers dozens of presses per second; committing each
+    // one would flood the undo stack. Record the pre-burst frame once and
+    // only preview here — commitPendingNudge() (key release, or any other
+    // interaction) pushes the whole burst as one undo step.
+    if (!m_nudgePending) {
+        m_nudgePending = true;
+        m_nudgeStartPage = *object->page;
+        m_nudgeStartFrame = *object->frame;
+    }
+    RectModel frame = *object->frame;
     frame.x += dx;
     frame.y += dy;
-    m_editor->previewObjectFrame(m_selectedObject, page, frame);
-    m_editor->commitObjectFrame(m_selectedObject, page, before, tr("Move Image"));
+    m_editor->previewObjectFrame(m_selectedObject, *object->page, frame);
+}
+
+void PageCanvas::commitPendingNudge() {
+    if (!m_nudgePending) return;
+    m_nudgePending = false;
+    m_editor->commitObjectFrame(m_selectedObject, m_nudgeStartPage, m_nudgeStartFrame,
+                                tr("Move Image"));
 }
 
 void PageCanvas::deleteSelectedObject() {
@@ -319,6 +333,7 @@ void PageCanvas::deleteSelectedObject() {
 void PageCanvas::mousePressEvent(QMouseEvent *event) {
     setFocus();
     clearPreedit();
+    commitPendingNudge();
     if (event->button() != Qt::LeftButton) {
         QAbstractScrollArea::mousePressEvent(event);
         return;
@@ -412,7 +427,11 @@ void PageCanvas::mouseMoveEvent(QMouseEvent *event) {
 
     if (!m_autoscrollTimer.isActive()) m_autoscrollTimer.start(50, this);
     m_dragMoved = true;
+    updateDrag(event->position());
+}
 
+void PageCanvas::updateDrag(const QPointF &viewportPos) {
+    const QPointF canvasPoint = toCanvas(viewportPos);
     switch (m_drag) {
     case DragMode::Text: {
         const int position = m_editor->layout()->hitTest(canvasPoint, Qt::FuzzyHit);
@@ -500,6 +519,7 @@ void PageCanvas::mouseDoubleClickEvent(QMouseEvent *event) {
     if (position < 0) return;
     m_cursor.setPosition(position);
     m_cursor.select(QTextCursor::WordUnderCursor);
+    m_drag = DragMode::Text;   // keep holding: the drag extends the selection
     emit cursorChanged();
     emit selectionStateChanged();
     viewport()->update();
@@ -508,6 +528,16 @@ void PageCanvas::mouseDoubleClickEvent(QMouseEvent *event) {
 // MARK: - Keyboard
 
 void PageCanvas::keyPressEvent(QKeyEvent *event) {
+    // Anything that isn't a nudge continuation (arrows, or a modifier change
+    // mid-burst) seals the pending nudge as its own undo step first.
+    switch (event->key()) {
+    case Qt::Key_Left: case Qt::Key_Right: case Qt::Key_Up: case Qt::Key_Down:
+    case Qt::Key_Shift: case Qt::Key_Control: case Qt::Key_Alt: case Qt::Key_Meta:
+        break;
+    default:
+        commitPendingNudge();
+    }
+
     // Image selection has its own keymap.
     if (!m_selectedObject.isEmpty()) {
         const double step = (event->modifiers() & Qt::ShiftModifier) ? 10 : 1;
@@ -569,10 +599,14 @@ void PageCanvas::keyPressEvent(QKeyEvent *event) {
     case Qt::Key_Backspace:
         m_cursor.deletePreviousChar();
         ensureCursorVisible();
+        emit cursorChanged();
+        emit selectionStateChanged();
         return;
     case Qt::Key_Delete:
         m_cursor.deleteChar();
         ensureCursorVisible();
+        emit cursorChanged();
+        emit selectionStateChanged();
         return;
     case Qt::Key_Return:
     case Qt::Key_Enter:
@@ -603,11 +637,27 @@ void PageCanvas::keyPressEvent(QKeyEvent *event) {
     }
 
     const QString text = event->text();
-    if (!text.isEmpty() && text.at(0).isPrint() && !ctrl) {
+    // No text entry while an image is selected: the caret is hidden then, so
+    // typing would inject characters at an invisible position.
+    if (!text.isEmpty() && text.at(0).isPrint() && !ctrl
+        && m_selectedObject.isEmpty()) {
         insertPlainText(text);
         return;
     }
     QAbstractScrollArea::keyPressEvent(event);
+}
+
+void PageCanvas::keyReleaseEvent(QKeyEvent *event) {
+    // Releasing the arrow key (not an auto-repeat release) ends the nudge
+    // burst: one held burst or one tap = one undo step.
+    switch (event->key()) {
+    case Qt::Key_Left: case Qt::Key_Right: case Qt::Key_Up: case Qt::Key_Down:
+        if (!event->isAutoRepeat()) commitPendingNudge();
+        break;
+    default:
+        break;
+    }
+    QAbstractScrollArea::keyReleaseEvent(event);
 }
 
 QTextCharFormat PageCanvas::freshParagraphCharFormat(const QTextCharFormat &base,
@@ -639,6 +689,9 @@ void PageCanvas::handleReturn() {
         QTextCursor blockCursor(block);
         blockCursor.setBlockCharFormat(cleared);
         m_cursor.endEditBlock();
+        // The paragraph left the list — the toolbar's list state must follow.
+        refreshCurrentFormat();
+        emit cursorChanged();
         viewport()->update();
         return;
     }
@@ -727,6 +780,10 @@ void PageCanvas::cutSelection() {
     copySelection();
     m_cursor.removeSelectedText();
     ensureCursorVisible();
+    // The selection is gone — selection-dependent UI (Cut/Copy enablement,
+    // the status line) must find out now, not on the next caret move.
+    emit cursorChanged();
+    emit selectionStateChanged();
 }
 
 void PageCanvas::paste() {
@@ -781,7 +838,11 @@ void PageCanvas::deleteSelection() {
         deleteSelectedObject();
         return;
     }
-    if (m_cursor.hasSelection()) m_cursor.removeSelectedText();
+    if (m_cursor.hasSelection()) {
+        m_cursor.removeSelectedText();
+        emit cursorChanged();
+        emit selectionStateChanged();
+    }
 }
 
 // MARK: - IME
@@ -842,7 +903,10 @@ QVariant PageCanvas::inputMethodQuery(Qt::InputMethodQuery query) const {
     case Qt::ImCurrentSelection:
         return m_cursor.selectedText();
     default:
-        return QVariant();
+        // The base class answers ImEnabled (from WA_InputMethodEnabled),
+        // ImHints and friends — returning an invalid QVariant here would tell
+        // IBus/Fcitx that IME is off and composition would never start.
+        return QAbstractScrollArea::inputMethodQuery(query);
     }
 }
 
@@ -957,8 +1021,12 @@ void PageCanvas::timerEvent(QTimerEvent *event) {
         if (m_lastMouseViewport.y() < view.top()) dy = m_lastMouseViewport.y() - view.top();
         else if (m_lastMouseViewport.y() > view.bottom())
             dy = m_lastMouseViewport.y() - view.bottom();
-        if (dy != 0)
+        if (dy != 0) {
             verticalScrollBar()->setValue(verticalScrollBar()->value() + dy / 2);
+            // The content scrolled under a stationary pointer: re-run the
+            // drag so the selection / image preview follows the autoscroll.
+            updateDrag(QPointF(m_lastMouseViewport));
+        }
         return;
     }
     QAbstractScrollArea::timerEvent(event);
@@ -972,6 +1040,7 @@ void PageCanvas::focusInEvent(QFocusEvent *event) {
 
 void PageCanvas::focusOutEvent(QFocusEvent *event) {
     QAbstractScrollArea::focusOutEvent(event);
+    commitPendingNudge();   // the release event may never arrive after a focus loss
     clearPreedit();
     m_caretTimer.stop();
     viewport()->update();

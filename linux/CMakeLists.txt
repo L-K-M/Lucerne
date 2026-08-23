@@ -69,6 +69,7 @@ if(Qt6Test_FOUND)
 
     foreach(t minizip coding markdown lists history fixtures metrics furniture layout editor)
         if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_${t}.cpp")
+            message(WARNING "lucerne: tests/tst_${t}.cpp not found — suite '${t}' skipped")
             continue()
         endif()
         add_executable(tst_${t} tests/tst_${t}.cpp)

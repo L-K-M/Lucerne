@@ -31,7 +31,9 @@ final class SpecFixtureTests: XCTestCase {
     func testCorpusIsFullyEnumerated() throws {
         let onDisk = try FileManager.default
             .contentsOfDirectory(atPath: Self.fixturesURL.path)
-            .filter { $0.hasSuffix(".luce") }
+            // "._" excludes macOS AppleDouble metadata (exFAT/SMB volumes,
+            // Mac-extracted zips) — those end in .luce too but aren't fixtures.
+            .filter { $0.hasSuffix(".luce") && !$0.hasPrefix("._") }
             .sorted()
         XCTAssertEqual(onDisk, Self.validFixtures.sorted())
     }
@@ -52,14 +54,20 @@ final class SpecFixtureTests: XCTestCase {
             // references (stricter than the read side, which must tolerate
             // them), so supply a stand-in payload for any missing source.
             var images = contents.images
+            var expectedImages: [String: Data] = [:]   // the writer keeps referenced only
             for object in contents.model.objects where object.type == "image" {
                 guard let src = object.src else { continue }
                 if images[src] == nil { images[src] = Data([0x89, 0x50, 0x4e, 0x47]) }
+                expectedImages[src] = images[src]
             }
             let rewritten = try LuceArchive.write(model: contents.model, images: images,
                                                   history: contents.history)
             let reread = try LuceArchive.read(rewritten)
             XCTAssertEqual(reread.model, contents.model, "archive round-trip drifted for \(name)")
+            // Referenced payloads survive byte-identically; orphan entries are
+            // shed (the writer keeps "only images actually referenced").
+            XCTAssertEqual(reread.images, expectedImages,
+                           "image payloads did not survive the archive round-trip for \(name)")
             XCTAssertEqual(reread.history, contents.history.sorted { $0.timestamp < $1.timestamp },
                            "history did not survive the archive round-trip for \(name)")
         }

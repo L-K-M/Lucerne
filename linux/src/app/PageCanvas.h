@@ -80,6 +80,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
     void inputMethodEvent(QInputMethodEvent *event) override;
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
     void wheelEvent(QWheelEvent *event) override;
@@ -106,7 +107,14 @@ private:
     double handleSize() const;                  // canvas units, ≈9 device px
     int handleAt(const QPointF &canvasPoint, const QRectF &rect) const;   // 0-3 or -1
     void nudgeSelectedObject(double dx, double dy);
+    /// Pushes the accumulated nudge burst as ONE undo step (see keyReleaseEvent).
+    void commitPendingNudge();
     void deleteSelectedObject();
+    /// Re-evaluates the active drag at a viewport position — shared by
+    /// mouseMoveEvent and the autoscroll timer (which must keep the selection
+    /// or image preview following while the content scrolls under a
+    /// stationary pointer).
+    void updateDrag(const QPointF &viewportPos);
 
     // Editing helpers
     void handleReturn();
@@ -132,6 +140,12 @@ private:
     int m_dragStartPage = 0;
     RectModel m_dragStartFrame;     // model coords at mousedown (for undo)
     bool m_dragMoved = false;
+
+    // Arrow-key nudge burst: previews accumulate, commitPendingNudge() pushes
+    // the whole burst (auto-repeat included) as a single undo step.
+    bool m_nudgePending = false;
+    int m_nudgeStartPage = 0;
+    RectModel m_nudgeStartFrame;
 
     QBasicTimer m_caretTimer;
     bool m_caretVisible = true;

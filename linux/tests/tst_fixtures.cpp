@@ -87,16 +87,22 @@ private slots:
             // Archive round-trip. The writer refuses dangling image references,
             // so supply a stand-in payload for any missing source.
             QMap<QString, QByteArray> images = contents.images;
+            QMap<QString, QByteArray> expectedImages;   // the writer keeps referenced only
             for (const PlacedObject &object : contents.model.objects) {
                 if (object.type != QLatin1String("image") || !object.src) continue;
                 if (!images.contains(*object.src))
                     images.insert(*object.src, QByteArrayLiteral("\x89PNG"));
+                expectedImages.insert(*object.src, images.value(*object.src));
             }
             const QByteArray rewritten =
                 LuceArchive::write(contents.model, images, contents.history);
             const LuceArchive::Contents reread = LuceArchive::read(rewritten);
             QVERIFY2(reread.model == contents.model,
                      qPrintable(name + ": archive round-trip drifted"));
+            // Referenced payloads survive byte-identically; orphan entries are
+            // shed (the writer keeps "only images actually referenced").
+            QVERIFY2(reread.images == expectedImages,
+                     qPrintable(name + ": image payloads did not survive the round-trip"));
             QCOMPARE(reread.history.size(), contents.history.size());
             for (int i = 0; i < contents.history.size(); ++i) {
                 QCOMPARE(reread.history[i].timestamp, contents.history[i].timestamp);
