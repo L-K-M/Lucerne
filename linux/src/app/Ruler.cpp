@@ -60,6 +60,15 @@ QVector<TabStopModel> Ruler::currentTabs() const {
     return tabs;
 }
 
+void Ruler::beginCoalescedEdit(QTextCursor &cursor) {
+    // Every application during one drag joins the previous one, so a whole
+    // indent/tab drag is a single undo step instead of one per mouse-move.
+    if (m_dragEdits++ > 0)
+        cursor.joinPreviousEditBlock();
+    else
+        cursor.beginEditBlock();
+}
+
 void Ruler::applyTabs(const QVector<TabStopModel> &tabs) {
     QList<QTextOption::Tab> list;
     for (const TabStopModel &stop : tabs) {
@@ -77,7 +86,9 @@ void Ruler::applyTabs(const QVector<TabStopModel> &tabs) {
     QTextBlockFormat format;
     format.setTabPositions(list);
     QTextCursor cursor = m_canvas->textCursor();
+    beginCoalescedEdit(cursor);
     cursor.mergeBlockFormat(format);
+    cursor.endEditBlock();
     update();
 }
 
@@ -88,7 +99,9 @@ void Ruler::applyIndent(std::optional<double> left, std::optional<double> right,
     if (right) format.setRightMargin(std::max(0.0, *right));
     if (firstLine) format.setTextIndent(*firstLine);
     QTextCursor cursor = m_canvas->textCursor();
+    beginCoalescedEdit(cursor);
     cursor.mergeBlockFormat(format);
+    cursor.endEditBlock();
     update();
 }
 
@@ -183,6 +196,7 @@ void Ruler::paintEvent(QPaintEvent *) {
 }
 
 void Ruler::mousePressEvent(QMouseEvent *event) {
+    m_dragEdits = 0;
     const PageConfig &page = m_canvas->editor()->model().page;
     const double documentX = fromWidgetX(event->position().x());
     const double fromMargin = documentX - page.margins.left;
@@ -277,9 +291,11 @@ void Ruler::mouseReleaseEvent(QMouseEvent *event) {
     m_drag = DragTarget::None;
     m_dragTabIndex = -1;
     m_dragTabRemoving = false;
+    m_dragEdits = 0;
 }
 
 void Ruler::mouseDoubleClickEvent(QMouseEvent *event) {
+    m_dragEdits = 0;
     const PageConfig &page = m_canvas->editor()->model().page;
     const double fromMargin = fromWidgetX(event->position().x()) - page.margins.left;
     QVector<TabStopModel> tabs = currentTabs();

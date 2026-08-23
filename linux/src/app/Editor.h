@@ -94,6 +94,13 @@ public:
     void renderPage(QPainter *painter, int pageIndex) const;
 
 signals:
+    /// A non-text command was pushed onto the unified stack. QTextDocument
+    /// merges adjacent same-format insertions into one internal undo command,
+    /// which would let typing AFTER an object/settings command coalesce into
+    /// the text command BEFORE it and break undo ordering — listeners (the
+    /// canvas) perturb the pending typing format so the next insertion starts
+    /// a fresh document undo command.
+    void undoCoalescingBreak();
     /// Objects/geometry changed — canvas must resync image frames and repaint.
     void objectsChanged();
     /// Page config / furniture changed (full canvas refresh).

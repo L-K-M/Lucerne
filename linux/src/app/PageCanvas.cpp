@@ -51,6 +51,12 @@ PageCanvas::PageCanvas(Editor *editor, QWidget *parent)
         refreshCurrentFormat();
         viewport()->update();
     });
+    connect(m_editor, &Editor::undoCoalescingBreak, this, [this] {
+        // A different format index stops QTextDocument merging the next
+        // insertion into the pre-object-edit text command (undo ordering).
+        static int salt = 0;
+        m_currentFormat.setProperty(Props::MergeSalt, ++salt);
+    });
 
     refreshCurrentFormat();
     restartCaretBlink();
@@ -312,6 +318,7 @@ void PageCanvas::deleteSelectedObject() {
 
 void PageCanvas::mousePressEvent(QMouseEvent *event) {
     setFocus();
+    clearPreedit();
     if (event->button() != Qt::LeftButton) {
         QAbstractScrollArea::mousePressEvent(event);
         return;
@@ -483,10 +490,14 @@ void PageCanvas::mouseReleaseEvent(QMouseEvent *event) {
 
 void PageCanvas::mouseDoubleClickEvent(QMouseEvent *event) {
     const QPointF canvasPoint = toCanvas(event->position());
+    // Keep the multi-click chain alive: the second press is delivered here
+    // (not to mousePressEvent), so the triple-click timer anchors on IT.
+    m_lastClickTime = QDateTime::currentMSecsSinceEpoch();
+    m_lastClickPos = event->position().toPoint();
+    m_clickCount = 2;
     if (objectAt(canvasPoint)) return;   // double-click on an image: nothing extra
     const int position = m_editor->layout()->hitTest(canvasPoint, Qt::FuzzyHit);
     if (position < 0) return;
-    m_clickCount = 2;
     m_cursor.setPosition(position);
     m_cursor.select(QTextCursor::WordUnderCursor);
     emit cursorChanged();
@@ -626,7 +637,6 @@ void PageCanvas::handleReturn() {
         QTextCharFormat cleared = bcf;
         cleared.clearProperty(Props::ListItem);
         QTextCursor blockCursor(block);
-        blockCursor.select(QTextCursor::BlockUnderCursor);
         blockCursor.setBlockCharFormat(cleared);
         m_cursor.endEditBlock();
         viewport()->update();
@@ -693,6 +703,7 @@ void PageCanvas::setBlockLineSpacing(double multiple) {
 }
 
 void PageCanvas::setTextCursor(const QTextCursor &cursor) {
+    clearPreedit();
     m_cursor = cursor;
     refreshCurrentFormat();
     restartCaretBlink();
@@ -775,8 +786,25 @@ void PageCanvas::deleteSelection() {
 
 // MARK: - IME
 
+void PageCanvas::clearPreedit() {
+    if (m_preedit.isEmpty() && m_preeditBlock < 0) return;
+    m_preedit.clear();
+    QTextBlock stale = m_editor->document()->findBlockByNumber(m_preeditBlock);
+    m_preeditBlock = -1;
+    if (stale.isValid()) {
+        stale.layout()->setPreeditArea(-1, QString());
+        m_editor->document()->markContentsDirty(stale.position(), stale.length());
+    }
+    viewport()->update();
+}
+
 void PageCanvas::inputMethodEvent(QInputMethodEvent *event) {
-    QTextBlock block = m_cursor.block();
+    // An active selection is replaced by the composition/commit (standard
+    // editor behavior); do it before anchoring the preedit.
+    if (m_cursor.hasSelection()
+        && (!event->commitString().isEmpty() || !event->preeditString().isEmpty()))
+        m_cursor.removeSelectedText();
+
     if (!event->commitString().isEmpty() || event->replacementLength() > 0) {
         QTextCursor cursor = m_cursor;
         cursor.setPosition(m_cursor.position() + event->replacementStart());
@@ -785,8 +813,16 @@ void PageCanvas::inputMethodEvent(QInputMethodEvent *event) {
         cursor.insertText(event->commitString(), m_currentFormat);
         m_cursor.setPosition(cursor.position());
     }
+
+    // The composition may have moved to a different block (or ended): never
+    // strand ghost preedit text on the old one.
+    QTextBlock block = m_cursor.block();
+    if (m_preeditBlock >= 0 && m_preeditBlock != block.blockNumber()) clearPreedit();
+
     m_preedit = event->preeditString();
-    block.layout()->setPreeditArea(m_cursor.position() - block.position(), m_preedit);
+    m_preeditBlock = m_preedit.isEmpty() ? -1 : block.blockNumber();
+    block.layout()->setPreeditArea(
+        m_preedit.isEmpty() ? -1 : m_cursor.position() - block.position(), m_preedit);
     m_editor->document()->markContentsDirty(block.position(), block.length());
     ensureCursorVisible();
     viewport()->update();
@@ -936,6 +972,7 @@ void PageCanvas::focusInEvent(QFocusEvent *event) {
 
 void PageCanvas::focusOutEvent(QFocusEvent *event) {
     QAbstractScrollArea::focusOutEvent(event);
+    clearPreedit();
     m_caretTimer.stop();
     viewport()->update();
 }

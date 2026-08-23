@@ -87,10 +87,17 @@ QDateTime timestampFromEntryName(const QString &name) {
         return {};
     const QString stem = name.mid(directory().size(),
                                   name.size() - directory().size() - 3);
-    QDateTime stamp = QDateTime::fromString(stem, stampFormat);
-    if (!stamp.isValid()) return {};
-    stamp.setTimeZone(QTimeZone::utc());
-    return stamp;
+    // Parse the two halves separately and combine as UTC directly. Parsing the
+    // whole stamp with QDateTime::fromString would go through LOCAL time first
+    // (the 'Z' is a literal), and a UTC wall-clock string that lands in the
+    // host zone's DST spring-forward gap comes back invalid — which would
+    // silently drop that recovery snapshot on the next save.
+    if (stem.size() != 16 || stem[8] != QLatin1Char('T') || !stem.endsWith(QLatin1Char('Z')))
+        return {};
+    const QDate date = QDate::fromString(stem.left(8), QStringLiteral("yyyyMMdd"));
+    const QTime time = QTime::fromString(stem.mid(9, 6), QStringLiteral("HHmmss"));
+    if (!date.isValid() || !time.isValid()) return {};
+    return QDateTime(date, time, QTimeZone::utc());
 }
 
 } // namespace HistoryPruner

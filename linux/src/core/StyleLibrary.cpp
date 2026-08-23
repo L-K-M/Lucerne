@@ -9,6 +9,7 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
+#include <cmath>
 #include <limits>
 
 namespace lucerne {
@@ -158,7 +159,16 @@ QMap<QString, ParagraphStyle> StyleLibrary::decode(const QByteArray &data) {
     if (root.value(QLatin1String("format")).toString() != canonicalFormat())
         throw CodingError(CodingError::Kind::WrongFormat,
                           QStringLiteral("not a lucerne-styles file"));
-    if (root.value(QLatin1String("formatVersion")).toInt() > currentFormatVersion())
+    // formatVersion is REQUIRED and must be a whole number (the Swift
+    // reference declares it as a required Int): a malformed file must enter
+    // the load-failure state so saves refuse to clobber it — accepting it as
+    // "version 0" would defeat exactly that guard.
+    const QJsonValue version = root.value(QLatin1String("formatVersion"));
+    const double versionValue = version.toDouble(-1);
+    if (!version.isDouble() || versionValue != std::floor(versionValue))
+        throw CodingError(CodingError::Kind::Malformed,
+                          QStringLiteral("styles.json has no integer formatVersion"));
+    if (versionValue > currentFormatVersion())
         throw CodingError(CodingError::Kind::FormatTooNew,
                           QStringLiteral("styles.json is from a newer Lucerne"));
     if (!root.value(QLatin1String("styles")).isObject())

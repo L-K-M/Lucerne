@@ -8,7 +8,7 @@ import Foundation
 /// dot-separated, numeric identifiers numerically (`beta.2 < beta.10`), numeric
 /// before alphanumeric, and a shorter identifier list before a longer one.
 ///
-/// Lives in LucerneKit (rather than the app target) so it's unit-testable;
+/// Lives in LucerneCore (rather than the app target) so it's unit-testable;
 /// depends only on Foundation.
 public struct SemanticVersion: Comparable, Equatable, CustomStringConvertible {
 

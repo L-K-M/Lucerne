@@ -137,16 +137,23 @@ QFont displayFont(const QString &family, double pointSize, bool bold, bool itali
 std::optional<QColor> parseColor(const QString &hex) {
     if (!hex.startsWith(QLatin1Char('#'))) return std::nullopt;
     const QString h = hex.mid(1);
-    auto hexValue = [](const QString &s, bool *ok) { return s.toInt(ok, 16); };
+    // Every character must be a hex digit — QString::toInt would happily
+    // accept a sign ("#-12345") and produce garbage channels.
+    for (const QChar ch : h) {
+        const char16_t u = ch.unicode();
+        const bool digit = (u >= '0' && u <= '9') || (u >= 'a' && u <= 'f')
+            || (u >= 'A' && u <= 'F');
+        if (!digit) return std::nullopt;
+    }
     bool ok = false;
     if (h.size() == 3) {
-        const int v = hexValue(h, &ok);
+        const int v = h.toInt(&ok, 16);
         if (!ok) return std::nullopt;
         const int r = (v >> 8) & 0xf, g = (v >> 4) & 0xf, b = v & 0xf;
         return QColor(r * 17, g * 17, b * 17);
     }
     if (h.size() == 6) {
-        const int v = hexValue(h, &ok);
+        const int v = h.toInt(&ok, 16);
         if (!ok) return std::nullopt;
         return QColor((v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff);
     }
@@ -168,7 +175,9 @@ QTextCharFormat charFormat(const ParagraphStyle &style, const Run &run) {
     QTextCharFormat format;
     format.setFont(displayFont(e.font, e.size, e.bold, e.italic));
     format.setFontUnderline(e.underline);
-    if (const auto color = parseColor(e.color)) format.setForeground(*color);
+    // A malformed color string still gets an explicit foreground: an unset
+    // brush would inherit whatever the paint context defaults to.
+    format.setForeground(parseColor(e.color).value_or(QColor(Qt::black)));
     format.setProperty(Props::ModelFont, e.font);
     format.setProperty(Props::ModelColor, e.color);
     return format;

@@ -44,6 +44,7 @@ private:
     double fromWidgetX(double widgetX) const;
     QTextBlockFormat currentBlockFormat() const;
     QVector<TabStopModel> currentTabs() const;
+    void beginCoalescedEdit(QTextCursor &cursor);
     void applyTabs(const QVector<TabStopModel> &tabs);
     void applyIndent(std::optional<double> left, std::optional<double> right,
                      std::optional<double> firstLine);
@@ -55,6 +56,7 @@ private:
     int m_dragTabIndex = -1;
     bool m_dragTabRemoving = false;
     QVector<TabStopModel> m_dragTabs;
+    int m_dragEdits = 0;   // block-format edits in the current gesture
 };
 
 } // namespace lucerne

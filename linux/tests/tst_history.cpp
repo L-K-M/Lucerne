@@ -4,6 +4,7 @@
 
 #include "core/History.h"
 
+#include <QTimeZone>
 #include <QtTest>
 
 using namespace lucerne;
@@ -20,6 +21,25 @@ class tst_history : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase() {
+        // Pin a DST-observing zone so the spring-forward-gap regression below
+        // is meaningful wherever the suite runs.
+        qputenv("TZ", "Europe/Zurich");
+    }
+
+    void dstGapStampParsesAsUTC() {
+        // 2026-03-29 02:30 UTC falls inside Europe/Zurich's spring-forward gap
+        // when misparsed as LOCAL time; the parse must be timezone-independent
+        // or this recovery snapshot silently vanishes on the next save.
+        const QString name = QStringLiteral("history/20260329T023000Z.md");
+        const QDateTime stamp = HistoryPruner::timestampFromEntryName(name);
+        QVERIFY(stamp.isValid());
+        QCOMPARE(stamp.toSecsSinceEpoch(),
+                 QDateTime(QDate(2026, 3, 29), QTime(2, 30), QTimeZone::utc())
+                     .toSecsSinceEpoch());
+        QCOMPARE(HistoryPruner::entryName(stamp), name);
+    }
+
     void entryNameRoundTrips() {
         const QDateTime stamp = utc(2026, 6, 9, 12, 0, 0);
         const QString name = HistoryPruner::entryName(stamp);

@@ -3,9 +3,10 @@ import Foundation
 import CoreGraphics
 #endif
 
-// App-level preferences backed by UserDefaults. Kept in LucerneKit so views (the
-// ruler) can read them; the Settings window (in the executable) writes them. A
-// change posts `didChange` so open windows can refresh.
+// App-level preferences backed by UserDefaults. Kept in LucerneCore (portable,
+// Foundation-only) so views (the ruler) can read them; the Settings window (in
+// the executable) writes them. A change posts `didChange` so open windows can
+// refresh.
 
 /// The unit the ruler labels and ticks use.
 public enum RulerUnit: String, CaseIterable {

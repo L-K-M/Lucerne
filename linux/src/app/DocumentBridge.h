@@ -29,6 +29,11 @@ constexpr int ModelFont = QTextFormat::UserProperty + 6;      // QString (char):
     // every Mac document's fonts to Linux family names.
 constexpr int ModelColor = QTextFormat::UserProperty + 7;     // QString (char): the
     // file's color string, preserved verbatim (case, #RGB shorthand, alpha).
+constexpr int MergeSalt = QTextFormat::UserProperty + 8;      // int (char): bumped
+    // after every non-text undo command so the next insertion's format differs
+    // and QTextDocument cannot merge it into the text command that came before
+    // the object edit (which would break unified-undo ordering). Never read
+    // back; invisible to rendering and to the saved file.
 }
 
 namespace DocumentBridge {

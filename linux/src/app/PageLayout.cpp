@@ -118,6 +118,11 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
         const QTextCharFormat bcf = block.charFormat();
         const double multiple = lineSpacingMultiple(bf);
 
+        // Record where the block was ARRIVED at — before the page-break hop and
+        // space-before are applied — so a partial relayout resuming here replays
+        // those adjustments exactly once instead of stacking them per keystroke.
+        m_blockStart[number] = cursor;
+
         // Forced page break (unless already at the top of a fresh page).
         if (bcf.boolProperty(Props::PageBreakBefore) && cursor.y > 0.001) {
             cursor.page += 1;
@@ -125,7 +130,6 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
         }
         // Space before, skipped at the top of a page (TextKit convention).
         if (cursor.y > 0.001) cursor.y += bf.topMargin();
-        m_blockStart[number] = cursor;
 
         // List items get the hanging gutter on top of their own indent.
         double listIndent = 0;
@@ -163,7 +167,10 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
 
             const bool firstLine = (lineIndex == 0);
             double lineLeft = blockLeft + (firstLine ? bf.textIndent() : 0);
-            lineLeft = std::clamp(lineLeft, 0.0, blockRight - minSegmentWidth);
+            // Guard the clamp bounds: schema-valid negative indents combined
+            // with a large right indent can push hi below lo (UB otherwise).
+            lineLeft = std::clamp(lineLeft, 0.0,
+                                  std::max(0.0, blockRight - minSegmentWidth));
 
             const QFontMetricsF fm(bcf.font());
             double estimate = std::max(4.0, fm.lineSpacing());
@@ -226,6 +233,18 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
                 bandAdvance = std::max(bandAdvance, lineHeight * multiple);
                 segmentIndex += 1;
                 placed = true;
+            }
+            if (!placed) {
+                // The placement guard exhausted (pathological geometry) — park
+                // the line at the current band's full width rather than leaving
+                // it unpositioned at the canvas origin.
+                line.setLineWidth(std::max(minSegmentWidth, blockRight - lineLeft));
+                line.setPosition(canvasPoint(page, lineLeft, bandTop));
+                const double h = std::max(4.0, line.height());
+                bounds = bounds.united(QRectF(line.position(),
+                                              QSizeF(line.width(), h)));
+                bandAdvance = std::max(bandAdvance, h * multiple);
+                segmentIndex = segmentsInBand;   // band is spent
             }
             lineIndex += 1;
 

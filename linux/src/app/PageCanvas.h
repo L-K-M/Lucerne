@@ -113,6 +113,9 @@ private:
     void insertPlainText(const QString &text);
     void refreshCurrentFormat();
     void restartCaretBlink();
+    /// Ends any in-flight IME composition display (ghost preedit text must not
+    /// be stranded when the caret leaves the composing block).
+    void clearPreedit();
     QTextCharFormat freshParagraphCharFormat(const QTextCharFormat &base,
                                              bool clearListAndBreak) const;
 
@@ -136,6 +139,7 @@ private:
     QPoint m_lastMouseViewport;
 
     QString m_preedit;
+    int m_preeditBlock = -1;   // block number carrying the preedit area, or -1
     quint64 m_lastClickTime = 0;
     QPoint m_lastClickPos;
     int m_clickCount = 1;

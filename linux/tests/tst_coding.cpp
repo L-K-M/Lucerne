@@ -150,8 +150,8 @@ private slots:
     void encodeWritesIntegralNumbersWithoutFraction() {
         const DocumentModel model = Coding::decode(minimalDocument());
         const QByteArray out = Coding::encode(model);
-        QVERIFY2(out.contains("\"top\": 72"), out.constData());
-        QVERIFY2(out.contains("\"width\": 595.28"), out.constData());
+        QVERIFY2(out.contains("\"top\" : 72"), out.constData());
+        QVERIFY2(out.contains("\"width\" : 595.28"), out.constData());
         QVERIFY2(!out.contains("72.0"), out.constData());
     }
 
@@ -167,6 +167,40 @@ private slots:
     void slashesAreNotEscaped() {
         const DocumentModel model = Coding::decode(minimalDocument());
         QVERIFY(Coding::encode(model).contains("images/lake.png"));
+    }
+
+    void nonBMPTextSurvivesEncoding() {
+        // Non-BMP characters (emoji, mathematical alphanumerics) are surrogate
+        // PAIRS in QString; encoding them one QChar at a time would destroy
+        // them. The bytes below are U+1F3D4 (mountain) and U+1D4BB (script h).
+        const QString fancy = QString::fromUtf8("Gr\xC3\xBC\xC3\x9F" "e vom See "
+                                                "\xF0\x9F\x8F\x94 \xF0\x9D\x92\xBB");
+        DocumentModel model = Coding::decode(minimalDocument());
+        model.body[0].runs[0].text = fancy;
+        const QByteArray out = Coding::encode(model);
+        QVERIFY2(out.contains("\xF0\x9F\x8F\x94"), out.constData());
+        QVERIFY2(!out.contains('?'), out.constData());
+        const DocumentModel back = Coding::decode(out);
+        QCOMPARE(back.body[0].runs[0].text, fancy);
+    }
+
+    void formatVersionBeyondIntRangeIsStillRejected() {
+        // QJsonValue::toInt returns 0 for out-of-int-range numbers - the
+        // too-new check must not be bypassable that way (spec 9 MUST).
+        QByteArray json = minimalDocument();
+        json.replace("\"formatVersion\": 1", "\"formatVersion\": 10000000000");
+        try {
+            Coding::decode(json);
+            QFAIL("expected CodingError");
+        } catch (const CodingError &error) {
+            QCOMPARE(int(error.kind()), int(CodingError::Kind::FormatTooNew));
+        }
+    }
+
+    void outOfRangeIntegerFieldIsMalformed() {
+        QByteArray json = minimalDocument();
+        json.replace("\"page\": 0", "\"page\": 99999999999");
+        EXPECT_THROW(Coding::decode(json), CodingError);
     }
 };
 

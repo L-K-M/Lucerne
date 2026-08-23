@@ -699,13 +699,23 @@ void MainWindow::exportPdf() {
     writer.setResolution(72);
     writer.setTitle(m_editor->displayName());
 
-    QPainter painter(&writer);
+    QPainter painter;
+    if (!painter.begin(&writer)) {
+        QMessageBox::warning(this, tr("Couldn’t export"),
+                             tr("The PDF file couldn’t be created at %1.").arg(path));
+        return;
+    }
     const int pages = m_editor->layout()->pageCount();
     for (int i = 0; i < pages; ++i) {
         if (i > 0) writer.newPage();
         m_editor->renderPage(&painter, i);
     }
     painter.end();
+    if (!QFileInfo::exists(path) || QFileInfo(path).size() == 0) {
+        QMessageBox::warning(this, tr("Couldn’t export"),
+                             tr("The PDF file couldn’t be written at %1.").arg(path));
+        return;
+    }
     statusBar()->showMessage(tr("Exported %1").arg(path), 4000);
 }
 
@@ -730,6 +740,9 @@ void MainWindow::printDocument() {
     printer.setPageSize(QPageSize(QSizeF(page.width, page.height), QPageSize::Point,
                                   QString(), QPageSize::ExactMatch));
     printer.setPageMargins(QMarginsF(0, 0, 0, 0));
+    // Paint in full-page coordinates: without this the painter's origin sits at
+    // the printer's hardware margins and every page renders offset.
+    printer.setFullPage(true);
     printer.setDocName(m_editor->displayName());
     QPrintDialog dialog(&printer, this);
     if (dialog.exec() != QDialog::Accepted) return;

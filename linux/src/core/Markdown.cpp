@@ -100,9 +100,11 @@ QString blockEscape(const QString &line) {
         return indent + QLatin1Char('\\') + rest;
 
     // Ordered list: digits then ". " or ") " — escape the delimiter only.
-    if (first.isDigit()) {
+    // isNumber (not isDigit) to match Swift's Character.isNumber, which also
+    // covers letterlike and other numerals (Nl/No).
+    if (first.isNumber()) {
         int digits = 0;
-        while (digits < rest.size() && rest[digits].isDigit()) ++digits;
+        while (digits < rest.size() && rest[digits].isNumber()) ++digits;
         if (digits + 1 < rest.size()
             && (rest[digits] == QLatin1Char('.') || rest[digits] == QLatin1Char(')'))
             && rest[digits + 1] == QLatin1Char(' '))
@@ -197,7 +199,12 @@ QString tableBlock(const QVector<Paragraph> &cells, const DocumentModel &model) 
 
 QString altText(const PlacedObject &object) {
     if (object.src) {
-        const QString stem = QFileInfo(*object.src).completeBaseName();
+        // Mirror NSString.deletingPathExtension: strip one trailing extension,
+        // but a leading dot is not an extension separator (".hidden" keeps its
+        // name — QFileInfo::completeBaseName would empty it out).
+        const QString name = QFileInfo(*object.src).fileName();
+        const qsizetype lastDot = name.lastIndexOf(QLatin1Char('.'));
+        const QString stem = lastDot > 0 ? name.left(lastDot) : name;
         if (!stem.isEmpty()) return stem;
     }
     return object.id;

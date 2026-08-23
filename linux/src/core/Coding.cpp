@@ -8,6 +8,7 @@
 
 #include <charconv>
 #include <cmath>
+#include <limits>
 
 namespace lucerne {
 namespace Coding {
@@ -43,7 +44,10 @@ double reqDouble(const QJsonObject &o, const char *key, const QString &context) 
 
 int reqInt(const QJsonObject &o, const char *key, const QString &context) {
     const double d = reqDouble(o, key, context);
-    if (d != std::floor(d))
+    // Out-of-range doubles must fail loudly, not truncate (double→int
+    // narrowing outside int's range is UB and would corrupt the value).
+    if (d != std::floor(d) || d < double(std::numeric_limits<int>::min())
+        || d > double(std::numeric_limits<int>::max()))
         malformed(QStringLiteral("%1: expected integer \"%2\"").arg(context, key));
     return int(d);
 }
@@ -77,7 +81,8 @@ std::optional<double> optDouble(const QJsonObject &o, const char *key, const QSt
 std::optional<int> optInt(const QJsonObject &o, const char *key, const QString &context) {
     const auto d = optDouble(o, key, context);
     if (!d) return std::nullopt;
-    if (*d != std::floor(*d))
+    if (*d != std::floor(*d) || *d < double(std::numeric_limits<int>::min())
+        || *d > double(std::numeric_limits<int>::max()))
         malformed(QStringLiteral("%1: expected integer \"%2\"").arg(context, key));
     return int(*d);
 }
@@ -303,8 +308,10 @@ DocumentModel decode(const QByteArray &json) {
                            "expected \"%2\").")
                 .arg(format.toString(), DocumentModel::canonicalFormat()));
     }
+    // Compare as double: QJsonValue::toInt returns 0 for whole numbers beyond
+    // int range, which would let an absurd future version slip past the check.
     const QJsonValue version = member(root, "formatVersion");
-    if (version.isDouble() && version.toInt() > DocumentModel::currentFormatVersion()) {
+    if (version.isDouble() && version.toDouble() > DocumentModel::currentFormatVersion()) {
         throw CodingError(CodingError::Kind::FormatTooNew,
             QStringLiteral("This document was saved by a newer version of Lucerne "
                            "(format %1; this app reads up to %2). Please update "
@@ -524,7 +531,8 @@ namespace {
 
 void appendEscaped(QByteArray &out, const QString &s) {
     out += '"';
-    for (const QChar ch : s) {
+    for (qsizetype i = 0; i < s.size(); ++i) {
+        const QChar ch = s.at(i);
         const ushort u = ch.unicode();
         switch (u) {
         case '"': out += "\\\""; break;
@@ -536,6 +544,19 @@ void appendEscaped(QByteArray &out, const QString &s) {
         case '\f': out += "\\f"; break;
         default:
             if (u < 0x20) {
+                char buf[8];
+                std::snprintf(buf, sizeof buf, "\\u%04x", u);
+                out += buf;
+            } else if (ch.isHighSurrogate() && i + 1 < s.size()
+                       && s.at(i + 1).isLowSurrogate()) {
+                // Encode the surrogate PAIR together — converting the halves
+                // one QChar at a time would turn every non-BMP character
+                // (emoji and friends) into replacement junk.
+                out += QStringView(s).mid(i, 2).toUtf8();
+                ++i;
+            } else if (ch.isSurrogate()) {
+                // A lone surrogate is not representable in UTF-8; emit the
+                // JSON escape so the byte stream stays valid.
                 char buf[8];
                 std::snprintf(buf, sizeof buf, "\\u%04x", u);
                 out += buf;
@@ -571,7 +592,9 @@ void appendValue(QByteArray &out, const QJsonValue &v, int depth) {
         for (int i = 0; i < keys.size(); ++i) {
             out += childIndent;
             appendEscaped(out, keys[i]);
-            out += ": ";
+            out += " : ";   // space on both sides — the Swift reference
+                            // encoder's pretty-print form, kept for parity so
+                            // cross-app diffs of document.json stay quiet
             appendValue(out, o.value(keys[i]), depth + 1);
             if (i + 1 < keys.size()) out += ',';
             out += '\n';

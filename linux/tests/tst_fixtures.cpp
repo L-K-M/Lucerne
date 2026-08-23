@@ -47,6 +47,16 @@ private slots:
         QStringList expected = validFixtures;
         expected.sort();
         QCOMPARE(onDisk, expected);
+
+        // The rejection corpus is enumerated too - an invalid/ fixture added
+        // without a matching rejection test must fail loudly as well.
+        QDir invalid(dir.filePath(QStringLiteral("invalid")));
+        QStringList invalidOnDisk =
+            invalid.entryList({QStringLiteral("*.luce")}, QDir::Files);
+        invalidOnDisk.sort();
+        QCOMPARE(invalidOnDisk,
+                 (QStringList{QStringLiteral("format-too-new.luce"),
+                              QStringLiteral("wrong-format.luce")}));
     }
 
     void validFixturesOpenAndRoundTrip() {

@@ -3,6 +3,7 @@
 // inline formatting, unified undo across text and object mutations.
 
 #include "app/Editor.h"
+#include "app/PageCanvas.h"
 #include "app/DocumentBridge.h"
 #include "core/DefaultDocuments.h"
 #include "core/LuceArchive.h"
@@ -137,6 +138,122 @@ private slots:
         QVERIFY(editor.layout()->pageCount() <= pagesBefore);
         editor.undoStack()->undo();
         QCOMPARE(editor.objects().size(), 1);
+    }
+
+    void styleAndListEditsDoNotTouchNeighbors() {
+        // Regression: block-format writes must reach EXACTLY one paragraph.
+        // (select(BlockUnderCursor) reaches into the previous block's
+        // separator and used to corrupt its role/id/list properties.)
+        Editor editor;
+        DocumentModel model = DefaultDocuments::empty();
+        model.body.clear();
+        for (int i = 0; i < 3; ++i) {
+            Paragraph p;
+            p.id = QStringLiteral("p%1").arg(i);
+            p.style = QStringLiteral("body");
+            p.runs.append(Run{QStringLiteral("Paragraph %1").arg(i)});
+            model.body.append(p);
+        }
+        editor.loadModel(model, {});
+
+        // Style the MIDDLE paragraph as heading1; toggle a list on it too.
+        QTextCursor cursor(editor.document());
+        cursor.setPosition(editor.document()->findBlockByNumber(1).position() + 2);
+        editor.applyStyle(cursor, QStringLiteral("heading1"));
+        editor.toggleList(cursor, true, QStringLiteral("decimal"));
+
+        const DocumentModel after = editor.snapshotModel();
+        QCOMPARE(after.body.size(), 3);
+        QCOMPARE(after.body[0].style, QStringLiteral("body"));
+        QCOMPARE(after.body[0].id, QStringLiteral("p0"));
+        QVERIFY(!after.body[0].list);
+        QCOMPARE(after.body[1].style, QStringLiteral("heading1"));
+        QVERIFY(after.body[1].list && after.body[1].list->ordered);
+        QCOMPARE(after.body[2].style, QStringLiteral("body"));
+        QVERIFY(!after.body[2].list);
+    }
+
+    void pageBreakDoesNotTouchThePreviousParagraph() {
+        Editor editor;
+        DocumentModel model = DefaultDocuments::empty();
+        model.body.clear();
+        for (int i = 0; i < 2; ++i) {
+            Paragraph p;
+            p.id = QStringLiteral("p%1").arg(i);
+            p.style = QStringLiteral("body");
+            p.runs.append(Run{QStringLiteral("Paragraph %1").arg(i)});
+            model.body.append(p);
+        }
+        editor.loadModel(model, {});
+        QTextCursor cursor(editor.document());
+        cursor.setPosition(editor.document()->findBlockByNumber(1).position());
+        editor.insertPageBreak(cursor);
+        const DocumentModel after = editor.snapshotModel();
+        QCOMPARE(after.body[0].pageBreakBefore, std::optional<bool>());
+        QCOMPARE(after.body[1].pageBreakBefore, std::optional<bool>(true));
+    }
+
+    void returnOnTrailingEmptyListItemKeepsPreviousBullet() {
+        // Regression: leaving a list via Return on its empty last item must
+        // not strip the previous item's membership.
+        Editor editor;
+        DocumentModel model = DefaultDocuments::empty();
+        model.body.clear();
+        Paragraph first;
+        first.id = QStringLiteral("l1");
+        first.style = QStringLiteral("body");
+        first.runs.append(Run{QStringLiteral("First bullet")});
+        ListItemModel item;
+        item.list = QStringLiteral("L");
+        item.ordered = false;
+        item.marker = QStringLiteral("disc");
+        first.list = item;
+        Paragraph second = first;
+        second.id = QStringLiteral("l2");
+        second.runs = {Run{QString()}};
+        model.body = {first, second};
+        editor.loadModel(model, {});
+
+        PageCanvas canvas(&editor);
+        canvas.resize(700, 500);
+        canvas.show();
+        QTextCursor cursor(editor.document());
+        cursor.movePosition(QTextCursor::End);
+        canvas.setTextCursor(cursor);
+        QTest::keyClick(&canvas, Qt::Key_Return);
+
+        const DocumentModel after = editor.snapshotModel();
+        QCOMPARE(after.body.size(), 2);
+        QVERIFY2(after.body[0].list.has_value(), "previous bullet lost its list");
+        QVERIFY(!after.body[1].list.has_value());
+    }
+
+    void typingAfterAnObjectCommandUndoesInOrder() {
+        // Regression: QTextDocument merges adjacent insertions; without the
+        // coalescing break, "def" merges into the pre-move "abc" command and
+        // undo order inverts.
+        Editor editor;
+        editor.loadModel(DefaultDocuments::empty(), {});
+        PageCanvas canvas(&editor);
+        canvas.resize(700, 500);
+        canvas.show();
+        QTextCursor cursor(editor.document());
+        cursor.movePosition(QTextCursor::End);
+        canvas.setTextCursor(cursor);
+
+        QTest::keyClicks(canvas.viewport(), QStringLiteral("abc"));
+        const QByteArray pixel = DefaultDocuments::sampleLetterImages().first();
+        editor.insertImage(pixel, QStringLiteral("lake.png"), 0, QPointF(300, 300));
+        QTest::keyClicks(canvas.viewport(), QStringLiteral("def"));
+        QCOMPARE(editor.document()->toPlainText(), QStringLiteral("abcdef"));
+
+        editor.undoStack()->undo();   // removes "def" only
+        QCOMPARE(editor.document()->toPlainText(), QStringLiteral("abc"));
+        QCOMPARE(editor.objects().size(), 1);
+        editor.undoStack()->undo();   // removes the image
+        QCOMPARE(editor.objects().size(), 0);
+        editor.undoStack()->undo();   // removes "abc"
+        QCOMPARE(editor.document()->toPlainText(), QString());
     }
 };
 

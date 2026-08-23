@@ -88,7 +88,8 @@ if(Qt6Test_FOUND)
     endif()
     if(TARGET tst_editor)
         target_sources(tst_editor PRIVATE
-            src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp)
+            src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp
+            src/app/PageCanvas.cpp)
         target_link_libraries(tst_editor PRIVATE Qt6::Widgets)
     endif()
 endif()

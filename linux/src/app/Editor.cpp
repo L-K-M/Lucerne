@@ -184,6 +184,7 @@ void Editor::pushObjectsCommand(const QString &text, const QVector<PlacedObject>
     for (auto it = addedImages.constBegin(); it != addedImages.constEnd(); ++it)
         m_images.insert(it.key(), it.value());
     m_undo->push(new ObjectsCommand(this, text, before, after));
+    emit undoCoalescingBreak();
 }
 
 QString Editor::insertImage(const QByteArray &payload, const QString &suggestedName,
@@ -250,6 +251,7 @@ void Editor::commitObjectFrame(const QString &id, int beforePage, const RectMode
     }
     if (before == m_model.objects) return;   // nothing actually moved
     m_undo->push(new ObjectsCommand(this, undoText, before, m_model.objects));
+    emit undoCoalescingBreak();
 }
 
 void Editor::setObjectWrap(const QString &id, const QString &wrap) {
@@ -343,7 +345,6 @@ void Editor::applyParagraphStyleFormats(QTextCursor &cursor, const QString &role
     }
 
     QTextCursor blockCursor(block);
-    blockCursor.select(QTextCursor::BlockUnderCursor);
     blockCursor.setBlockFormat(bf);
     blockCursor.setBlockCharFormat(bcf);
 
@@ -427,7 +428,6 @@ void Editor::toggleList(QTextCursor cursor, bool ordered, const QString &marker)
             bcf.setProperty(Props::ListItem, DocumentBridge::encodeListItem(item));
         }
         QTextCursor blockCursor(block);
-        blockCursor.select(QTextCursor::BlockUnderCursor);
         blockCursor.setBlockCharFormat(bcf);
     }
     cursor.endEditBlock();
@@ -446,7 +446,6 @@ void Editor::changeListLevel(QTextCursor cursor, int delta) {
         updated.level = ListGeometry::clampedLevel(item->level + delta);
         bcf.setProperty(Props::ListItem, DocumentBridge::encodeListItem(updated));
         QTextCursor blockCursor(block);
-        blockCursor.select(QTextCursor::BlockUnderCursor);
         blockCursor.setBlockCharFormat(bcf);
     }
     cursor.endEditBlock();
@@ -463,13 +462,11 @@ void Editor::insertPageBreak(QTextCursor cursor) {
         QTextCharFormat updated = cursor.block().charFormat();
         updated.setProperty(Props::ParagraphId, IDGenerator::next(QStringLiteral("p")));
         QTextCursor blockCursor(cursor.block());
-        blockCursor.select(QTextCursor::BlockUnderCursor);
         blockCursor.setBlockCharFormat(updated);
     }
     QTextCharFormat bcf = cursor.block().charFormat();
     bcf.setProperty(Props::PageBreakBefore, true);
     QTextCursor blockCursor(cursor.block());
-    blockCursor.select(QTextCursor::BlockUnderCursor);
     blockCursor.setBlockCharFormat(bcf);
     cursor.endEditBlock();
 }
@@ -510,6 +507,7 @@ void Editor::setPageConfig(const PageConfig &page) {
             m_layout->setPage(before);
             emit pageSetupChanged();
         }));
+    emit undoCoalescingBreak();
 }
 
 void Editor::setFurniture(const std::optional<PageFurniture> &header,
@@ -533,6 +531,7 @@ void Editor::setFurniture(const std::optional<PageFurniture> &header,
             m_model.pageNumberStart = beforeStart;
             emit pageSetupChanged();
         }));
+    emit undoCoalescingBreak();
 }
 
 void Editor::renderPage(QPainter *painter, int pageIndex) const {
