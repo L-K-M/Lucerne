@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // NSAttributedString → [Paragraph]. The inverse of AttributedStringBuilder, run on

@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // Hex ⇆ NSColor for the model's color strings (e.g. "#1a1a1a"). Colors are stored

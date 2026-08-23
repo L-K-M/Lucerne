@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // A small modal sheet for the document's margins (and room for future

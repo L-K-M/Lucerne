@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 import PDFKit
 

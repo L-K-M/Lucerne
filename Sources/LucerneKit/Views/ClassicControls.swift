@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // Hand-drawn "classic" chrome for the format bar, ruler, status bar, and welcome

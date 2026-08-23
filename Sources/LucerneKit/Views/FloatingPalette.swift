@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // The app-global floating palettes torn off the format bar's chooser controls:

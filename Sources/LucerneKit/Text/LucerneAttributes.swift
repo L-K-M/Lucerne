@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // Custom attributed-string keys. The crucial one is `.lucerneStyleRole`: it pins a

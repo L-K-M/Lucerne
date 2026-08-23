@@ -1,7 +1,11 @@
 name: CI
 
-# This is the ONLY place Lucerne is actually compiled: the project is authored on
-# Linux (no AppKit), so a macOS runner is the source of truth for "does it build".
+# The macOS job is the source of truth for the AppKit app (the project is
+# authored on Linux, which has no AppKit). The Ubuntu job builds and tests the
+# portable LucerneCore target — the reference `.luce` reader/writer — against
+# the shared conformance corpus in Tests/Fixtures, so file-format compatibility
+# between the Mac app and the Linux port is a continuously checked signal
+# (docs/ubuntu-port.md Phase 0). The Qt app itself is built by linux-qt.yml.
 on:
   push:
     branches: [main, "claude/**"]
@@ -9,6 +13,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  core-linux:
+    name: Core & format conformance (Ubuntu)
+    runs-on: ubuntu-24.04
+    container: swift:6.0-noble
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Install zlib headers (CZlib system library)
+        run: apt-get update -qq && apt-get install -y -qq zlib1g-dev
+
+      - name: Build (LucerneCore only on Linux)
+        run: swift build -v
+
+      - name: Test (format conformance + core suites)
+        run: swift test -v
+
   build-test:
     name: Build & test (macOS)
     runs-on: macos-14

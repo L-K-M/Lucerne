@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // Builds an NSFont from a family name + size + bold/italic, and reads those traits

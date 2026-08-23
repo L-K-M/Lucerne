@@ -1,9 +1,31 @@
 # Building Lucerne
 
-## Prerequisites
+Two apps live in this repository: the original **macOS** AppKit app (this
+page's main subject) and **Lucerne for Linux**, a native Qt 6 port under
+[`linux/`](../linux/README.md) that reads and writes the same `.luce` files.
 
-- **macOS 13 (Ventura) or later.** Lucerne is an AppKit app; it does not build or
-  run on Linux/Windows.
+## Linux (Qt port)
+
+```sh
+sudo apt install qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+                 cmake ninja-build
+cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build linux/build
+./linux/build/lucerne            # or --sample for the demo letter
+ctest --test-dir linux/build     # headless test suites
+```
+
+See [`linux/README.md`](../linux/README.md) for packaging (.deb/AppImage),
+architecture, and the parity list. The portable Swift core also builds on
+Linux — `swift build && swift test` at the repo root exercises `LucerneCore`
+and the `.luce` format-conformance suite (the AppKit targets are declared only
+on macOS, so this works with a stock Swift toolchain).
+
+## macOS
+
+### Prerequisites
+
+- **macOS 13 (Ventura) or later** for the AppKit app itself.
 - **Swift 5.9+** — either Xcode 15+ (recommended) or the Swift.org toolchain.
 
 > This repository was authored in a Linux container with no Swift toolchain, so it

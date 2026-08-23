@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // A horizontal ruler with draggable indent markers and tab stops. It spans the

@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // The format bar across the top of the window, drawn in the classic pre-flat Mac

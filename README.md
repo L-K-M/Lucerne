@@ -32,10 +32,25 @@ is in [`docs/luce-format-spec.md`](docs/luce-format-spec.md).
 
 ## Building & running
 
+Lucerne ships for **macOS** (the original AppKit app) and **Ubuntu/Linux**
+(a native Qt port in [`linux/`](linux/README.md) — same features, same `.luce`
+files, `.deb` and AppImage builds on every release). The Linux quick start:
+
+```sh
+sudo apt install qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev cmake ninja-build
+cmake -S linux -B linux/build -G Ninja && cmake --build linux/build
+./linux/build/lucerne
+```
+
+The rest of this section is the **Mac** build:
+
 > **Requires macOS** (Ventura 13+) and the Swift toolchain (Xcode 15+ or the
 > Swift.org toolchain). This repository was authored on Linux, where AppKit is
-> unavailable, so it **cannot be compiled in that environment** — build it on a
-> Mac. Compilation is verified by the macOS GitHub Actions workflow.
+> unavailable, so the Mac app **cannot be compiled in that environment** —
+> build it on a Mac. Compilation is verified by the macOS GitHub Actions
+> workflow. (The portable `LucerneCore` target — model + `.luce` IO — does
+> build and test everywhere: `swift test` on Linux runs the format-conformance
+> suite.)
 
 Quick development run (no app bundle, panels-based open/save work):
 

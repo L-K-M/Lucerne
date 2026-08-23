@@ -9,8 +9,9 @@ AppKit), and the release workflow assembles an unsigned, ad-hoc-codesigned
 
 | Workflow | Trigger | Purpose |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | Pushes to `main`/`claude/**`, PRs, manual | `swift build` + `swift test`, icon generation, and app-bundle assembly (`Scripts/make-app.sh`) on macOS. |
-| `.github/workflows/release.yml` | Pushing a `v*` tag (e.g. `v1.2.0`) | Build `Lucerne.app`, package `.zip` + `.dmg`, and publish a GitHub Release. |
+| `.github/workflows/ci.yml` | Pushes to `main`/`claude/**`, PRs, manual | macOS: `swift build` + `swift test`, icon generation, app-bundle assembly. Ubuntu: `swift build` + `swift test` of the portable `LucerneCore` (the `.luce` format-conformance signal) in a `swift:6.0-noble` container. |
+| `.github/workflows/linux-qt.yml` | Pushes to `main`/`claude/**`, PRs, manual | Build + headless-test the Qt port (`linux/`) on ubuntu-24.04 (Qt 6.4) and ubuntu-22.04 (Qt 6.2 floor); package and smoke-install a `.deb`; assemble and smoke-run an AppImage. Its `tst_fixtures` walks the same `Tests/Fixtures` corpus as the Swift job — cross-platform compatibility is a checked property. |
+| `.github/workflows/release.yml` | Pushing a `v*` tag (e.g. `v1.2.0`) | Build `Lucerne.app`, package `.zip` + `.dmg`; build and attach `lucerne_<v>_amd64.deb` (ubuntu-24.04) and `lucerne-x86_64.AppImage` (ubuntu-22.04 base); publish one GitHub Release with all four artifacts. |
 
 ## Continuous integration (`ci.yml`)
 

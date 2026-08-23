@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // A small Find & Replace panel that operates on the editor's shared text storage.

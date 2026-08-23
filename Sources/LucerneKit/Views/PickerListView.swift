@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 /// One row of a try-on picker, floating palette, or the Style Library window: a

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Lucerne
+GenericName=Word Processor
+Comment=Write letters with rulers, tabs, and genuine free placement of images
+Exec=lucerne %F
+Icon=ch.lkmc.Lucerne
+Terminal=false
+Categories=Office;WordProcessor;Qt;
+MimeType=application/x-lucerne;
+Keywords=letter;word;processor;writing;document;luce;
+StartupNotify=true
+StartupWMClass=lucerne
