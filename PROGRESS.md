@@ -1,7 +1,11 @@
 # PROGRESS.md — Lucerne implementation status
 
-Live checklist for the Avenue A build. Updated as work lands. Legend:
-`[x]` done · `[~]` partial / in progress · `[ ]` not started.
+Live checklist for the Avenue A build (the **macOS** app). Updated as work
+lands. Legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
+
+> **Lucerne for Linux** — the Qt port under [`linux/`](linux/README.md) — has
+> its own parity list in that directory's README. Both apps share the `.luce`
+> format, kept compatible by the conformance corpus in `Tests/Fixtures`.
 
 > **Verification:** authored on Linux (no Swift toolchain). Compilation is checked
 > by the macOS CI workflow, not locally. **The macOS CI build + unit tests are

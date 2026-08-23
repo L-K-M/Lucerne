@@ -1,8 +1,12 @@
 # Lucerne on Ubuntu — Porting Research & Proposal
 
-*Status: research complete, proposal awaiting decision. Authored by reviewing the
-current codebase (~17,000 lines of Swift) and surveying the Linux text-layout
-landscape. No code changes are implied by this document.*
+*Status: **implemented** — this document's recommendation was carried out.
+Phase 0 (the portable `LucerneCore` Swift target, Linux CI, and the shared
+conformance corpus in `Tests/Fixtures`) and Phase 1 (the Qt 6 port, in
+[`linux/`](../linux/README.md)) both landed; the fixture corpus described in
+§3, aspirational when this was written, now exists and is round-tripped by
+both implementations' test suites on every push. The research and option
+analysis below are kept as the design record.*
 
 ## TL;DR
 

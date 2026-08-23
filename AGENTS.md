@@ -45,6 +45,19 @@ plan: editing on `NSTextView` with **TextKit 1**, and free image placement via
 `NSTextContainer.exclusionPaths`. The mental model is **Avenue E**: a page canvas
 holding one paginated text frame, plus floating objects that *punch holes* in it.
 
+Since the Ubuntu port landed, the package is split so the AppKit-free heart —
+model, `.luce` archive IO, Markdown export, lists, history, style library,
+page/exclusion geometry — lives in a **`LucerneCore`** target that builds and
+tests with Swift on Linux too (the AppKit targets are declared only on macOS;
+`LucerneKit` re-exports the core so client code is unchanged). A native **Qt 6
+port** of the whole app lives under [`linux/`](linux/README.md), with a C++
+mirror of `LucerneCore` and its own exclusion-flow layout engine. The two
+implementations are kept file-level compatible by the shared conformance corpus
+in `Tests/Fixtures` (regenerate with `Scripts/make-fixtures.py`), which both
+test suites round-trip in CI. **When you change the file format, update the
+spec + both implementations + the fixtures together** — the format checklist
+below now spans both apps.
+
 ## Critical environment note
 
 This repo was authored in a **Linux container with no Swift toolchain and no
@@ -204,11 +217,13 @@ summary is [`docs/roadmap.md`](docs/roadmap.md), and the shipped-feature checkli
 
 ## Adding a feature — checklist
 
-1. If it touches the file format, update `Model/` structs **and both**
-   `docs/file-format.md` (overview) and `docs/luce-format-spec.md` (the normative
-   spec + JSON Schema), and bump `formatVersion` if the change isn't backward
-   compatible. The spec is the contract third-party tools build against — keep it
-   exact.
+1. If it touches the file format, update the `Sources/LucerneCore/Model/`
+   structs **and** `docs/file-format.md` (overview) **and**
+   `docs/luce-format-spec.md` (the normative spec + JSON Schema) **and** the
+   Qt port's mirror (`linux/src/core/Model.h` + `Coding.cpp`) **and** the
+   shared fixtures (`Scripts/make-fixtures.py` → `Tests/Fixtures`), and bump
+   `formatVersion` if the change isn't backward compatible. The spec is the
+   contract third-party tools build against — keep it exact.
 2. If it affects layout, add/adjust a geometry test in `Tests/`.
 3. Update `PROGRESS.md` (and this file if architecture shifts).
 4. On a Mac: `swift build && swift test`. Otherwise rely on CI.
