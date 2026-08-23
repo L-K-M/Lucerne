@@ -55,6 +55,11 @@ private slots:
         QTextCursor cursor(editor.document());
         cursor.movePosition(QTextCursor::End);
         cursor.insertText(QStringLiteral("Hello from Ubuntu."));
+        // Actually run the save path (the test's name is a promise): typing
+        // must survive encode → archive → disk, not just the model snapshot.
+        QString error;
+        QVERIFY2(editor.saveFile(dir.filePath(QStringLiteral("typed.luce")), &error),
+                 qPrintable(error));
         const DocumentModel model = editor.snapshotModel();
         QCOMPARE(model.body.size(), 1);
         QCOMPARE(model.body.first().plainText(), QStringLiteral("Hello from Ubuntu."));

@@ -43,10 +43,13 @@ QStringList WelcomeDialog::recentFiles() {
 }
 
 void WelcomeDialog::addRecentFile(const QString &path) {
+    // Store absolute paths: openPath receives command-line arguments verbatim,
+    // and a relative entry would resolve against a future launch's cwd.
+    const QString absolute = QFileInfo(path).absoluteFilePath();
     QSettings settings;
     QStringList list = settings.value(QStringLiteral("recentFiles")).toStringList();
-    list.removeAll(path);
-    list.prepend(path);
+    list.removeAll(absolute);
+    list.prepend(absolute);
     while (list.size() > maxRecents) list.removeLast();
     settings.setValue(QStringLiteral("recentFiles"), list);
 }

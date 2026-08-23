@@ -94,6 +94,32 @@ private slots:
         }
     }
 
+    void zip64CentralDirectoryOffsetSentinelIsRejected() {
+        // The OTHER ZIP64 sentinel (the Swift suite's IOSafetyTests case (c)):
+        // a 0xFFFFFFFF central-directory offset must report Unsupported, not
+        // get chased as a real offset.
+        QByteArray archive = MiniZip::archive({{QStringLiteral("a.txt"), "x"}});
+        const int eocd = int(archive.size()) - 22;
+        for (int i = 16; i < 20; ++i) archive[eocd + i] = char(0xff);
+        try {
+            MiniZip::entries(archive);
+            QFAIL("expected ZipError");
+        } catch (const MiniZip::ZipError &error) {
+            QCOMPARE(int(error.kind()), int(MiniZip::ZipError::Kind::Unsupported));
+        }
+    }
+
+    void hugeDeclaredSizeIsRejectedNotAllocated() {
+        // Mirrors Swift's MiniZipHardeningTests: an entry whose central
+        // directory declares a ~4 GiB uncompressed size must be rejected by
+        // the size sanity check, never allocated.
+        QByteArray archive = MiniZip::archive({{QStringLiteral("a.txt"), "x"}});
+        const int central = int(archive.indexOf(QByteArrayLiteral("PK\x01\x02")));
+        QVERIFY(central > 0);
+        for (int i = 24; i < 28; ++i) archive[central + i] = char(0xff);
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
     void deflatedEntryInflatesAndPassesCRC() {
         const auto entries = MiniZip::entries(deflateFixture());
         QCOMPARE(entries.size(), 1);
