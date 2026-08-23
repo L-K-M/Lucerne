@@ -47,6 +47,13 @@ private slots:
         // General-purpose flag of the local header sits at offset 6.
         const quint16 flag = quint8(archive[6]) | (quint16(quint8(archive[7])) << 8);
         QVERIFY2(flag & 0x0800, "the UTF-8 (EFS) name flag must be set");
+        // The central directory carries its own flag word (offset 8) and is
+        // what most third-party readers consult for name encoding.
+        const int central = int(archive.indexOf(QByteArrayLiteral("PK\x01\x02")));
+        QVERIFY(central > 0);
+        const quint16 centralFlag = quint8(archive[central + 8])
+            | (quint16(quint8(archive[central + 9])) << 8);
+        QVERIFY2(centralFlag & 0x0800, "EFS must also be set in the central directory");
     }
 
     void corruptPayloadIsRejected() {

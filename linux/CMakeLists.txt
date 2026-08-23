@@ -11,7 +11,9 @@
 #
 # Qt >= 6.2 (Ubuntu 22.04 ships 6.2, 24.04 ships 6.4). Build:
 #   cmake -S linux -B linux/build -G Ninja && cmake --build linux/build
-cmake_minimum_required(VERSION 3.19)
+# 3.20 floor: the documented test invocation (ctest --test-dir) needs it;
+# Ubuntu 22.04 ships 3.22, so the platform floor is unaffected.
+cmake_minimum_required(VERSION 3.20)
 
 project(lucerne VERSION 0.6.0 LANGUAGES CXX)
 

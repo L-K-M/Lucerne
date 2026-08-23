@@ -106,6 +106,9 @@ private slots:
         const RectModel clamped = metrics.clampObjectFrame({-50, 900, 200, 100});
         QCOMPARE(clamped.x, 0.0);
         QCOMPARE(clamped.maxY(), metrics.pageSize.height);
+        // Clamp MOVES a page-sized-or-smaller frame; it must never resize it.
+        QCOMPARE(clamped.width, 200.0);
+        QCOMPARE(clamped.height, 100.0);
     }
 
     void aspectFitScalesDownOnly() {

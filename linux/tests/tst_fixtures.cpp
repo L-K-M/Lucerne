@@ -110,7 +110,9 @@ private slots:
             }
             const QByteArray rewritten =
                 LuceArchive::write(contents.model, images, contents.history);
-            const LuceArchive::Contents reread = LuceArchive::read(rewritten);
+            const auto rereadParsed = tryRead(rewritten);
+            QVERIFY2(rereadParsed, qPrintable(name + ": rewritten archive rejected"));
+            const LuceArchive::Contents &reread = *rereadParsed;
             QVERIFY2(reread.model == contents.model,
                      qPrintable(name + ": archive round-trip drifted"));
             // Referenced payloads survive byte-identically; orphan entries are

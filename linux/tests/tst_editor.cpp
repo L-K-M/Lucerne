@@ -43,7 +43,14 @@ private slots:
         // content.md + history landed in the archive.
         QFile file(path);
         QVERIFY(file.open(QIODevice::ReadOnly));
-        const LuceArchive::Contents contents = LuceArchive::read(file.readAll());
+        LuceArchive::Contents contents;
+        try {
+            contents = LuceArchive::read(file.readAll());
+        } catch (const std::exception &error) {
+            // A named failure, not an uncaught exception that aborts the binary.
+            QFAIL(qPrintable(QStringLiteral("saved letter rejected: %1")
+                                 .arg(QString::fromUtf8(error.what()))));
+        }
         QCOMPARE(contents.history.size(), 1);
         QVERIFY(contents.images.contains(QStringLiteral("images/lake.png")));
     }
