@@ -33,7 +33,8 @@ int main(int argc, char **argv) {
                                {QStringLiteral("Liberation Mono"),
                                 QStringLiteral("DejaVu Sans Mono")});
     QFont::insertSubstitutions(QStringLiteral("Georgia"),
-                               {QStringLiteral("Liberation Serif"),
+                               {QStringLiteral("Gelasio"),   // Georgia's metric clone
+                                QStringLiteral("Liberation Serif"),
                                 QStringLiteral("DejaVu Serif")});
 
     QCommandLineParser parser;

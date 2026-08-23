@@ -51,7 +51,11 @@ private slots:
 
     void corruptPayloadIsRejected() {
         QByteArray archive = MiniZip::archive({{QStringLiteral("a.txt"), "hello world"}});
-        const int payloadAt = 30 + int(strlen("a.txt"));
+        // Stored payloads appear verbatim exactly once (the central directory
+        // holds metadata only), so locate it instead of hardcoding the 30-byte
+        // local-header layout.
+        const int payloadAt = int(archive.indexOf("hello world"));
+        QVERIFY(payloadAt > 0);
         archive[payloadAt] = archive[payloadAt] ^ 0x55;   // flip bits inside "hello"
         EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
     }

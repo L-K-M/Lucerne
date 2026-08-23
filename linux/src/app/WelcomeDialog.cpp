@@ -1,5 +1,6 @@
 #include "app/WelcomeDialog.h"
 
+#include <QCoreApplication>
 #include <QDate>
 #include <QFileInfo>
 #include <QLabel>
@@ -25,8 +26,10 @@ QString epigraphOfTheDay() {
         QT_TRANSLATE_NOOP("WelcomeDialog", "“Style is the dress of thoughts.” — Chesterfield"),
         QT_TRANSLATE_NOOP("WelcomeDialog", "“Well done is better than well said.” — Franklin"),
     };
+    const int count = int(sizeof(epigraphs) / sizeof(epigraphs[0]));
     const int day = QDate::currentDate().dayOfYear();
-    return QObject::tr(epigraphs[(day - 1) % 8]);
+    // Look up under the same context QT_TRANSLATE_NOOP recorded the strings in.
+    return QCoreApplication::translate("WelcomeDialog", epigraphs[(day - 1) % count]);
 }
 
 } // namespace

@@ -70,7 +70,15 @@ private slots:
         for (const QString &name : validFixtures) {
             const QByteArray data = fixture(name);
             QVERIFY2(!data.isEmpty(), qPrintable(name));
-            const LuceArchive::Contents contents = LuceArchive::read(data);
+            LuceArchive::Contents contents;
+            try {
+                contents = LuceArchive::read(data);
+            } catch (const std::exception &error) {
+                // Name the fixture: an exception escaping the slot would abort
+                // the whole binary without saying which of the six files broke.
+                QFAIL(qPrintable(QStringLiteral("valid fixture rejected: %1 (%2)")
+                                     .arg(name, QString::fromUtf8(error.what()))));
+            }
 
             // JSON round-trip through this implementation's writer.
             const DocumentModel redecoded = Coding::decode(Coding::encode(contents.model));
@@ -90,6 +98,10 @@ private slots:
             QVERIFY2(reread.model == contents.model,
                      qPrintable(name + ": archive round-trip drifted"));
             QCOMPARE(reread.history.size(), contents.history.size());
+            for (int i = 0; i < contents.history.size(); ++i) {
+                QCOMPARE(reread.history[i].timestamp, contents.history[i].timestamp);
+                QCOMPARE(reread.history[i].markdown, contents.history[i].markdown);
+            }
         }
     }
 

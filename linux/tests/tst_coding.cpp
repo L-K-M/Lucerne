@@ -8,6 +8,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 using namespace lucerne;
 
 namespace {
@@ -186,7 +188,8 @@ private slots:
 
     void formatVersionBeyondIntRangeIsStillRejected() {
         // QJsonValue::toInt returns 0 for out-of-int-range numbers - the
-        // too-new check must not be bypassable that way (spec 9 MUST).
+        // too-new check must not be bypassable that way (spec 9 MUST), and the
+        // message must name the real version, not a toInt-collapsed 0.
         QByteArray json = minimalDocument();
         json.replace("\"formatVersion\": 1", "\"formatVersion\": 10000000000");
         try {
@@ -194,7 +197,20 @@ private slots:
             QFAIL("expected CodingError");
         } catch (const CodingError &error) {
             QCOMPARE(int(error.kind()), int(CodingError::Kind::FormatTooNew));
+            QVERIFY2(error.message().contains(QLatin1String("10000000000")),
+                     qPrintable(error.message()));
         }
+    }
+
+    void nonFiniteNumbersRefuseToEncode() {
+        // JSON cannot represent NaN/Infinity; the Swift reference encoder
+        // throws, and writing "nan" would produce a file our own decoder
+        // rejects - the save must fail loudly instead.
+        DocumentModel model = Coding::decode(minimalDocument());
+        model.page.width = std::numeric_limits<double>::quiet_NaN();
+        EXPECT_THROW(Coding::encode(model), CodingError);
+        model.page.width = std::numeric_limits<double>::infinity();
+        EXPECT_THROW(Coding::encode(model), CodingError);
     }
 
     void outOfRangeIntegerFieldIsMalformed() {

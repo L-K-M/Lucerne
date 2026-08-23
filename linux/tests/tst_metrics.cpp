@@ -56,6 +56,20 @@ private slots:
         const double contentW = metrics.contentSize().width;
         const RectModel right = metrics.exclusionRect({595.28 - 72 - 100 - 30, 200, 100, 80}, 0);
         QCOMPARE(right.maxX(), contentW);
+        // Standoff inflation counts toward the minimum-column check: a 96-pt
+        // gap is wide enough on its own, but the 30-pt standoff shrinks it to
+        // 66 pt (< 72) → still snaps.
+        const RectModel inflated = metrics.exclusionRect({72 + 96, 200, 100, 80}, 30);
+        QCOMPARE(inflated.x, 0.0);
+    }
+
+    void exclusionBeyondTheRightEdgeDoesNotWidenTheLine() {
+        // An object dragged into the right page margin yields a span starting
+        // beyond maxX; the emitted segment must still stop at maxX instead of
+        // overshooting into the margin.
+        const QVector<RectModel> exclusions = {{471, 0, 64, 100}};
+        QCOMPARE(availableSegments(0, 14, 0, 451, exclusions),
+                 (QVector<Segment>{{0, 451}}));
     }
 
     void rectsCoverOnlyWrappingObjectsOnThePage() {

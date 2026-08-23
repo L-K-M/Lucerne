@@ -133,7 +133,7 @@ private slots:
         QTextCursor cursor(editor.document());
         cursor.insertText(QStringLiteral("abc"));
 
-        const QVector<PlacedObject> none = editor.objects();
+        QCOMPARE(editor.objects().size(), 0);
         const QByteArray pixel = DefaultDocuments::sampleLetterImages().first();
         editor.insertImage(pixel, QStringLiteral("lake.png"), 0, QPointF(300, 300));
         QCOMPARE(editor.objects().size(), 1);

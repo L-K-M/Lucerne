@@ -23,8 +23,13 @@ class tst_history : public QObject {
 private slots:
     void initTestCase() {
         // Pin a DST-observing zone so the spring-forward-gap regression below
-        // is meaningful wherever the suite runs.
+        // is meaningful wherever the suite runs — and verify the pin took
+        // effect: on a UTC host an ineffective pin would let
+        // dstGapStampParsesAsUTC pass vacuously (a local-time misparse yields
+        // the same epoch there).
         qputenv("TZ", "Europe/Zurich");
+        QVERIFY2(QTimeZone::systemTimeZone().id() == QByteArray("Europe/Zurich"),
+                 QTimeZone::systemTimeZone().id().constData());
     }
 
     void dstGapStampParsesAsUTC() {

@@ -11,6 +11,8 @@
 #include <QTextDocument>
 #include <QtTest>
 
+#include <cmath>
+
 using namespace lucerne;
 
 namespace {

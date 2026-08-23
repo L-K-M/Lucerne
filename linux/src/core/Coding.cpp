@@ -6,9 +6,12 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cstdio>
 #include <limits>
+#include <optional>
 
 namespace lucerne {
 namespace Coding {
@@ -316,7 +319,8 @@ DocumentModel decode(const QByteArray &json) {
             QStringLiteral("This document was saved by a newer version of Lucerne "
                            "(format %1; this app reads up to %2). Please update "
                            "Lucerne to open it.")
-                .arg(version.toInt()).arg(DocumentModel::currentFormatVersion()));
+                .arg(QString::number(version.toDouble(), 'g', 16))
+                .arg(DocumentModel::currentFormatVersion()));
     }
 
     DocumentModel model;
@@ -569,6 +573,11 @@ void appendEscaped(QByteArray &out, const QString &s) {
 }
 
 void appendNumber(QByteArray &out, double d) {
+    // JSON has no NaN/Infinity (std::to_chars would emit "nan"/"inf"), and the
+    // Swift reference encoder throws on them — refusing the save keeps the
+    // contract that everything the writer produces can be re-opened.
+    if (!std::isfinite(d))
+        malformed(QStringLiteral("cannot write a non-finite number into document.json"));
     if (d == std::floor(d) && std::abs(d) < 9.007199254740992e15) {
         out += QByteArray::number(qlonglong(d));
         return;

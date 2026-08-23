@@ -86,7 +86,9 @@ QVector<Segment> availableSegments(double bandTop, double bandHeight,
     QVector<Segment> segments;
     double cursor = minX;
     for (const Span &span : blocked) {
-        const double left = std::max(span.left, minX);
+        // Clamp both ends into [minX, maxX]: an exclusion lying entirely in
+        // the right page margin must cap the segment at maxX, not widen it.
+        const double left = std::clamp(span.left, minX, maxX);
         const double right = std::min(span.right, maxX);
         if (right <= cursor) continue;
         if (left > cursor && left - cursor >= minWidth)
