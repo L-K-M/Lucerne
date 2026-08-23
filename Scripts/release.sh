@@ -24,7 +24,7 @@ export RELEASE_INVOKED_AS="Scripts/release.sh"
 # Keep the About box's fallback version in step (used when Info.plist can't be
 # read, e.g. an unbundled `swift run`); a missing file/pattern is a note, not a
 # failure.
-export RELEASE_POST_BUMP='f="Sources/Lucerne/AboutWindowController.swift"; if [ -f "$f" ]; then sed -i "" -E "s/(static let fallbackVersion = \")[^\"]*(\")/\1${RELEASE_NEW_VERSION}\2/" "$f"; grep -qF "fallbackVersion = \"${RELEASE_NEW_VERSION}\"" "$f" || echo "note: could not update the About box version in $f." >&2; fi'
+export RELEASE_POST_BUMP='f="Sources/Lucerne/AboutWindowController.swift"; if [ -f "$f" ]; then sed -i "" -E "s/(static let fallbackVersion = \")[^\"]*(\")/\1${RELEASE_NEW_VERSION}\2/" "$f"; grep -qF "fallbackVersion = \"${RELEASE_NEW_VERSION}\"" "$f" || echo "note: could not update the About box version in $f." >&2; fi; c="linux/CMakeLists.txt"; if [ -f "$c" ]; then sed -i "" -E "s/(project\(lucerne VERSION )[0-9.]+/\1${RELEASE_NEW_VERSION}/" "$c"; grep -qF "project(lucerne VERSION ${RELEASE_NEW_VERSION}" "$c" || echo "note: could not update the Qt app version in $c." >&2; fi'
 
 BIN="${LKM_RELEASE_BIN:-lkm-release}"
 command -v "$BIN" >/dev/null 2>&1 || {

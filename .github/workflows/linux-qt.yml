@@ -1,0 +1,104 @@
+name: Linux app (Qt)
+
+# Builds and tests the Qt port in linux/ (docs/ubuntu-port.md Phase 1) and
+# packages the two Linux distribution formats:
+#   • a .deb built on ubuntu-24.04 (Qt 6.4, t64 dependency names — targets
+#     the current LTS),
+#   • an AppImage built on ubuntu-22.04 (Qt 6.2, older glibc — runs on any
+#     reasonably current distro).
+# The test suite includes tst_fixtures, which round-trips the SAME conformance
+# corpus (Tests/Fixtures) the Swift LucerneCore job exercises — that pairing
+# is the cross-platform file-compatibility signal.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test-deb:
+    name: Build, test & .deb (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6 and build tooling
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+            ninja-build dpkg-dev
+
+      - name: Configure
+        run: cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build linux/build
+
+      - name: Test (headless, incl. shared .luce conformance corpus)
+        run: ctest --test-dir linux/build --output-on-failure
+
+      - name: Package .deb
+        run: cd linux/build && cpack -G DEB
+
+      - name: Verify the package installs and launches
+        run: |
+          sudo apt-get install -y ./linux/build/lucerne_*_amd64.deb
+          QT_QPA_PLATFORM=offscreen lucerne --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lucerne-deb
+          path: linux/build/lucerne_*_amd64.deb
+          if-no-files-found: error
+
+  appimage:
+    name: AppImage (Ubuntu 22.04 base)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6 and build tooling
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+            ninja-build libfuse2 libxkbcommon-x11-0 qt6-wayland qt6-wayland-dev
+
+      - name: Configure
+        run: cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build linux/build
+
+      - name: Test (headless — proves the Qt 6.2 floor really builds & runs)
+        run: ctest --test-dir linux/build --output-on-failure
+
+      - name: Assemble AppDir
+        run: cmake --install linux/build --prefix linux/build/AppDir/usr
+
+      - name: Build AppImage (linuxdeploy + Qt plugin)
+        run: |
+          cd linux/build
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+          export QMAKE=/usr/bin/qmake6
+          # Bundle wayland + offscreen alongside xcb so the AppImage feels at
+          # home on modern GNOME sessions and stays testable headless.
+          export EXTRA_PLATFORM_PLUGINS="libqwayland-generic.so;libqwayland-egl.so;libqoffscreen.so"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          mv Lucerne*.AppImage lucerne-x86_64.AppImage
+
+      - name: Smoke-run the AppImage
+        run: |
+          cd linux/build
+          # No FUSE in CI containers is common; extract-and-run sidesteps it.
+          QT_QPA_PLATFORM=offscreen ./lucerne-x86_64.AppImage --appimage-extract-and-run --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lucerne-appimage
+          path: linux/build/lucerne-x86_64.AppImage
+          if-no-files-found: error

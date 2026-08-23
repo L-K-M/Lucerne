@@ -32,11 +32,12 @@ jobs:
 
       - name: Verify the tag matches the committed version
         # Guards against tagging a commit whose committed version markers were never
-        # bumped (Scripts/release.sh bumps both; a hand-cut tag can skip them). Runs
-        # BEFORE the plist is stamped from the tag, so it sees the committed values.
+        # bumped (Scripts/release.sh bumps all of them; a hand-cut tag can skip them).
+        # Runs BEFORE the plist is stamped from the tag, so it sees the committed values.
         run: |
           PLIST_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Scripts/Info.plist)"
           README_VERSION="$(sed -n 's/.*<!-- version -->\(.*\)<!-- \/version -->.*/\1/p' README.md | head -1)"
+          CMAKE_VERSION="$(sed -n 's/^project(lucerne VERSION \([0-9.]*\).*/\1/p' linux/CMakeLists.txt | head -1)"
           fail=0
           if [ "$PLIST_VERSION" != "$VERSION" ]; then
             echo "::error::tag version ($VERSION) != Scripts/Info.plist CFBundleShortVersionString ($PLIST_VERSION); bump the plist (Scripts/release.sh does this) before tagging."
@@ -44,6 +45,10 @@ jobs:
           fi
           if [ "$README_VERSION" != "$VERSION" ]; then
             echo "::error::tag version ($VERSION) != README version marker ($README_VERSION); bump the README version line before tagging."
+            fail=1
+          fi
+          if [ "$CMAKE_VERSION" != "$VERSION" ]; then
+            echo "::error::tag version ($VERSION) != linux/CMakeLists.txt project version ($CMAKE_VERSION); bump it (Scripts/release.sh does this) before tagging."
             fail=1
           fi
           [ "$fail" -eq 0 ] || exit 1
@@ -92,10 +97,81 @@ jobs:
             ${{ env.ZIP }}
           generate_release_notes: true
           body: |
-            ### Unsigned build
+            ### macOS: unsigned build
 
-            This app is **not** code-signed with a Developer ID or notarized, so macOS
-            Gatekeeper will warn on first launch. To open it:
+            The Mac app is **not** code-signed with a Developer ID or notarized, so
+            macOS Gatekeeper will warn on first launch. To open it:
 
             - **Right-click** (or Control-click) the app → **Open** → **Open**, or
             - run `xattr -dr com.apple.quarantine /Applications/${{ env.APP_NAME }}.app`
+
+            ### Linux
+
+            - **`lucerne_<version>_amd64.deb`** — for Ubuntu 24.04+ (`sudo apt install ./lucerne_*.deb`)
+            - **`lucerne-x86_64.AppImage`** — for any current distro (`chmod +x`, then run)
+
+            `.luce` files are fully compatible between the Mac and Linux apps.
+
+  release-linux-deb:
+    name: Build & attach .deb (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6 and build tooling
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+            ninja-build dpkg-dev
+
+      - name: Build, test, package
+        run: |
+          cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build linux/build
+          ctest --test-dir linux/build --output-on-failure
+          cd linux/build && cpack -G DEB
+
+      - name: Attach to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: linux/build/lucerne_*_amd64.deb
+
+  release-linux-appimage:
+    name: Build & attach AppImage (Ubuntu 22.04)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6 and build tooling
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+            ninja-build libfuse2 libxkbcommon-x11-0 qt6-wayland qt6-wayland-dev
+
+      - name: Build, test, assemble AppImage
+        run: |
+          cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build linux/build
+          ctest --test-dir linux/build --output-on-failure
+          cmake --install linux/build --prefix linux/build/AppDir/usr
+          cd linux/build
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSLO https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+          export QMAKE=/usr/bin/qmake6
+          # Bundle wayland + offscreen alongside xcb so the AppImage feels at
+          # home on modern GNOME sessions and stays testable headless.
+          export EXTRA_PLATFORM_PLUGINS="libqwayland-generic.so;libqwayland-egl.so;libqoffscreen.so"
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
+          mv Lucerne*.AppImage lucerne-x86_64.AppImage
+
+      - name: Attach to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: linux/build/lucerne-x86_64.AppImage
