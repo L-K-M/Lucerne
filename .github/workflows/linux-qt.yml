@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            qt6-base-dev qt6-base-dev-tools qt6-svg-dev libgl1-mesa-dev zlib1g-dev \
+            qt6-base-dev qt6-base-dev-tools libqt6svg6-dev libgl1-mesa-dev zlib1g-dev \
             ninja-build dpkg-dev
 
       - name: Configure
@@ -69,7 +69,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            qt6-base-dev qt6-base-dev-tools qt6-svg-dev libgl1-mesa-dev zlib1g-dev \
+            qt6-base-dev qt6-base-dev-tools libqt6svg6-dev libgl1-mesa-dev zlib1g-dev \
             ninja-build libfuse2 libxkbcommon-x11-0 qt6-wayland qt6-wayland-dev
 
       - name: Configure
