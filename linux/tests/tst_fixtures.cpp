@@ -9,11 +9,14 @@
 #include "core/Lists.h"
 #include "core/LuceArchive.h"
 #include "core/Markdown.h"
+#include "core/MiniZip.h"
 #include "core/PageMetrics.h"
 #include "testutil.h"
 
 #include <QDir>
 #include <QtTest>
+
+#include <optional>
 
 using namespace lucerne;
 
@@ -23,6 +26,17 @@ QByteArray fixture(const QString &name) {
     QFile file(QStringLiteral(LUCERNE_FIXTURES_DIR) + QLatin1Char('/') + name);
     if (!file.open(QIODevice::ReadOnly)) return {};
     return file.readAll();
+}
+
+/// LuceArchive::read wrapped so a rejected fixture becomes a loud, named test
+/// failure instead of an uncaught exception that aborts the whole binary
+/// (QtTest does not catch exceptions escaping a slot).
+std::optional<LuceArchive::Contents> tryRead(const QByteArray &data) {
+    try {
+        return LuceArchive::read(data);
+    } catch (const std::exception &) {
+        return std::nullopt;
+    }
 }
 
 /// fixture() with a loud failure when the file is missing, so a moved or
@@ -113,7 +127,9 @@ private slots:
 
     void kitchenSinkDecodesEveryModelledFeature() {
         REQUIRE_FIXTURE(data, "kitchen-sink.luce");
-        const LuceArchive::Contents contents = LuceArchive::read(data);
+        const auto parsed = tryRead(data);
+        QVERIFY2(parsed, "kitchen-sink.luce rejected");
+        const LuceArchive::Contents &contents = *parsed;
         const DocumentModel &model = contents.model;
 
         QCOMPARE(model.page.size, QStringLiteral("custom"));
@@ -165,7 +181,9 @@ private slots:
 
     void listsFixtureNumbering() {
         REQUIRE_FIXTURE(data, "lists.luce");
-        const DocumentModel model = LuceArchive::read(data).model;
+        const auto parsed = tryRead(data);
+        QVERIFY2(parsed, "lists.luce rejected");
+        const DocumentModel &model = parsed->model;
         QVector<std::optional<ListItemModel>> items;
         for (const Paragraph &p : model.body) items.append(p.list);
         const auto resolved = ListMarkers::resolve(items);
@@ -184,7 +202,9 @@ private slots:
 
     void tablesFixtureMarkdown() {
         REQUIRE_FIXTURE(data, "tables.luce");
-        const DocumentModel model = LuceArchive::read(data).model;
+        const auto parsed = tryRead(data);
+        QVERIFY2(parsed, "tables.luce rejected");
+        const DocumentModel &model = parsed->model;
         const QString markdown = MarkdownExporter::exportModel(model);
         QVERIFY2(markdown.contains("| Header A | Header B | Header C |"),
                  qPrintable(markdown));
@@ -193,8 +213,27 @@ private slots:
 
     void historyFixtureSnapshots() {
         REQUIRE_FIXTURE(data, "history.luce");
-        const LuceArchive::Contents contents = LuceArchive::read(data);
-        QCOMPARE(contents.history.size(), 2);   // the unparseable name is skipped
+        const auto parsed = tryRead(data);
+        QVERIFY2(parsed, "history.luce rejected");
+        QCOMPARE(parsed->history.size(), 2);   // the unparseable name is skipped
+    }
+
+    void traversalImageNamesAreIgnoredOnRead() {
+        // Ported from Swift's FormatSafetyTests: only flat "images/<file>"
+        // names may enter the image map, so a hostile bundle can't smuggle
+        // path-traversal entries toward a future extract-images feature.
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY2(parsed, "minimal.luce rejected");
+        const QByteArray archive = MiniZip::archive({
+            {QStringLiteral("document.json"), Coding::encode(parsed->model)},
+            {QStringLiteral("images/lake.png"), QByteArrayLiteral("\x01\x02\x03")},
+            {QStringLiteral("images/../../escape.png"), QByteArrayLiteral("\x04\x05\x06")},
+            {QStringLiteral("images/nested/dir.png"), QByteArrayLiteral("\x07\x08\x09")},
+        });
+        const LuceArchive::Contents contents = LuceArchive::read(archive);
+        QCOMPARE(contents.images.keys(),
+                 QStringList{QStringLiteral("images/lake.png")});
     }
 
     void wrongFormatIsRejected() {

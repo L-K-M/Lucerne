@@ -141,11 +141,13 @@ private slots:
         for (const QRectF &rect : after) QVERIFY(!rect.intersects(forbidden));
 
         // And unchanged exclusions must NOT trigger a reflow (dirty-check).
-        const QVector<QRectF> again = [&] {
-            e.layout->setObjects(model.objects);
-            return e.lineRects();
-        }();
-        QCOMPARE(again, after);
+        // Observe relayout ACTIVITY, not output — a redundant full re-layout
+        // would reproduce identical rects, so only the update() emission that
+        // relayoutFromBlock always ends with can betray it.
+        QSignalSpy spy(e.layout, &QAbstractTextDocumentLayout::update);
+        e.layout->setObjects(model.objects);
+        QCOMPARE(e.lineRects(), after);
+        QCOMPARE(spy.count(), 0);
     }
 
     void wrapNoneOverlaysWithoutReflow() {

@@ -59,10 +59,12 @@ def write_luce(name, document, entries=None, compress_document=False):
     with zipfile.ZipFile(path, "w") as zf:
         method = zipfile.ZIP_DEFLATED if compress_document else zipfile.ZIP_STORED
         info = zipfile.ZipInfo("document.json", date_time=DOS_EPOCH)
+        info.create_system = 3  # force Unix: this header byte follows the OS otherwise
         info.compress_type = method
         zf.writestr(info, json.dumps(document, indent=2, sort_keys=True))
         for entry_name, data in (entries or {}).items():
             info = zipfile.ZipInfo(entry_name, date_time=DOS_EPOCH)
+            info.create_system = 3
             info.compress_type = zipfile.ZIP_STORED
             zf.writestr(info, data)
     print("wrote", os.path.relpath(path))

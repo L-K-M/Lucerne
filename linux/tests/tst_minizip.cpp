@@ -110,14 +110,22 @@ private slots:
     }
 
     void hugeDeclaredSizeIsRejectedNotAllocated() {
-        // Mirrors Swift's MiniZipHardeningTests: an entry whose central
-        // directory declares a ~4 GiB uncompressed size must be rejected by
-        // the size sanity check, never allocated.
-        QByteArray archive = MiniZip::archive({{QStringLiteral("a.txt"), "x"}});
-        const int central = int(archive.indexOf(QByteArrayLiteral("PK\x01\x02")));
+        // Mirrors Swift's MiniZipHardeningTests: hostile declared sizes must
+        // be rejected by the size sanity check, never allocated. Two distinct
+        // branches: 0xFFFFFFFF wraps negative through int(), and 0x30000000
+        // (768 MiB) stays positive but exceeds the 512 MiB entry cap.
+        const QByteArray original = MiniZip::archive({{QStringLiteral("a.txt"), "x"}});
+        const int central = int(original.indexOf(QByteArrayLiteral("PK\x01\x02")));
         QVERIFY(central > 0);
-        for (int i = 24; i < 28; ++i) archive[central + i] = char(0xff);
-        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+
+        QByteArray negative = original;
+        for (int i = 24; i < 28; ++i) negative[central + i] = char(0xff);
+        EXPECT_THROW(MiniZip::entries(negative), MiniZip::ZipError);
+
+        QByteArray overCap = original;
+        for (int i = 24; i < 27; ++i) overCap[central + i] = char(0x00);
+        overCap[central + 27] = char(0x30);
+        EXPECT_THROW(MiniZip::entries(overCap), MiniZip::ZipError);
     }
 
     void deflatedEntryInflatesAndPassesCRC() {

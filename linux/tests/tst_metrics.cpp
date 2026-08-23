@@ -155,6 +155,13 @@ private slots:
         const QVector<RectModel> exclusions = {{-10, 0, 500, 100}};
         QVERIFY(availableSegments(0, 14, 0, 451, exclusions).isEmpty());
     }
+
+    void degenerateLineAreaIsEmptyNotUB() {
+        // minX >= maxX must return empty, never feed an inverted range into
+        // std::clamp (which would be undefined behavior).
+        QVERIFY(availableSegments(0, 14, 200, 100, {{50, 0, 500, 100}}).isEmpty());
+        QVERIFY(availableSegments(0, 14, 200, 200, {}).isEmpty());
+    }
 };
 
 QTEST_GUILESS_MAIN(tst_metrics)

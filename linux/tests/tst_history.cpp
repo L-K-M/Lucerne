@@ -22,12 +22,10 @@ class tst_history : public QObject {
 
 private slots:
     void initTestCase() {
-        // Pin a DST-observing zone so the spring-forward-gap regression below
-        // is meaningful wherever the suite runs — and verify the pin took
-        // effect: on a UTC host an ineffective pin would let
-        // dstGapStampParsesAsUTC pass vacuously (a local-time misparse yields
-        // the same epoch there).
-        qputenv("TZ", "Europe/Zurich");
+        // The TZ pin happens in main(), BEFORE QCoreApplication exists (Qt may
+        // cache the system zone on first use). Verify it took effect: on a UTC
+        // host an ineffective pin would let dstGapStampParsesAsUTC pass
+        // vacuously (a local-time misparse yields the same epoch there).
         QVERIFY2(QTimeZone::systemTimeZone().id() == QByteArray("Europe/Zurich"),
                  QTimeZone::systemTimeZone().id().constData());
     }
@@ -105,5 +103,15 @@ private slots:
     }
 };
 
-QTEST_GUILESS_MAIN(tst_history)
+// Hand-rolled QTEST_GUILESS_MAIN so the TZ pin precedes QCoreApplication —
+// pinning inside initTestCase could already be too late on backends that
+// cache the system zone during startup.
+int main(int argc, char *argv[]) {
+    qputenv("TZ", "Europe/Zurich");
+    QCoreApplication app(argc, argv);
+    tst_history test;
+    QTEST_SET_MAIN_SOURCE_PATH
+    return QTest::qExec(&test, argc, argv);
+}
+
 #include "tst_history.moc"

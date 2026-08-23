@@ -135,7 +135,7 @@ jobs:
         run: |
           cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build linux/build
-          ctest --test-dir linux/build --output-on-failure
+          QT_QPA_PLATFORM=offscreen ctest --test-dir linux/build --output-on-failure
           cd linux/build && cpack -G DEB
 
       - name: Verify the package installs and launches
@@ -170,7 +170,7 @@ jobs:
         run: |
           cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build linux/build
-          ctest --test-dir linux/build --output-on-failure
+          QT_QPA_PLATFORM=offscreen ctest --test-dir linux/build --output-on-failure
           cmake --install linux/build --prefix linux/build/AppDir/usr
           cd linux/build
           curl -fsSLO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage

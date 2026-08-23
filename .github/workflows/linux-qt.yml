@@ -38,6 +38,8 @@ jobs:
 
       - name: Test (headless, incl. shared .luce conformance corpus)
         run: ctest --test-dir linux/build --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen   # belt-and-braces beside the per-test CMake property
 
       - name: Package .deb
         run: cd linux/build && cpack -G DEB
@@ -74,6 +76,8 @@ jobs:
 
       - name: Test (headless — proves the Qt 6.2 floor really builds & runs)
         run: ctest --test-dir linux/build --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen   # belt-and-braces beside the per-test CMake property
 
       - name: Assemble AppDir
         run: cmake --install linux/build --prefix linux/build/AppDir/usr

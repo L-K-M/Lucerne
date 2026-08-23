@@ -20,7 +20,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Gui)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/app/main.cpp")
+    # Only the app target needs these; a core-only checkout stays buildable
+    # against a minimal Qt (matching the guard on the lucerne target below).
+    find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets PrintSupport)
+endif()
 find_package(ZLIB REQUIRED)
 
 # ---------------------------------------------------------------- lucerne-core

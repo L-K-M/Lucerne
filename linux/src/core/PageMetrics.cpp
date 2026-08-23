@@ -83,6 +83,10 @@ QVector<Segment> availableSegments(double bandTop, double bandHeight,
     std::sort(blocked.begin(), blocked.end(),
               [](const Span &a, const Span &b) { return a.left < b.left; });
 
+    // Degenerate line area (std::clamp below requires minX <= maxX): nothing
+    // can be placed, so nothing is available.
+    if (!(minX < maxX)) return {};
+
     QVector<Segment> segments;
     double cursor = minX;
     for (const Span &span : blocked) {

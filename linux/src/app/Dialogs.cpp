@@ -1,5 +1,7 @@
 #include "app/Dialogs.h"
 
+#include <algorithm>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>

@@ -60,7 +60,12 @@ private slots:
         QString error;
         QVERIFY2(editor.saveFile(dir.filePath(QStringLiteral("typed.luce")), &error),
                  qPrintable(error));
-        const DocumentModel model = editor.snapshotModel();
+        // …and assert on what a fresh Editor READS BACK from that file — the
+        // in-memory snapshot alone can't show a stale-serialization bug.
+        Editor reader;
+        QVERIFY2(reader.loadFile(dir.filePath(QStringLiteral("typed.luce")), &error),
+                 qPrintable(error));
+        const DocumentModel model = reader.model();
         QCOMPARE(model.body.size(), 1);
         QCOMPARE(model.body.first().plainText(), QStringLiteral("Hello from Ubuntu."));
         QCOMPARE(model.body.first().style, QStringLiteral("body"));
