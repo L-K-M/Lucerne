@@ -56,6 +56,7 @@ add_executable(lucerne
     resources/lucerne.qrc
 )
 target_link_libraries(lucerne PRIVATE lucerne-core Qt6::Widgets Qt6::PrintSupport)
+target_compile_definitions(lucerne PRIVATE LUCERNE_VERSION="${PROJECT_VERSION}")
 endif()
 
 # ----------------------------------------------------------------------- tests
@@ -66,7 +67,7 @@ if(Qt6Test_FOUND)
     # root — both implementations walk the same files (docs/ubuntu-port.md §3).
     set(LUCERNE_FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Tests/Fixtures")
 
-    foreach(t minizip coding markdown lists history fixtures metrics furniture layout)
+    foreach(t minizip coding markdown lists history fixtures metrics furniture layout editor)
         if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_${t}.cpp")
             continue()
         endif()
@@ -84,6 +85,11 @@ if(Qt6Test_FOUND)
         target_sources(tst_layout PRIVATE
             src/app/DocumentBridge.cpp src/app/PageLayout.cpp)
         target_link_libraries(tst_layout PRIVATE Qt6::Widgets)
+    endif()
+    if(TARGET tst_editor)
+        target_sources(tst_editor PRIVATE
+            src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp)
+        target_link_libraries(tst_editor PRIVATE Qt6::Widgets)
     endif()
 endif()
 
