@@ -1,6 +1,6 @@
 import Foundation
 
-enum ExportError: Error, Equatable {
+public enum ExportError: Error, Equatable {
     case emptyOutput(format: String)
     case invalidPDFPage(page: Int)
     case noPDFPages
@@ -8,7 +8,7 @@ enum ExportError: Error, Equatable {
 }
 
 extension ExportError: LocalizedError {
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .emptyOutput(let format):
             return "Lucerne couldn't create the \(format) export."
@@ -22,13 +22,13 @@ extension ExportError: LocalizedError {
     }
 }
 
-enum ExportValidation {
-    static func requireData(_ data: Data?, format: String) throws -> Data {
+public enum ExportValidation {
+    public static func requireData(_ data: Data?, format: String) throws -> Data {
         guard let data, !data.isEmpty else { throw ExportError.emptyOutput(format: format) }
         return data
     }
 
-    static func requireCompletePDF(sourcePageCount: Int, assembledPageCount: Int) throws {
+    public static func requireCompletePDF(sourcePageCount: Int, assembledPageCount: Int) throws {
         guard sourcePageCount > 0 else { throw ExportError.noPDFPages }
         guard assembledPageCount == sourcePageCount else {
             throw ExportError.incompletePDF(expected: sourcePageCount, actual: assembledPageCount)

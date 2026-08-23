@@ -1,8 +1,12 @@
+#if canImport(CoreGraphics)
 import CoreGraphics
+#else
+import Foundation   // swift-corelibs-foundation provides CGFloat/CGPoint/CGSize/CGRect on Linux
+#endif
 
 /// Returns `sourceSize` scaled down by one factor to fit both dimensions of
 /// `maximumSize`. Smaller images retain their native size.
-func aspectFitSize(_ sourceSize: CGSize, within maximumSize: CGSize) -> CGSize {
+public func aspectFitSize(_ sourceSize: CGSize, within maximumSize: CGSize) -> CGSize {
     guard sourceSize.width.isFinite, sourceSize.height.isFinite,
           maximumSize.width.isFinite, maximumSize.height.isFinite,
           sourceSize.width > 0, sourceSize.height > 0,

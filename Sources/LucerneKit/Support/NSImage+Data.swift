@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 public extension NSImage {

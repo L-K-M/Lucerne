@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 /// The list numbering engine, marker labels, Markdown-shortcut recognition, and the
 /// attribute codec — all pure, so they exercise the heart of the feature without a GUI.
@@ -120,29 +120,6 @@ final class ListSupportTests: XCTestCase {
         XCTAssertEqual(markers(roman), ["I.", "II.", "III."])
     }
 
-    // MARK: - Markdown shortcut recognition
-
-    func testBulletMarkersStartUnorderedLists() {
-        for marker in ["-", "*", "+"] {
-            let spec = EditorController.markdownListShortcut(forMarker: marker)
-            XCTAssertEqual(spec?.ordered, false, "\(marker)")
-            XCTAssertEqual(spec?.marker, "disc")
-            XCTAssertNil(spec?.start)
-        }
-    }
-
-    func testNumberMarkersStartOrderedLists() {
-        XCTAssertEqual(EditorController.markdownListShortcut(forMarker: "1.")?.ordered, true)
-        XCTAssertNil(EditorController.markdownListShortcut(forMarker: "1.")?.start)   // 1 is the default
-        XCTAssertEqual(EditorController.markdownListShortcut(forMarker: "3.")?.start, 3)
-        XCTAssertEqual(EditorController.markdownListShortcut(forMarker: "10)")?.start, 10)
-    }
-
-    func testNonListMarkersAreRejected() {
-        for marker in ["#", "##", ">", "1", "a.", ".", ")", "", "1a."] {
-            XCTAssertNil(EditorController.markdownListShortcut(forMarker: marker), "\(marker)")
-        }
-    }
 
     // MARK: - Attribute codec
 

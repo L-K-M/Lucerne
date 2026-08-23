@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // A heading navigator: a sidebar list of the document's headings (built from the

@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // A small sheet asking for the number of rows and columns, then calls `apply`.

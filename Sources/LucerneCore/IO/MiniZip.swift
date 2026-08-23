@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(Compression)
 import Compression
+#else
+import CZlib
+#endif
 
 // A tiny, self-contained ZIP reader/writer so the project builds with no external
 // dependencies (the .luce package is a real ZIP — D4). It writes *stored*
@@ -266,6 +270,7 @@ public enum MiniZip {
     private static func inflateRawDeflate(_ input: Data, expectedSize: Int) -> Data? {
         if expectedSize == 0 { return Data() }
         guard !input.isEmpty else { return nil }
+#if canImport(Compression)
         var output = Data(count: expectedSize)
         let written = output.withUnsafeMutableBytes { (dst: UnsafeMutableRawBufferPointer) -> Int in
             input.withUnsafeBytes { (src: UnsafeRawBufferPointer) -> Int in
@@ -277,6 +282,31 @@ public enum MiniZip {
             }
         }
         return written == expectedSize ? output : nil
+#else
+        // Linux: raw DEFLATE via system zlib. windowBits = -15 selects headerless
+        // (raw) DEFLATE, matching COMPRESSION_ZLIB's decode of ZIP entry payloads.
+        var output = Data(count: expectedSize)
+        var mutableInput = input
+        let status: (setup: Int32, decode: Int32, total: Int) = output.withUnsafeMutableBytes { dst in
+            mutableInput.withUnsafeMutableBytes { src in
+                var stream = z_stream()
+                stream.next_in = src.bindMemory(to: UInt8.self).baseAddress
+                stream.avail_in = uInt(src.count)
+                stream.next_out = dst.bindMemory(to: UInt8.self).baseAddress
+                stream.avail_out = uInt(dst.count)
+                let setup = inflateInit2_(&stream, -15, ZLIB_VERSION,
+                                          Int32(MemoryLayout<z_stream>.size))
+                guard setup == Z_OK else { return (setup, Z_ERRNO, 0) }
+                let decode = inflate(&stream, Z_FINISH)
+                let total = Int(stream.total_out)
+                inflateEnd(&stream)
+                return (setup, decode, total)
+            }
+        }
+        guard status.setup == Z_OK, status.decode == Z_STREAM_END,
+              status.total == expectedSize else { return nil }
+        return output
+#endif
     }
 
     // MARK: - Little-endian readers

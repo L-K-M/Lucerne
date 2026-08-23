@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 /// The Markdown exporter's list output: bullets, numbering, nesting, and coexistence
 /// with other blocks.

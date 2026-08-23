@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // The attached "try-on" picker: a transient popover anchored to one of the

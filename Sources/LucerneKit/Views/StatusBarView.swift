@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // A thin classic footer: engraved contextual info on the left (current style,

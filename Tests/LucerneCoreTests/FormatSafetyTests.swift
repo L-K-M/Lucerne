@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 /// Forward-compatibility and archive-content safety for the .luce format: a file
 /// from a *newer* Lucerne must be refused loudly (decoding it would silently drop

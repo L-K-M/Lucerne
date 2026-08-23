@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 // Regression tests for the style-library robustness work (fable-is-awesome.md
 // 1.11, 3.4): a corrupt or future-versioned `styles.json` must never be

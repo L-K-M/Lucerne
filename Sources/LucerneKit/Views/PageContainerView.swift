@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // One page: a white sheet with a soft shadow, flipped so its coordinate system

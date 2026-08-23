@@ -15,8 +15,8 @@ public struct HistorySnapshot: Equatable {
 
 /// Builds an archive with an updated history trail, committing that trail to the
 /// document only after archive generation succeeds.
-enum HistoryArchiveWriter {
-    static func write(history: inout [HistorySnapshot], addingMarkdown markdown: String,
+public enum HistoryArchiveWriter {
+    public static func write(history: inout [HistorySnapshot], addingMarkdown markdown: String,
                       now: Date, makeArchive: ([HistorySnapshot]) throws -> Data) rethrows -> Data {
         let updatedHistory = HistoryPruner.updated(history: history,
                                                    addingMarkdown: markdown, now: now)

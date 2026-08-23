@@ -218,7 +218,7 @@ same as today:
 | Lists with custom markers | `QTextList` or custom gutter painting (as today) |
 | Printing | `QPrinter` / `QPagedPaintDevice` |
 | PDF export | `QPdfWriter` / `QPrinter` |
-| RTF export (lossy) | Qt writes an RTF subset — parity with today's lossy export |
+| RTF export (lossy) | ⚠️ no built-in writer (Qt has none); hand-roll a lossy subset writer or defer. `QTextDocumentWriter` does cover ODF/HTML/Markdown/plaintext |
 | DOCX export (lossy) | ⚠️ no built-in writer; needs a small third-party writer or deferred |
 | Markdown export | port of `MarkdownExporter` (pure model code, trivial) |
 | Version history (`history/`) | pure ZIP/JSON logic, trivial |
@@ -229,7 +229,7 @@ same as today:
 **Effort.** The largest single-engine rewrite of the options, but every piece
 has a known recipe. Realistic scoping: the exclusion-flow layout + paginated
 editor surface is the risk center (the Mac equivalent is
-`EditorController` + `PageTextView` + `ExclusionPathController` ≈ 3,700 lines,
+`EditorController` + `PageTextView` + `ExclusionPathController` ≈ 3,200 lines,
 but here the editing surface itself — caret, selection painting, IME via
 `QInputMethodEvent`, hit-testing — must be built on top, which TextKit gave us
 for free). Order of magnitude: a focused multi-month effort for parity; a
@@ -337,8 +337,10 @@ corpus + both apps, with `formatVersion` bumps per the checklist in AGENTS.md.
 - **Fonts:** identical pagination across platforms is impossible in principle
   (font metrics differ). How much drift do we tolerate in render-diff tests?
   (Mitigation: ship a default serif/sans pair on both platforms.)
-- **DOCX export:** find an acceptable lossy writer for the Qt side, or document
-  its absence as a known parity gap (RTF/HTML cover the interop need).
+- **DOCX/RTF export:** find (or hand-roll) acceptable lossy writers for the Qt
+  side, or document their absence as known parity gaps (ODF/HTML/Markdown —
+  which Qt writes out of the box — cover the interop need; LibreOffice reads
+  ODF natively).
 - **Scripting:** is a D-Bus API + CLI a satisfying substitute for AppleScript
   on Linux, or do we embed a JS/Lua engine for user scripts?
 - **Long-term:** if the Qt port succeeds, does it eventually replace the

@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 /// Edge cases for the Markdown escape hatch: GFM table export (spec §8.7) and
 /// block-level escaping of prose that would otherwise start a block construct

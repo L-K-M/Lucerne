@@ -1,4 +1,8 @@
+#if canImport(CoreGraphics)
 import CoreGraphics
+#else
+import Foundation   // swift-corelibs-foundation provides CGFloat/CGPoint/CGSize/CGRect on Linux
+#endif
 
 // Bridges between the AppKit-free model geometry and CoreGraphics types, kept at
 // the boundary so the model stays portable.

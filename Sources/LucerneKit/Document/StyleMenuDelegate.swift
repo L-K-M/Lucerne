@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // Rebuilds Format ▸ Paragraph Style from the FRONT DOCUMENT's stylesheet each

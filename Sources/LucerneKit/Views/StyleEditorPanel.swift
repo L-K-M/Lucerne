@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // The style editor (STYLES.md §6): ONE app-global, modeless panel in the classic

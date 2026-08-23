@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 final class ExportValidationTests: XCTestCase {
     func testRequireDataRejectsMissingAndEmptyOutput() {

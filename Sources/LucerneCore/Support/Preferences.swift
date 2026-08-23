@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
 import CoreGraphics
+#endif
 
 // App-level preferences backed by UserDefaults. Kept in LucerneKit so views (the
 // ruler) can read them; the Settings window (in the executable) writes them. A

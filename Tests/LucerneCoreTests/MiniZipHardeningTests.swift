@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 /// Robustness tests for MiniZip against malformed / hostile archives: a corrupt
 /// .luce must produce a clean `ZipError`, never an index-out-of-range crash or a
@@ -160,5 +160,35 @@ final class MiniZipHardeningTests: XCTestCase {
         let contents = try LuceArchive.read(data)    // must still open
         XCTAssertEqual(contents.model, model)
         XCTAssertTrue(contents.history.isEmpty, "the rotted snapshot is dropped, not fatal")
+    }
+}
+
+/// Positive coverage for the DEFLATE (method 8) read path — the reference writer
+/// only ever emits STORED entries, so without this fixture the inflate branch
+/// (Apple Compression on macOS, zlib on Linux) would go untested. The archive was
+/// built externally: one entry "deflated.txt", 268 bytes of text deflated to 72.
+final class MiniZipDeflateReadTests: XCTestCase {
+
+    private let fixtureBase64 = "UEsDBBQAAAgIAAAAIQD6e05fSAAAAAwBAAAMAAAAZGVmbGF0ZWQudHh080jNyclXSCvKz1VIVHBxdfNxDHHVTc7PLShKLS5OTVFIzSspqlTIzCvOTEkFqtDLKU1OVShJLS5RSMusKCktStVT8BguRgAAUEsBAhQAFAAACAgAAAAhAPp7Tl9IAAAADAEAAAwAAAAAAAAAAAAAAAAAAAAAAGRlZmxhdGVkLnR4dFBLBQYAAAAAAQABADoAAAByAAAAAAA="
+
+    func testDeflatedEntryInflatesAndPassesCRC() throws {
+        let archive = try XCTUnwrap(Data(base64Encoded: fixtureBase64))
+        let entries = try MiniZip.entries(from: archive)
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries.first?.name, "deflated.txt")
+        let expected = Data(String(repeating:
+            "Hello from a DEFLATE-compressed entry inside a .luce test fixture. ",
+            count: 4).utf8)
+        XCTAssertEqual(entries.first?.data, expected)
+    }
+
+    func testTruncatedDeflateStreamFailsCleanly() throws {
+        let archive = try XCTUnwrap(Data(base64Encoded: fixtureBase64))
+        // Chop bytes out of the middle of the compressed payload (after the
+        // 30-byte local header + 12-byte name): the inflate must fail, not trap
+        // or return short data — and the whole read throws (strict mode).
+        var corrupt = archive
+        corrupt.removeSubrange(50..<60)
+        XCTAssertThrowsError(try MiniZip.entries(from: corrupt))
     }
 }

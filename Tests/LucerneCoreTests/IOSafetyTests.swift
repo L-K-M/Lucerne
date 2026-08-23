@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 /// Data-safety tests for the save / archive path: oversize entries and ZIP64
 /// archives fail cleanly, non-ASCII names declare UTF-8, a referenced-but-missing
@@ -91,7 +91,7 @@ final class IOSafetyTests: XCTestCase {
         })
         XCTAssertEqual(history, original, "a failed save must not advance in-memory history")
 
-        let data = try HistoryArchiveWriter.write(
+        let data = HistoryArchiveWriter.write(
             history: &history, addingMarkdown: "new prose", now: timestamp
         ) { updatedHistory in
             Data(updatedHistory.last!.markdown.utf8)

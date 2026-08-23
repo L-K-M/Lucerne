@@ -1,5 +1,5 @@
 import XCTest
-@testable import LucerneKit
+@testable import LucerneCore
 
 /// Locks the exclusion-rect helper that pagination's dirty-check (review 3.1) relies
 /// on: `exclusionPaths` must be derivable one-per-rect from `exclusionRects`, and the
@@ -26,11 +26,12 @@ final class ExclusionRectsTests: XCTestCase {
         XCTAssertEqual(rects.first, metrics.exclusionRect(forObjectFrame: sampleFrame, standoff: 12))
     }
 
-    func testPathsAreOnePerRect() {
+    func testRectsAreZSorted() {
+        // The one-NSBezierPath-per-rect derivation is locked by
+        // ExclusionPathsTests in LucerneKitTests (it needs AppKit); the portable
+        // half of that old test — rect count and z-ascending order — lives here.
         let objects = [object(id: "a", page: 0, z: 2), object(id: "b", page: 0, z: 1)]
         let rects = ExclusionPathController.exclusionRects(forPage: 0, objects: objects, metrics: metrics)
-        let paths = ExclusionPathController.exclusionPaths(forPage: 0, objects: objects, metrics: metrics)
         XCTAssertEqual(rects.count, 2)
-        XCTAssertEqual(paths.count, rects.count)
     }
 }

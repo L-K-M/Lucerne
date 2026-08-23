@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // Model → NSAttributedString. Produces the text storage contents for the layout

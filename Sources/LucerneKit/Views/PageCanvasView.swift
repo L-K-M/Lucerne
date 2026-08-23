@@ -1,3 +1,4 @@
+import LucerneCore
 import AppKit
 
 // The scroll view's document view: a gray backdrop that stacks page views
