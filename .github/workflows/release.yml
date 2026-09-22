@@ -89,7 +89,7 @@ jobs:
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ env.APP_NAME }} ${{ env.VERSION }}
           files: |
@@ -146,7 +146,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen lucerne --version
 
       - name: Attach to the GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: linux/build/lucerne_*_amd64.deb
 
@@ -194,6 +194,6 @@ jobs:
           QT_QPA_PLATFORM=offscreen ./lucerne-x86_64.AppImage --appimage-extract-and-run --version
 
       - name: Attach to the GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: linux/build/lucerne-x86_64.AppImage
