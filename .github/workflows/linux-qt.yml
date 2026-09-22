@@ -53,7 +53,7 @@ jobs:
           sudo apt-get install -y ./linux/build/lucerne_*_amd64.deb
           QT_QPA_PLATFORM=offscreen lucerne --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: lucerne-deb
           path: linux/build/lucerne_*_amd64.deb
@@ -113,7 +113,7 @@ jobs:
           # No FUSE in CI containers is common; extract-and-run sidesteps it.
           QT_QPA_PLATFORM=offscreen ./lucerne-x86_64.AppImage --appimage-extract-and-run --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: lucerne-appimage
           path: linux/build/lucerne-x86_64.AppImage
