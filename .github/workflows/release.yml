@@ -19,7 +19,7 @@ jobs:
     name: Build & publish (unsigned)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select a recent Xcode
         run: sudo xcode-select -s /Applications/Xcode_15.4.app || true
@@ -122,7 +122,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Qt 6 and build tooling
         run: |
@@ -157,7 +157,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Qt 6 and build tooling
         run: |
