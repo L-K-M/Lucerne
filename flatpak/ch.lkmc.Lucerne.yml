@@ -23,4 +23,4 @@ modules:
       - type: dir
         path: ../dist/flatpak/stage
     build-commands:
-      - cp -R . /app/
+      - "if [ -d usr ]; then cp -a usr/. /app/; else cp -a . /app/; fi"
