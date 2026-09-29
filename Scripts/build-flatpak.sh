@@ -71,7 +71,7 @@ DESKTOP="$WORK/stage/share/applications/$APP_ID.desktop"
 # The launcher resolves Icon= through flatpak's exported name.
 sed -i "s|^Icon=.*|Icon=$APP_ID|" "$DESKTOP"
 if ! find "$WORK/stage/share/icons" "$WORK/stage/share/pixmaps" -name "$APP_ID.*" 2>/dev/null | grep -q .; then
-  ICON="$(find "$WORK/stage/share/icons" -name '*.png' -printf '%s\t%p\n' 2>/dev/null | sort -rn | tail -n1 | cut -f2- || true)"
+  ICON="$(find "$WORK/stage/share/icons" -name '*.png' -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -n1 | cut -f2- || true)"
   [ -n "$ICON" ] || die "no icon inside $DEB"
   mkdir -p "$WORK/stage/share/icons/hicolor/256x256/apps"
   cp "$ICON" "$WORK/stage/share/icons/hicolor/256x256/apps/$APP_ID.png"
@@ -88,8 +88,10 @@ flatpak-builder --user --install-deps-from=flathub --force-clean \
 # Smoke check: the staged tree must leave an executable under
 # /app/bin — catches a failed /usr->/app remap before the bundle
 # ships.
-flatpak-builder --run "$WORK/build" "$MANIFEST" \
-  sh -c 'for f in /app/bin/*; do [ -f "$f" ] && [ -x "$f" ] && exit 0; done; exit 1'
+COMMAND_NAME="$(sed -n 's/^command:[[:space:]]*//p' "$MANIFEST" | head -1)"
+flatpak-builder --user --state-dir="$WORK/state" \
+  --run "$WORK/build" "$MANIFEST" \
+  sh -c "test -x '/app/bin/$COMMAND_NAME' || { echo "no executable /app/bin/$COMMAND_NAME" >&2; ls -l /app/bin >&2; exit 1; }"
 
 BUNDLE="$ROOT/dist/lucerne-linux-amd64.flatpak"
 flatpak build-bundle --runtime-repo="$FLATHUB_REPO" \
