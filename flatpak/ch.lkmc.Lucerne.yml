@@ -1,0 +1,26 @@
+# Flatpak manifest. Scripts/build-flatpak.sh extracts the CPack .deb into
+# dist/flatpak/stage and builds from that — the bundle ships the same files
+# the .deb installs, relaid under flatpak's /app prefix. The .deb links the
+# system Qt 6.4; the KDE runtime supplies its own Qt 6 LTS stack (Qt 6 is
+# backward compatible within the major version).
+id: ch.lkmc.Lucerne
+runtime: org.kde.Platform
+runtime-version: '6.8'
+sdk: org.kde.Sdk
+command: lucerne
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # A word processor opens and saves the user's documents, not just
+  # portal-picked ones.
+  - --filesystem=home
+modules:
+  - name: lucerne
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: ../dist/flatpak/stage
+    build-commands:
+      - cp -R . /app/
