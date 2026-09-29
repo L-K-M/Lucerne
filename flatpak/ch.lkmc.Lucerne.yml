@@ -23,4 +23,5 @@ modules:
       - type: dir
         path: ../dist/flatpak/stage
     build-commands:
+      - rm -rf DEBIAN
       - "if [ -d usr ]; then cp -a usr/. /app/; else cp -a . /app/; fi"
