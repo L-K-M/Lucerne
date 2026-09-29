@@ -154,7 +154,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
           # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
           # (flatpak's sandbox helper) builds in.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
           Scripts/build-flatpak.sh "$(ls -t linux/build/lucerne_*_amd64.deb | head -1)"
           QT_QPA_PLATFORM=offscreen flatpak-builder --run dist/flatpak/build \
             flatpak/ch.lkmc.Lucerne.yml lucerne --version
