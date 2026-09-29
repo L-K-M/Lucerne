@@ -156,7 +156,7 @@ jobs:
           # (flatpak's sandbox helper) builds in.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
           Scripts/build-flatpak.sh "$(ls -t linux/build/lucerne_*_amd64.deb | head -1)"
-          flatpak-builder --user --state-dir=dist/flatpak/state --run dist/flatpak/build \
+          flatpak-builder --run dist/flatpak/build \
             flatpak/ch.lkmc.Lucerne.yml sh -c 'QT_QPA_PLATFORM=offscreen lucerne --version'
 
       - name: Attach to the GitHub Release

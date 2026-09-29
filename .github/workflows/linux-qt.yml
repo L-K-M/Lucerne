@@ -71,7 +71,7 @@ jobs:
           Scripts/build-flatpak.sh "$(ls -t linux/build/lucerne_*_amd64.deb | head -1)"
           # Host env does not reach the sandbox — set the offscreen platform
           # inside the run command.
-          flatpak-builder --user --state-dir=dist/flatpak/state --run dist/flatpak/build \
+          flatpak-builder --run dist/flatpak/build \
             flatpak/ch.lkmc.Lucerne.yml sh -c 'QT_QPA_PLATFORM=offscreen lucerne --version'
 
       - uses: actions/upload-artifact@v4

@@ -89,9 +89,9 @@ flatpak-builder --user --install-deps-from=flathub --force-clean \
 # /app/bin — catches a failed /usr->/app remap before the bundle
 # ships.
 COMMAND_NAME="$(sed -n 's/^command:[[:space:]]*//p' "$MANIFEST" | head -1)"
-flatpak-builder --user --state-dir="$WORK/state" \
-  --run "$WORK/build" "$MANIFEST" \
-  sh -c "test -x '/app/bin/$COMMAND_NAME' || { echo "no executable /app/bin/$COMMAND_NAME" >&2; ls -l /app/bin >&2; exit 1; }"
+[ -n "$COMMAND_NAME" ] || die "no command: key in $MANIFEST"
+flatpak-builder --run "$WORK/build" "$MANIFEST" \
+  sh -c 'test -x "/app/bin/$1" || { echo "missing /app/bin/$1" >&2; ls -l /app/bin >&2; exit 1; }' _ "$COMMAND_NAME"
 
 BUNDLE="$ROOT/dist/lucerne-linux-amd64.flatpak"
 flatpak build-bundle --runtime-repo="$FLATHUB_REPO" \
