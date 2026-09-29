@@ -43,6 +43,7 @@ fi
 
 # Debian /usr -> flatpak /app.
 rm -rf "$WORK/debroot" "$WORK/stage" "$WORK/build" "$WORK/repo"
+mkdir -p "$WORK"   # dpkg-deb creates the target dir but not its parents
 dpkg-deb -x "$DEB" "$WORK/debroot"
 mkdir -p "$WORK/stage"
 cp -a "$WORK/debroot/usr/." "$WORK/stage/"
