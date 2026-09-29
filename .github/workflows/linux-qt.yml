@@ -68,7 +68,7 @@ jobs:
           # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
           # (flatpak's sandbox helper) builds in.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
-          Scripts/build-flatpak.sh "$(find linux/build -maxdepth 1 -type f -name 'lucerne_*_amd64.deb' -print -quit)"
+          Scripts/build-flatpak.sh "$(find linux/build -maxdepth 1 -type f -name 'lucerne_*_amd64.deb' -printf '%T@\t%p\n' | sort -rn | head -n1 | cut -f2-)"
           # Host env does not reach the sandbox — set the offscreen platform
           # inside the run command.
           flatpak-builder --run dist/flatpak/build \
