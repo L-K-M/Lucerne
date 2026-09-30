@@ -108,7 +108,7 @@ jobs:
             ### Linux
 
             - **`lucerne_<version>_amd64.deb`** — for Ubuntu 24.04+ (`sudo apt install ./lucerne_*.deb`)
-            - **`lucerne-linux-amd64.flatpak`** — sandboxed; `flatpak install` pulls the KDE runtime from Flathub
+            - **`lucerne-linux-amd64.flatpak`** — sandboxed; `flatpak install` pulls the KDE runtime from Flathub (a Flathub remote must be configured — the default on most distros)
             - **`lucerne-x86_64.AppImage`** — for any current distro (`chmod +x`, then run)
 
             `.luce` files are fully compatible between the Mac and Linux apps.
