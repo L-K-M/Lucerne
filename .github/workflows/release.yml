@@ -108,6 +108,7 @@ jobs:
             ### Linux
 
             - **`lucerne_<version>_amd64.deb`** — for Ubuntu 24.04+ (`sudo apt install ./lucerne_*.deb`)
+            - **`lucerne-linux-amd64.flatpak`** — sandboxed; `flatpak install` pulls the KDE runtime from Flathub (a Flathub remote must be configured — the default on most distros)
             - **`lucerne-x86_64.AppImage`** — for any current distro (`chmod +x`, then run)
 
             `.luce` files are fully compatible between the Mac and Linux apps.
@@ -145,10 +146,25 @@ jobs:
           sudo apt-get install -y ./linux/build/lucerne_*_amd64.deb
           QT_QPA_PLATFORM=offscreen lucerne --version
 
+      # Repack the same .deb as a Flatpak bundle and smoke-run the binary
+      # inside the sandbox — proves the KDE runtime satisfies the Qt links
+      # the .deb leaves to the system.
+      - name: Build Flatpak bundle
+        run: |
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
+          # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
+          # (flatpak's sandbox helper) builds in.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
+          Scripts/build-flatpak.sh "$(find linux/build -maxdepth 1 -type f -name 'lucerne_*_amd64.deb' -printf '%T@\t%p\n' | sort -rn | head -n1 | cut -f2-)"
+          flatpak-builder --run dist/flatpak/build \
+            flatpak/ch.lkmc.Lucerne.yml sh -c 'QT_QPA_PLATFORM=offscreen lucerne --version'
+
       - name: Attach to the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: linux/build/lucerne_*_amd64.deb
+          files: |
+            linux/build/lucerne_*_amd64.deb
+            dist/lucerne-linux-amd64.flatpak
 
   release-linux-appimage:
     name: Build & attach AppImage (Ubuntu 22.04)

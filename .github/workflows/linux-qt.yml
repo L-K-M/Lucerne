@@ -59,6 +59,27 @@ jobs:
           path: linux/build/lucerne_*_amd64.deb
           if-no-files-found: error
 
+      # Repack the same .deb as a Flatpak bundle, then smoke-run the binary
+      # inside the sandbox — proves the KDE runtime satisfies every link the
+      # .deb leaves to the system (Qt 6, SVG icon engine).
+      - name: Flatpak bundle
+        run: |
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
+          # Ubuntu 24.04 denies the unprivileged user namespaces bubblewrap
+          # (flatpak's sandbox helper) builds in.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true   # absent on kernels without the knob
+          Scripts/build-flatpak.sh "$(find linux/build -maxdepth 1 -type f -name 'lucerne_*_amd64.deb' -printf '%T@\t%p\n' | sort -rn | head -n1 | cut -f2-)"
+          # Host env does not reach the sandbox — set the offscreen platform
+          # inside the run command.
+          flatpak-builder --run dist/flatpak/build \
+            flatpak/ch.lkmc.Lucerne.yml sh -c 'QT_QPA_PLATFORM=offscreen lucerne --version'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lucerne-flatpak
+          path: dist/lucerne-linux-amd64.flatpak
+          if-no-files-found: error
+
   appimage:
     name: AppImage (Ubuntu 22.04 base)
     runs-on: ubuntu-22.04

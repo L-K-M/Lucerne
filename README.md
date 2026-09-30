@@ -37,7 +37,7 @@ is in [`docs/luce-format-spec.md`](docs/luce-format-spec.md).
 
 Lucerne ships for **macOS** (the original AppKit app) and **Ubuntu/Linux**
 (a native Qt port in [`linux/`](linux/README.md) — same features, same `.luce`
-files, `.deb` and AppImage builds on every release). The Linux quick start:
+files, `.deb`, Flatpak, and AppImage builds on every release). The Linux quick start:
 
 ```sh
 sudo apt install qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev cmake ninja-build
