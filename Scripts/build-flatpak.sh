@@ -91,7 +91,7 @@ flatpak-builder --user --install-deps-from=flathub --force-clean \
 COMMAND_NAME="$(sed -n '/^command:[[:space:]]*/{s///;p;q}' "$MANIFEST")"
 [ -n "$COMMAND_NAME" ] || die "no command: key in $MANIFEST"
 flatpak-builder --run "$WORK/build" "$MANIFEST" \
-  sh -c 'bin="/app/bin/$1"; test -x "$bin" || { echo "missing $bin" >&2; ls -l /app/bin >&2; exit 1; }; bad="$(ldd "$bin" 2>/dev/null | grep "not found" || true)"; [ -z "$bad" ] || { printf 'unresolved libraries:\n%s\n' "$bad" >&2; exit 1; }' _ "$COMMAND_NAME"
+  sh -c 'bin="/app/bin/$1"; test -x "$bin" || { echo "missing $bin" >&2; ls -l /app/bin >&2; exit 1; }; bad="$(ldd "$bin" 2>/dev/null | grep "not found" || true)"; [ -z "$bad" ] || { printf "unresolved libraries:\n%s\n" "$bad" >&2; exit 1; }' _ "$COMMAND_NAME"
 
 BUNDLE="$ROOT/dist/lucerne-linux-amd64.flatpak"
 flatpak build-bundle --runtime-repo="$FLATHUB_REPO" \
