@@ -10,6 +10,13 @@ letters, with rulers, tabs, and free placement of images.*
 
 **Latest release:** v<!-- version -->0.7.0<!-- /version --> · [Download](https://github.com/L-K-M/Lucerne/releases/latest)
 
+The macOS build is ad-hoc signed and not notarized. After moving **Lucerne**
+to Applications, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Lucerne.app"
+```
+
 > [!IMPORTANT]
 > LLM Disclosure: Much of this code base was written by or with the help of large language models. AI coding agents worked from the [`AGENTS.md`](AGENTS.md) brief in this repo.
 
