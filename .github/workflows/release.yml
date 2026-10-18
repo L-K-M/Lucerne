@@ -73,8 +73,8 @@ jobs:
         run: |
           APP="dist/$APP_NAME.app"
           [ -d "$APP" ] || { echo "::error::built $APP_NAME.app not found"; exit 1; }
-          ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION.zip"
-          DMG="$RUNNER_TEMP/$APP_NAME-$VERSION.dmg"
+          ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.zip"
+          DMG="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.dmg"
           ditto -c -k --keepParent "$APP" "$ZIP"
           # create-dmg can exit non-zero on a headless runner even on success — verify the file.
           create-dmg \
