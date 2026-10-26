@@ -343,6 +343,8 @@ void MainWindow::buildMenus() {
         QDesktopServices::openUrl(
             QUrl(QStringLiteral("https://github.com/L-K-M/Lucerne#readme")));
     }, QKeySequence::HelpContents);
+    // The Qt line and About Qt are the notice LGPLv3 section 4(a) asks for:
+    // the app uses Qt, under the LGPL. The path names the AppImage's notices.
     help->addAction(tr("&About Lucerne"), this, [this] {
         QMessageBox::about(this, tr("About Lucerne"),
             tr("<h3>Lucerne</h3>"
@@ -350,8 +352,14 @@ void MainWindow::buildMenus() {
                "<p>Letters with rulers, tabs, and genuine free placement of "
                "images. Documents are saved as “.luce” — a ZIP package you can "
                "always open.</p>"
-               "<p>Version %1</p>").arg(QCoreApplication::applicationVersion()));
+               "<p>Version %1</p>"
+               "<p>Lucerne uses Qt, licensed under the GNU LGPL version 3 (see "
+               "Help ▸ About Qt). The AppImage also bundles other libraries, which "
+               "keep their own licenses; their notices ship inside it in "
+               "usr/share/doc/lucerne/Third-Party-Notices.txt.</p>")
+                .arg(QCoreApplication::applicationVersion()));
     });
+    help->addAction(tr("About &Qt"), qApp, &QApplication::aboutQt);
 }
 
 // MARK: - Toolbar
