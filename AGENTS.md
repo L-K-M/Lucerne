@@ -229,6 +229,22 @@ summary is [`docs/roadmap.md`](docs/roadmap.md), and the shipped-feature checkli
 4. On a Mac: `swift build && swift test`. Otherwise rely on CI.
 5. Update `ANALYSIS.md` when work resolves, adds, or reprioritizes live backlog.
 
+## Licensing
+
+- This repository has no LICENSE yet; do not add license claims for the
+  project's own code (Info.plist, metainfo, a deb `copyright`, the README).
+- Before adding a dependency, linked library, vendored file or bundled asset
+  (fonts, images, icons, data), confirm its license allows redistribution in
+  the `.app`, `.deb`, Flatpak and AppImage, and ship its notices in each
+  artifact that carries it. Never vendor third-party code without its license
+  file. Today only the AppImage bundles third-party code.
+- `Scripts/appimage-notices.py` adds the AppImage's notices from the libraries
+  linuxdeploy actually bundled (`usr/share/doc/lucerne/Third-Party-Notices.txt`
+  and `SOURCES.txt`, each package's `copyright`, the referenced
+  `common-licenses` texts) and fails on any file it cannot attribute. Record
+  Lucerne's own files and any gaps in `linux/packaging/appimage-notices.json`
+  with a reason. Keep the CI and release checks of those files passing.
+
 <!-- shared-rules:start -->
 
 ## Working practices

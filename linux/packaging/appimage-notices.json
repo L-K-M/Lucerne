@@ -1,0 +1,61 @@
+{
+  "_comment": [
+    "Overrides for Scripts/appimage-notices.py, which adds the notices of the Ubuntu",
+    "libraries linuxdeploy bundles into the AppImage. Every entry needs a reason. Paths",
+    "in 'own' are AppDir-relative fnmatch patterns; license_files are relative to this",
+    "file. {placeholders} are filled from the AppImage runtime. A bundled file that no",
+    "host package owns and nothing here covers fails the step: add an 'own' entry for",
+    "Lucerne's files, or a 'files' entry mapped to an 'extra' component with its texts."
+  ],
+  "own": [
+    {
+      "path": "usr/bin/lucerne",
+      "reason": "Lucerne's own executable, built from linux/ in this repository"
+    },
+    {
+      "path": "usr/share/applications/ch.lkmc.Lucerne.desktop",
+      "reason": "Lucerne's desktop entry, linux/resources/ch.lkmc.Lucerne.desktop"
+    },
+    {
+      "path": "usr/share/icons/hicolor/*/apps/ch.lkmc.Lucerne.png",
+      "reason": "Lucerne's own icons, linux/resources/icons/lucerne-*.png"
+    },
+    {
+      "path": "usr/share/metainfo/ch.lkmc.Lucerne.metainfo.xml",
+      "reason": "Lucerne's AppStream metadata, linux/resources/ch.lkmc.Lucerne.metainfo.xml"
+    },
+    {
+      "path": "usr/share/mime/packages/ch.lkmc.Lucerne.xml",
+      "reason": "Lucerne's .luce MIME type, linux/resources/lucerne-mime.xml"
+    },
+    {
+      "path": "usr/bin/qt.conf",
+      "reason": "Written by linuxdeploy-plugin-qt at build time; holds only plugin paths"
+    }
+  ],
+  "files": [],
+  "packages": [],
+  "extra": [
+    {
+      "name": "AppImage type2-runtime",
+      "version": "{runtime_commit}",
+      "appimage_runtime": true,
+      "license": "MIT AND LGPL-2.1-only AND BSD-2-Clause AND BSD-3-Clause AND Zlib",
+      "source_url": "https://github.com/AppImage/type2-runtime/commit/{runtime_commit}",
+      "sources": [
+        "Statically links libfuse {libfuse_version} (LGPL-2.1, patched by patches/libfuse in the runtime source): https://github.com/libfuse/libfuse/releases/tag/fuse-{libfuse_version}",
+        "Statically links squashfuse {squashfuse_version} (BSD-2-Clause): https://github.com/vasi/squashfuse/releases/tag/{squashfuse_version}",
+        "Statically links musl (MIT), zstd {zstd_version} (BSD-3-Clause) and zlib {zlib_version} (Zlib) from the Alpine Linux release named in the runtime source's scripts/chroot/chroot_build.sh"
+      ],
+      "license_files": [
+        "licenses/appimage-type2-runtime/type2-runtime-LICENSE.txt",
+        "licenses/appimage-type2-runtime/musl-COPYRIGHT.txt",
+        "licenses/appimage-type2-runtime/libfuse-LGPL2.txt",
+        "licenses/appimage-type2-runtime/squashfuse-LICENSE.txt",
+        "licenses/appimage-type2-runtime/zstd-LICENSE.txt",
+        "licenses/appimage-type2-runtime/zlib-LICENSE.txt"
+      ],
+      "reason": "The runtime is the AppImage's ELF header, outside the squashfs, so no host package owns it. Its texts are vendored from upstream (licenses/README.md); the runtime commit pins the exact sources."
+    }
+  ]
+}

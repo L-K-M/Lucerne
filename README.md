@@ -86,3 +86,16 @@ swift test
 ```
 
 See [`docs/building.md`](docs/building.md) for details and troubleshooting.
+
+## License
+
+The macOS app, the `.deb` and the Flatpak bundle no third-party code: the Mac
+app links only macOS system libraries, the `.deb` uses the system's Qt 6, and
+the Flatpak uses the KDE runtime from Flathub. The AppImage bundles Qt 6 (GNU
+LGPL v3) and other Ubuntu 22.04 libraries, plus the AppImage runtime, which
+statically links libfuse (GNU LGPL v2.1); they keep their own licenses. Their
+notices ship inside the AppImage: `usr/share/doc/lucerne/Third-Party-Notices.txt`
+collects them, each library's Debian `copyright` file is under `usr/share/doc/`,
+the license texts those reference are under `usr/share/common-licenses/`, and
+`usr/share/doc/lucerne/SOURCES.txt` lists the exact source packages and where to
+get them.

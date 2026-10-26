@@ -58,6 +58,7 @@ AppImage on ubuntu-22.04 (wider glibc reach); releases attach both.
 | `src/app/Ruler.*` | Unit-aware ruler: indent triangles, tab stops (click/drag/double-click-cycle/drag-off-delete) |
 | `tests/` | Ten Qt Test suites; `tst_fixtures` walks the same corpus as Swift's `SpecFixtureTests` |
 | `resources/` | Desktop entry, AppStream metainfo, MIME type, hicolor icons |
+| `packaging/` | Overrides and vendored AppImage-runtime license texts for `Scripts/appimage-notices.py`, which adds the AppImage's third-party notices |
 
 ## Parity with the Mac app
 
@@ -80,3 +81,11 @@ generated table of contents, stationery, style-library editing UI, RTF/DOCX
 export, spell checking, smart quotes/dashes and Markdown typing shortcuts,
 crash-draft recovery, and the update checker (Linux updates arrive via
 `.deb`/AppImage releases).
+
+## License
+
+The `.deb` and the Flatpak bundle no third-party code: they use the system's
+Qt 6 or the KDE runtime. The AppImage bundles Qt 6 and other Ubuntu 22.04
+libraries, which keep their own licenses; their notices ship inside it under
+`usr/share/doc/` (see the [License section](../README.md#license) of the main
+README).

@@ -91,7 +91,8 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             qt6-base-dev qt6-base-dev-tools libqt6svg6-dev libgl1-mesa-dev zlib1g-dev \
-            ninja-build libfuse2 libxkbcommon-x11-0 qt6-wayland qt6-wayland-dev
+            ninja-build libfuse2 libxkbcommon-x11-0 qt6-wayland qt6-wayland-dev \
+            squashfs-tools
 
       - name: Configure
         run: cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -123,6 +124,32 @@ jobs:
           export EXTRA_PLATFORM_PLUGINS="libqwayland-generic.so;libqwayland-egl.so;libqoffscreen.so"
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage
           mv Lucerne*.AppImage lucerne-x86_64.AppImage
+
+      # linuxdeploy copies Ubuntu libraries (Qt 6, GLib, GnuTLS, ...) into the
+      # AppImage. Add each one's copyright file, the license texts those
+      # reference and SOURCES.txt from this host's dpkg database, plus the
+      # AppImage runtime's notices; fails on any file it cannot attribute.
+      - name: Add third-party notices to the AppImage
+        run: |
+          python3 Scripts/appimage-notices.py appimage linux/build/lucerne-x86_64.AppImage \
+            --package lucerne --overrides linux/packaging/appimage-notices.json
+
+      - name: Verify the AppImage's license notices
+        run: |
+          cd linux/build
+          rm -rf squashfs-root
+          ./lucerne-x86_64.AppImage --appimage-extract >/dev/null
+          for f in usr/share/doc/lucerne/Third-Party-Notices.txt usr/share/doc/lucerne/SOURCES.txt \
+                   usr/share/doc/libqt6core6/copyright usr/share/common-licenses/LGPL-3; do
+            test -s "squashfs-root/$f" || { echo "::error::the AppImage lacks $f"; exit 1; }
+          done
+          NOTICES=squashfs-root/usr/share/doc/lucerne/Third-Party-Notices.txt
+          grep -q libqt6core6 "$NOTICES" \
+            || { echo "::error::Third-Party-Notices.txt lacks Qt (libqt6core6)"; exit 1; }
+          grep -q libfuse "$NOTICES" \
+            || { echo "::error::Third-Party-Notices.txt lacks the AppImage runtime's libfuse"; exit 1; }
+          grep -q '^qt6-base ' squashfs-root/usr/share/doc/lucerne/SOURCES.txt \
+            || { echo "::error::SOURCES.txt lacks the qt6-base source package"; exit 1; }
 
       - name: Smoke-run the AppImage
         run: |
