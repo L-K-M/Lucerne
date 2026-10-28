@@ -1,4 +1,5 @@
 import LucerneCore
+import RigiUI
 import AppKit
 
 // The app-global floating palettes torn off the format bar's chooser controls:
@@ -9,7 +10,7 @@ import AppKit
 // every window's chooser control draws "engaged elsewhere" and summons it
 // instead of spawning a second one; closing it (the classic close box) returns
 // the controls to their normal popover behavior everywhere.
-final class FloatingPalette: NSObject {
+final class FloatingPalette: NSObject, TearOffPalette {
 
     enum Kind { case typefaces, styles, lists }
 
@@ -416,180 +417,5 @@ final class FloatingPalette: NSObject {
             return PickerItem(id: style.marker, title: sample)
         }
         return items
-    }
-}
-
-// MARK: - Palette window
-
-/// The floating palette's window: borderless (the chrome draws its own classic
-/// half-height title bar), non-activating so clicks never pull focus from the
-/// document, floating above document windows, and hidden while the app is
-/// inactive — the classic utility-palette contract.
-final class ClassicPaletteWindow: NSPanel {
-
-    /// A panel-local undo manager (the style editor's "best-effort" stack for
-    /// library-target edits, STYLES.md §6.3). nil routes ⌘Z as usual.
-    var paletteUndoManager: UndoManager?
-
-    override var undoManager: UndoManager? { paletteUndoManager ?? super.undoManager }
-
-    init(contentSize: NSSize) {
-        super.init(contentRect: NSRect(origin: .zero, size: contentSize),
-                   styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: false)
-        isFloatingPanel = true
-        level = .floating
-        becomesKeyOnlyIfNeeded = true
-        hidesOnDeactivate = true
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isReleasedWhenClosed = false
-        isMovableByWindowBackground = false
-        collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        animationBehavior = .utilityWindow
-        appearance = NSAppearance(named: .aqua)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    // Borderless windows refuse key status by default; the filter field needs it.
-    // becomesKeyOnlyIfNeeded keeps ordinary clicks from grabbing it.
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
-// MARK: - Palette chrome
-
-/// Draws the palette's classic shell: the ClassicWindow silhouette with a
-/// tighter top radius (a small panel reads better with less sweep), a
-/// half-height title bar in the bar gradient with engraved lettering and a
-/// small red close dot — the standard close button at palette scale — the
-/// panel-gradient body, and a hairline window border. Palettes hide when the
-/// app deactivates, so the chrome always draws at full (active) strength.
-final class PaletteChromeView: NSView {
-
-    /// Half the standard title bar — the classic cue that this isn't a document
-    /// window.
-    static let titleBarHeight: CGFloat = 16
-
-    /// Tighter than the document windows' top radius; the bottom keeps the
-    /// shared gentle rounding.
-    private static let topCornerRadius: CGFloat = 6
-
-    var onClose: (() -> Void)?
-    var title: String {
-        didSet { needsDisplay = true }
-    }
-    private var closeBoxPressed = false
-
-    init(title: String) {
-        self.title = title
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    /// Hosts the palette content below the title bar, inset 1 pt at the sides
-    /// and bottom so the full-bleed list never paints over the window border.
-    func embedContent(_ view: NSView) {
-        view.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(view)
-        NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: topAnchor, constant: Self.titleBarHeight),
-            view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 1),
-            view.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
-            view.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1)
-        ])
-    }
-
-    private var titleBarRect: NSRect {
-        NSRect(x: 0, y: bounds.height - Self.titleBarHeight,
-               width: bounds.width, height: Self.titleBarHeight)
-    }
-
-    private var closeBoxRect: NSRect {
-        let bar = titleBarRect
-        return NSRect(x: 6, y: bar.minY + ((bar.height - 9) / 2).rounded(), width: 9, height: 9)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let silhouette = ClassicChrome.windowSilhouette(in: bounds, top: Self.topCornerRadius)
-        NSGraphicsContext.saveGraphicsState()
-        silhouette.addClip()
-
-        ClassicChrome.gradient(top: 0.97, bottom: 0.86).draw(in: bounds, angle: 90)
-
-        let bar = titleBarRect
-        ClassicChrome.gradient(top: 0.965, bottom: 0.80).draw(in: bar, angle: 90)
-        ClassicChrome.barTopHighlight.setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-        ClassicChrome.barBottomBorder(true).setFill()
-        NSRect(x: 0, y: bar.minY, width: bounds.width, height: 1).fill()
-
-        NSGraphicsContext.restoreGraphicsState()
-
-        NSColor(calibratedWhite: 0.45, alpha: 1).setStroke()
-        let border = ClassicChrome.windowSilhouette(in: bounds.insetBy(dx: 0.5, dy: 0.5),
-                                                    top: Self.topCornerRadius)
-        border.lineWidth = 1
-        border.stroke()
-
-        drawTitle(in: bar)
-        drawCloseBox()
-    }
-
-    private func drawTitle(in bar: NSRect) {
-        let styled = ClassicText.engraved(title, size: 10.5, weight: .medium)
-        let size = styled.size()
-        styled.draw(at: NSPoint(x: (bar.midX - size.width / 2).rounded(),
-                                y: (bar.midY - size.height / 2).rounded()))
-    }
-
-    private func drawCloseBox() {
-        // The standard red close button at palette scale (9 pt vs the usual 12),
-        // darkening while pressed like the real one.
-        let circle = NSBezierPath(ovalIn: closeBoxRect.insetBy(dx: 0.5, dy: 0.5))
-        (closeBoxPressed
-            ? NSColor(calibratedRed: 0.78, green: 0.27, blue: 0.25, alpha: 1)
-            : NSColor(calibratedRed: 1.00, green: 0.37, blue: 0.34, alpha: 1)).setFill()
-        circle.fill()
-        NSColor(calibratedRed: 0.88, green: 0.27, blue: 0.24, alpha: 1).setStroke()
-        circle.lineWidth = 1
-        circle.stroke()
-    }
-
-    // MARK: - Mouse: close box tracking + title-bar dragging
-
-    override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        if closeBoxRect.insetBy(dx: -3, dy: -3).contains(point) {
-            trackCloseBox(with: event)
-        } else if titleBarRect.contains(point) {
-            window?.performDrag(with: event)
-        }
-    }
-
-    /// Close-button tracking: darkened while the mouse is inside, fires on
-    /// release inside.
-    private func trackCloseBox(with event: NSEvent) {
-        let hitRect = closeBoxRect.insetBy(dx: -3, dy: -3)
-        closeBoxPressed = true
-        needsDisplay = true
-        while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-            let inside = hitRect.contains(convert(next.locationInWindow, from: nil))
-            if inside != closeBoxPressed {
-                closeBoxPressed = inside
-                needsDisplay = true
-            }
-            if next.type == .leftMouseUp {
-                closeBoxPressed = false
-                needsDisplay = true
-                if inside { onClose?() }
-                return
-            }
-        }
     }
 }

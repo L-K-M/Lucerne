@@ -1,5 +1,6 @@
 import LucerneCore
 import AppKit
+import RigiUI
 
 // The style editor (STYLES.md §6): ONE app-global, modeless panel in the classic
 // palette chrome, opened from a palette row's edit well, a double-click, the
@@ -14,6 +15,7 @@ import AppKit
 // "Edit Style" step (sealed on retarget/close — see
 // EditorController.registerStyleRedefinitionUndo). Library-target edits register
 // on the panel's own undo manager, best-effort.
+@MainActor
 final class StyleEditorPanel: NSObject {
 
     static let shared = StyleEditorPanel()

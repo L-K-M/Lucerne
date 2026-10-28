@@ -22,6 +22,8 @@ var products: [Product] = [
     .library(name: "LucerneCore", targets: ["LucerneCore"])
 ]
 
+var dependencies: [Package.Dependency] = []
+
 var targets: [Target] = [
     .systemLibrary(
         name: "CZlib",
@@ -41,6 +43,8 @@ var targets: [Target] = [
 ]
 
 #if os(macOS)
+dependencies.append(.package(url: "https://github.com/L-K-M/Rigi.git",
+                             revision: "8b569d0bad1e2137e087428c52e22f0bed241c6d"))
 products += [
     .executable(name: "Lucerne", targets: ["Lucerne"]),
     .library(name: "LucerneKit", targets: ["LucerneKit"])
@@ -56,7 +60,7 @@ targets += [
     ),
     .target(
         name: "LucerneKit",
-        dependencies: ["LucerneCore"],
+        dependencies: ["LucerneCore", .product(name: "RigiUI", package: "rigi")],
         path: "Sources/LucerneKit"
     ),
     .testTarget(
@@ -73,5 +77,6 @@ let package = Package(
         .macOS(.v13)
     ],
     products: products,
+    dependencies: dependencies,
     targets: targets
 )

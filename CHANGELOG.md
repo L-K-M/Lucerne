@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Share classic controls, window/palette chrome, the status bar, and live pickers
+  through RigiUI. Preserve Lucerne's document targeting and formatting undo.
+
 - The AppImage now ships the notices of the libraries it bundles: each
   Ubuntu package's `copyright` file, the license texts they reference,
   `usr/share/doc/lucerne/Third-Party-Notices.txt` and `SOURCES.txt` with the

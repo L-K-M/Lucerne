@@ -16,6 +16,10 @@ lands. Legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
 
 ## Current state at a glance
 
+The macOS classic controls, palette/window chrome, status bar, and live pickers
+are shared through [RigiUI](https://github.com/L-K-M/Rigi). Lucerne retains
+formatting commands and preview/undo ownership; the Qt implementation is separate.
+
 All four pillars of the brief are implemented and CI-green: the **editing surface**
 (NSDocument-based, undo/redo, printing), **text formatting** (font/size/bold/italic/
 underline/color/alignment/spacing + named paragraph styles), **rulers & tabs**, and

@@ -112,11 +112,12 @@ is character *i* on?" use one shared primitive,
   `.lucerneStyleRole` custom attribute that carries paragraph-style roles through
   round-trips.
 - `Layout/` — `PageMetrics` (pure math), `ExclusionPathController`.
-- `Views/` — canvas, page, text view, ruler, navigator, status bar, sheets, floating
-  image, the hand-drawn classic control chrome (`ClassicControls.swift`, used by the
-  format bar, status bar, ruler, and welcome screen, muting with window activation),
-  and the live try-on pickers (`TryOnPopover.swift` + `PickerListView.swift`, the
-  shared specimen-list UI behind the font/style popovers and floating palettes).
+- `Views/` — canvas, page, text view, ruler, navigator, sheets, floating images,
+  and app-specific toolbar/palette adapters. [RigiUI](https://github.com/L-K-M/Rigi)
+  owns classic controls, window and palette chrome, the status bar, searchable
+  specimen lists, and try-on popover presentation. Lucerne supplies item tables,
+  active-document resolution, editor commands, and preview/undo transactions.
+  `LucerneKit` re-exports RigiUI to preserve its existing public UI type names.
 - `IO/` — `MiniZip`, `.luce` archive, version history, `NSDocument` subclass,
   PDF/print, and lossy RTF/DOCX export.
 - `Document/` — `EditorController` (conductor: pagination, exclusions, furniture,
