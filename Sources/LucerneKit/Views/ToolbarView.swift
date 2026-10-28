@@ -17,7 +17,7 @@ public final class ToolbarView: ClassicBarView {
     private var helpItems: [(view: NSView, help: String)] = []
 
     /// The bar's designed height; the window controller lays it out at this.
-    public static let barHeight = ClassicMetrics.toolbarHeight
+    public static let barHeight: CGFloat = ClassicMetrics.toolbarHeight
 
     private static let tryOnHint = "↑↓ try on your letter  ·  Return keep  ·  Esc revert  ·  drag off to float"
     // The list picker previews in place (no floating palette), so its hint omits the

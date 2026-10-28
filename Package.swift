@@ -43,7 +43,8 @@ var targets: [Target] = [
 ]
 
 #if os(macOS)
-dependencies.append(.package(url: "https://github.com/L-K-M/Rigi.git", branch: "feat/shared-ui"))
+dependencies.append(.package(url: "https://github.com/L-K-M/Rigi.git",
+                             revision: "8b569d0bad1e2137e087428c52e22f0bed241c6d"))
 products += [
     .executable(name: "Lucerne", targets: ["Lucerne"]),
     .library(name: "LucerneKit", targets: ["LucerneKit"])
