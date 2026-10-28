@@ -42,6 +42,11 @@ is in [`docs/luce-format-spec.md`](docs/luce-format-spec.md).
 
 ## Building & running
 
+The macOS UI uses [RigiUI](https://github.com/L-K-M/Rigi) for its classic
+controls, window chrome, status bar, searchable pickers, and tear-off behavior.
+Its [interface guidelines](https://github.com/L-K-M/Rigi/blob/main/docs/interface-guidelines.md)
+define the shared appearance and interactions used by Lucerne and Sion.
+
 Lucerne ships for **macOS** (the original AppKit app) and **Ubuntu/Linux**
 (a native Qt port in [`linux/`](linux/README.md) — same features, same `.luce`
 files, `.deb`, Flatpak, and AppImage builds on every release). The Linux quick start:

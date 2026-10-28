@@ -1,5 +1,6 @@
 import LucerneCore
 import AppKit
+import RigiUI
 import UniformTypeIdentifiers
 
 // The Style Library window (STYLES.md §7): the explicit, deliberately-opened

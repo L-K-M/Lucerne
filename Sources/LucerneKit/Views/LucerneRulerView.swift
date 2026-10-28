@@ -1,5 +1,6 @@
 import LucerneCore
 import AppKit
+import RigiUI
 
 // A horizontal ruler with draggable indent markers and tab stops. It spans the
 // full window width (so its background and bottom border are continuous), and

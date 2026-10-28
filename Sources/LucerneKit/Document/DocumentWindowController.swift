@@ -1,5 +1,6 @@
 import LucerneCore
 import AppKit
+import RigiUI
 import UniformTypeIdentifiers
 
 // Builds and owns the document window: the toolbar, the ruler, and the scrolling

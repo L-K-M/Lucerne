@@ -1,5 +1,6 @@
 import LucerneCore
 import AppKit
+import RigiUI
 
 // The format bar across the top of the window, drawn in the classic pre-flat Mac
 // style (think iWork '09): a polished-metal gradient strip holding hand-drawn
@@ -7,7 +8,7 @@ import AppKit
 // straight to the EditorController and is kept in sync with the selection via
 // syncFromSelection(). `preferredContentWidth` lets the window size its minimum
 // width so the controls always fit.
-public final class ToolbarView: NSView {
+public final class ToolbarView: ClassicBarView {
 
     public weak var editor: EditorController?
     /// Reports a one-line description of the control under the cursor (or nil when
@@ -16,7 +17,7 @@ public final class ToolbarView: NSView {
     private var helpItems: [(view: NSView, help: String)] = []
 
     /// The bar's designed height; the window controller lays it out at this.
-    public static let barHeight: CGFloat = 34
+    public static let barHeight = ClassicMetrics.toolbarHeight
 
     private static let tryOnHint = "↑↓ try on your letter  ·  Return keep  ·  Esc revert  ·  drag off to float"
     // The list picker previews in place (no floating palette), so its hint omits the
@@ -70,18 +71,6 @@ public final class ToolbarView: NSView {
         colorCommitTimer?.invalidate()
     }
 
-    public override func draw(_ dirtyRect: NSRect) {
-        let active = ClassicChrome.active(for: self)
-        ClassicChrome.gradient(top: active ? 0.965 : 0.975,
-                               bottom: active ? 0.795 : 0.90).draw(in: bounds, angle: 90)
-        ClassicChrome.barTopHighlight.setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-        NSColor(calibratedWhite: active ? 0.66 : 0.80, alpha: 1).setFill()    // soft seam above the border
-        NSRect(x: 0, y: 1, width: bounds.width, height: 1).fill()
-        ClassicChrome.barBottomBorder(active).setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
-    }
-
     /// Natural width of all the controls; the window uses it to size itself.
     public var preferredContentWidth: CGFloat { stack.fittingSize.width }
 
@@ -122,8 +111,9 @@ public final class ToolbarView: NSView {
         ])
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 9
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+        stack.spacing = ClassicMetrics.controlSpacing
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: ClassicMetrics.horizontalInset,
+                                       bottom: 0, right: ClassicMetrics.horizontalInset)
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.setContentHuggingPriority(.required, for: .horizontal)
         addSubview(stack)
@@ -216,7 +206,7 @@ public final class ToolbarView: NSView {
         commitColorSession()
         let current = (editor.currentAttributes()[.font] as? NSFont)?.familyName
         editor.beginFormatPreview()
-        fontPicker.present(from: fontControl, palette: .typefaces,
+        fontPicker.present(from: fontControl, palette: FloatingPalette.typefaces,
                            items: FloatingPalette.typefaceItems(), currentID: current,
                            specimenFont: FloatingPalette.typefaceSpecimenFont) { [weak self] item in
             self?.editor?.setFontFamily(item.id)
@@ -225,7 +215,7 @@ public final class ToolbarView: NSView {
             self?.editor?.endFormatPreview(commit: true, actionName: "Font")
         } onFinish: { [weak self] commit in
             guard let self else { return }
-            self.editor?.endFormatPreview(commit: commit, actionName: "Font")
+            self.editor?.endFormatPreview(commit: commit == .commit, actionName: "Font")
             self.syncFromSelection()
             self.returnFocusToPage()
         }
@@ -244,7 +234,7 @@ public final class ToolbarView: NSView {
         guard let editor, !stylePicker.isActive, !fontPicker.isActive, !listPicker.isActive else { return }
         commitColorSession()
         editor.beginFormatPreview()
-        stylePicker.present(from: styleControl, palette: .styles,
+        stylePicker.present(from: styleControl, palette: FloatingPalette.styles,
                             items: FloatingPalette.styleItems(styles: editor.model.styles),
                             currentID: editor.currentStyleRole(),
                             specimenFont: { [weak self] item in
@@ -256,7 +246,7 @@ public final class ToolbarView: NSView {
             self?.editor?.endFormatPreview(commit: true, actionName: "Apply Style")
         } onFinish: { [weak self] commit in
             guard let self else { return }
-            self.editor?.endFormatPreview(commit: commit, actionName: "Apply Style")
+            self.editor?.endFormatPreview(commit: commit == .commit, actionName: "Apply Style")
             self.syncFromSelection()
             self.returnFocusToPage()
         }
@@ -274,7 +264,7 @@ public final class ToolbarView: NSView {
         guard let editor, !listPicker.isActive, !stylePicker.isActive, !fontPicker.isActive else { return }
         commitColorSession()
         editor.beginFormatPreview()
-        listPicker.present(from: listControl, palette: .lists,
+        listPicker.present(from: listControl, palette: FloatingPalette.lists,
                            items: FloatingPalette.listItems(),
                            currentID: editor.currentListStyleID(),
                            specimenFont: { _ in NSFont.systemFont(ofSize: 13) }) { [weak self] item in
@@ -284,7 +274,7 @@ public final class ToolbarView: NSView {
             self?.editor?.endFormatPreview(commit: true, actionName: "List Style")
         } onFinish: { [weak self] commit in
             guard let self else { return }
-            self.editor?.endFormatPreview(commit: commit, actionName: "List Style")
+            self.editor?.endFormatPreview(commit: commit == .commit, actionName: "List Style")
             self.syncFromSelection()
             self.returnFocusToPage()
         }

@@ -133,10 +133,16 @@ on these views.
 | `Sources/LucerneKit/Model/` | Codable `document.json` model + Markdown export |
 | `Sources/LucerneKit/Text/` | model ⇆ `NSAttributedString` bridge (`.lucerne*` attributes) |
 | `Sources/LucerneKit/Layout/` | page metrics, pagination, exclusion paths |
-| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, navigator, status bar, sheets, floating images, try-on pickers + app-global floating palettes, the style editor panel + Style Library window |
+| `Sources/LucerneKit/Views/` | canvas, page views, text views, ruler, navigator, sheets, floating images, app-global palette adapters, the style editor panel + Style Library window |
 | `Sources/LucerneKit/IO/` | `MiniZip`, `.luce` archive read/write, version history, the global style library (`styles.json`), `NSDocument`, printing |
 | `Sources/LucerneKit/Document/` | `EditorController` + window controller tying model↔views together |
 | `Sources/LucerneKit/Support/` | small AppKit helpers (color↔hex, image↔data, geometry bridge) |
+
+The macOS `LucerneKit` target depends on [RigiUI](https://github.com/L-K-M/Rigi)
+and re-exports its classic control, window/palette chrome, status bar, and picker
+types. Rigi owns their presentation; Lucerne keeps document targeting, item
+tables, style/library commands, and preview/undo transactions. Follow Rigi's
+interface guidelines when composing new UI. The Linux core has no Rigi dependency.
 
 ### Feature subsystems (all on the core pipeline above)
 
@@ -414,4 +420,3 @@ may waive review; report that waiver rather than claiming review passed.
   status, review rounds completed, and whether it is merged.
 
 <!-- shared-rules:end -->
-
