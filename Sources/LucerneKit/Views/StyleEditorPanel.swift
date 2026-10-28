@@ -15,6 +15,7 @@ import RigiUI
 // "Edit Style" step (sealed on retarget/close — see
 // EditorController.registerStyleRedefinitionUndo). Library-target edits register
 // on the panel's own undo manager, best-effort.
+@MainActor
 final class StyleEditorPanel: NSObject {
 
     static let shared = StyleEditorPanel()

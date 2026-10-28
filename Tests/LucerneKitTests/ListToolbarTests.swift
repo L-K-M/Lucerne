@@ -5,6 +5,7 @@ import XCTest
 /// The toolbar List chooser's item table and label mapping — pure static helpers,
 /// so they lock the wiring (each row's id must be a marker the editor understands)
 /// without needing a live view.
+@MainActor
 final class ListToolbarTests: XCTestCase {
 
     func testListItemsCoverEveryMarkerPlusNone() {
