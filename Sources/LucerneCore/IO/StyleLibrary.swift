@@ -149,21 +149,26 @@ public final class StyleLibrary {
     /// false — and posts `didFailToSave` — when the write was refused (load
     /// failure on an existing file, so a corrupt or future-versioned library is
     /// never overwritten wholesale, 1.11) or failed, so callers never mistake a
-    /// skipped save for a successful one.
+    /// skipped save for a successful one. Notifications are posted *after* the
+    /// lock is released: NSLock is not recursive, so posting under it would
+    /// deadlock any observer that calls back into the library.
     @discardableResult
     public func save(_ styles: [String: ParagraphStyleDef]) -> Bool {
+        var notification: (Notification.Name, [AnyHashable: Any])?
         stateLock.lock()
-        defer { stateLock.unlock() }
-        return saveLocked(styles)
+        let result = saveLocked(styles, notification: &notification)
+        stateLock.unlock()
+        postDeferred(notification)
+        return result
     }
 
-    private func saveLocked(_ styles: [String: ParagraphStyleDef]) -> Bool {
+    private func saveLocked(_ styles: [String: ParagraphStyleDef],
+                            notification: inout (Notification.Name, [AnyHashable: Any])?) -> Bool {
         guard _loadFailure == .none else {
             let reason = "refusing to overwrite the style library while it is "
                 + "in a load-failure state (\(_loadFailure)); leaving it untouched"
             NSLog("Lucerne: \(reason)")
-            NotificationCenter.default.post(name: StyleLibrary.didFailToSave, object: self,
-                                            userInfo: ["error": reason])
+            notification = (StyleLibrary.didFailToSave, ["error": reason])
             return false
         }
         do {
@@ -174,14 +179,13 @@ public final class StyleLibrary {
             // next selection-change sync serves memory, not disk (3.4).
             cache = styles
             cacheModDate = fileModificationDate()
-            NotificationCenter.default.post(name: StyleLibrary.didChange, object: self)
+            notification = (StyleLibrary.didChange, [:])
             return true
         } catch {
             // A preferences-grade file: failing to persist must never take the
             // app down, but it must not pass silently either. The next save retries.
             NSLog("Lucerne: could not write style library: \(error)")
-            NotificationCenter.default.post(name: StyleLibrary.didFailToSave, object: self,
-                                            userInfo: ["error": error])
+            notification = (StyleLibrary.didFailToSave, ["error": error])
             return false
         }
     }
@@ -191,8 +195,8 @@ public final class StyleLibrary {
     /// entry goes to the end. Returns false when the change was not persisted.
     @discardableResult
     public func saveStyle(_ def: ParagraphStyleDef, forKey key: String) -> Bool {
+        var notification: (Notification.Name, [AnyHashable: Any])?
         stateLock.lock()
-        defer { stateLock.unlock() }
         var library = loadLocked()
         var merged = def
         if let existingOrder = library[key]?.order {
@@ -202,16 +206,32 @@ public final class StyleLibrary {
                 ?? Double(library.count - 1)) + 1
         }
         library[key] = merged
-        return saveLocked(library)
+        let result = saveLocked(library, notification: &notification)
+        stateLock.unlock()
+        postDeferred(notification)
+        return result
     }
 
     @discardableResult
     public func removeStyle(forKey key: String) -> Bool {
+        var notification: (Notification.Name, [AnyHashable: Any])?
         stateLock.lock()
-        defer { stateLock.unlock() }
         var library = loadLocked()
-        guard library.removeValue(forKey: key) != nil else { return true }
-        return saveLocked(library)
+        guard library.removeValue(forKey: key) != nil else {
+            stateLock.unlock()
+            return true
+        }
+        let result = saveLocked(library, notification: &notification)
+        stateLock.unlock()
+        postDeferred(notification)
+        return result
+    }
+
+    /// Posts a notification produced under the lock, after the lock is released.
+    private func postDeferred(_ notification: (Notification.Name, [AnyHashable: Any])?) {
+        guard let notification else { return }
+        NotificationCenter.default.post(name: notification.0, object: self,
+                                        userInfo: notification.1)
     }
 
     // MARK: - First run (S6): a starter collection instead of an empty shelf
