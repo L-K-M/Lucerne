@@ -238,8 +238,11 @@ final class UpdateChecker: ObservableObject {
                 NSLog("UpdateChecker: download failed (\(error.localizedDescription)); offering release page")
                 // Never leave a failed/integrity-failed download looking successful:
                 // tell the user why, and offer the release page as the fallback.
-                let alert = NSAlert(error: error)
+                // NSAlert(error:) would drop the reason into fields the user
+                // doesn't read; put the actual cause in the informative text.
+                let alert = NSAlert()
                 alert.messageText = "The update could not be downloaded"
+                alert.informativeText = error.localizedDescription
                 alert.addButton(withTitle: "Open Release Page")
                 alert.addButton(withTitle: "Cancel")
                 if alert.runModal() == .alertFirstButtonReturn {
