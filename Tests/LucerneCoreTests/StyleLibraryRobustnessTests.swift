@@ -84,3 +84,83 @@ final class StyleLibraryRobustnessTests: XCTestCase {
         XCTAssertEqual(library.load(), styles)
     }
 }
+
+/// chonk.md finding 5: saves must not report success when nothing was persisted,
+/// and the shared singleton's read-modify-write mutators must be atomic so two
+/// windows can't lose an update.
+final class StyleLibrarySaveFailureTests: XCTestCase {
+
+    private func temporaryLibrary() -> StyleLibrary {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("styles.json")
+        return StyleLibrary(fileURL: url)
+    }
+
+    private func expectNotification(_ name: Notification.Name,
+                                    file: StaticString = #filePath, line: UInt = #line) -> XCTestExpectation {
+        let exp = expectation(description: "notification \(name.rawValue)")
+        NotificationCenter.default.addObserver(
+            forName: name, object: nil, queue: nil) { _ in exp.fulfill() }
+        return exp
+    }
+
+    func testFailedSaveReturnsFalseAndPostsNotification() throws {
+        // Point the library at a path whose parent is an existing *file*, so the
+        // directory creation / write always fails.
+        let blocker = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try Data("x".utf8).write(to: blocker)
+        let library = StyleLibrary(fileURL: blocker.appendingPathComponent("styles.json"))
+
+        let exp = expectNotification(StyleLibrary.didFailToSave)
+        let ok = library.save(["body": ParagraphStyleDef(name: "Body", markdown: "p")])
+        wait(for: [exp], timeout: 2)
+        XCTAssertFalse(ok, "a failed write must not report success")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.fileURL.path))
+    }
+
+    func testRefusedSaveOnLoadFailureReturnsFalse() throws {
+        let library = temporaryLibrary()
+        let dir = library.fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("definitely { not json".utf8).write(to: library.fileURL)
+        XCTAssertTrue(library.load().isEmpty)
+        XCTAssertEqual(library.loadFailure, .undecodable)
+
+        let exp = expectNotification(StyleLibrary.didFailToSave)
+        XCTAssertFalse(library.save(["body": ParagraphStyleDef(name: "Body", markdown: "p")]))
+        wait(for: [exp], timeout: 2)
+        XCTAssertEqual(try String(contentsOf: library.fileURL, encoding: .utf8),
+                       "definitely { not json", "the corrupt file must stay untouched")
+    }
+
+    func testSuccessfulSaveReturnsTrueAndPostsDidChange() {
+        let library = temporaryLibrary()
+        let exp = expectNotification(StyleLibrary.didChange)
+        XCTAssertTrue(library.save(["body": ParagraphStyleDef(name: "Body", markdown: "p")]))
+        wait(for: [exp], timeout: 2)
+        XCTAssertEqual(Set(library.load().keys), ["body"])
+    }
+
+    func testConcurrentSaveStyleCallsLoseNoUpdates() {
+        let library = temporaryLibrary()
+        let count = 32
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "stylelibrary.test", attributes: .concurrent)
+        for i in 0..<count {
+            group.enter()
+            queue.async {
+                defer { group.leave() }
+                XCTAssertTrue(library.saveStyle(
+                    ParagraphStyleDef(name: "S\(i)", markdown: "p"), forKey: "s\(i)"))
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 30), .success)
+        let loaded = library.load()
+        XCTAssertEqual(loaded.count, count, "every concurrent save must land (atomic read-modify-write)")
+        for i in 0..<count {
+            XCTAssertNotNil(loaded["s\(i)"])
+        }
+    }
+}

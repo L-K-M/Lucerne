@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateChecker.start()   // check GitHub for a newer release on launch + daily
         observeDocumentWindowClose()
         observeDocumentWindowArrival()
+        observeStyleLibrarySaveFailure()
         // Let macOS restore/recover documents first; if nothing opened, show the
         // welcome screen (recent documents + New/Open/Sample). The small delay lets
         // window/draft restoration settle so we don't show it alongside a restored doc.
@@ -66,6 +67,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self, !self.isTerminating else { return }
                     self.showWelcomeIfNoDocuments()
                 }
+            }
+    }
+
+    /// A style-library save was refused or failed — the edit was NOT persisted, so
+    /// say so instead of passing silently (chonk finding 5).
+    private func observeStyleLibrarySaveFailure() {
+        NotificationCenter.default.addObserver(
+            forName: StyleLibrary.didFailToSave, object: nil, queue: .main) { note in
+                let reason = (note.userInfo?["error"] as? String)
+                    ?? ((note.userInfo?["error"] as? Error)?.localizedDescription)
+                    ?? "unknown reason"
+                let alert = NSAlert()
+                alert.messageText = "The style library could not be saved"
+                alert.informativeText = "\(reason). Your change was not written to disk."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
             }
     }
 
