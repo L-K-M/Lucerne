@@ -305,6 +305,30 @@ public struct TableCellModel: Codable, Equatable {
     }
 }
 
+/// Bounds for geometry that must stay finite and small enough that derived
+/// arithmetic (grid dimensions, exclusion rects) can neither overflow nor
+/// allocate absurd amounts of memory. Files outside these bounds are refused
+/// at decode time (see DocumentCoding.validateSemantics).
+public enum TableGeometry {
+    /// Largest sane table extent (rows/columns); grid dimensions derive from
+    /// cell coordinates, so this also caps the allocated GFM grid.
+    public static let maximumExtent = 1000
+    /// Largest sane page/object dimension in points (far beyond any paper size).
+    public static let maximumPageDimension: Double = 100_000
+
+    /// True when the cell's coordinates and spans are in range and their sums
+    /// cannot overflow: row, column >= 0, spans >= 1, extents within bounds.
+    public static func isValidCell(_ cell: TableCellModel) -> Bool {
+        guard cell.row >= 0, cell.column >= 0,
+              cell.rowSpan >= 1, cell.columnSpan >= 1 else { return false }
+        let rowSum = cell.row.addingReportingOverflow(cell.rowSpan)
+        let columnSum = cell.column.addingReportingOverflow(cell.columnSpan)
+        return cell.row < maximumExtent && cell.column < maximumExtent
+            && !rowSum.overflow && !columnSum.overflow
+            && rowSum.partialValue <= maximumExtent && columnSum.partialValue <= maximumExtent
+    }
+}
+
 /// Marks a paragraph as an item of a list. Items sharing a `list` id, laid out
 /// contiguously, form one list; each carries its own `marker` style and nesting
 /// `level`, so a single list can mix depths. Unlike a table's `cell`, list
