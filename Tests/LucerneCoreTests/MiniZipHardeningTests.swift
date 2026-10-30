@@ -289,3 +289,24 @@ final class ZipEntryNameSafetyTests: XCTestCase {
         XCTAssertEqual(contents.images["images/lake.png"], imagePayload)
     }
 }
+
+extension ZipEntryNameSafetyTests {
+    func testWriteRefusesRenameCollisionWithKeptFlatName() {
+        // Review feedback on #59: a rename must not collide with an existing
+        // flat images/ key either, not just with other renamed sources.
+        var model = DefaultDocuments.empty()
+        model.objects = [
+            PlacedObject(id: "a", type: "image", src: "images/lake.png", page: 0,
+                        frame: RectModel(x: 0, y: 0, width: 10, height: 10)),
+            PlacedObject(id: "b", type: "image", src: "pictures/lake.png", page: 0,
+                        frame: RectModel(x: 20, y: 0, width: 10, height: 10))
+        ]
+        XCTAssertThrowsError(try LuceArchive.write(
+            model: model,
+            images: ["images/lake.png": imagePayload, "pictures/lake.png": imagePayload])) { error in
+            guard case LuceArchive.ArchiveError.invalidImageSource = error else {
+                return XCTFail("expected invalidImageSource, got \(error)")
+            }
+        }
+    }
+}

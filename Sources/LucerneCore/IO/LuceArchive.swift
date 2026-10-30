@@ -47,6 +47,14 @@ public enum LuceArchive {
         var model = model
         var images = images
         var renamed: [String: String] = [:]
+        // Every final entry name, including sources that were already flat — a
+        // rename must not collide with a kept images/ key either.
+        var takenNames: Set<String> = []
+        for object in model.objects where object.type == "image" {
+            if let src = object.src, isFlatImageName(src) {
+                takenNames.insert(src)
+            }
+        }
         for object in model.objects {
             guard object.type == "image", let src = object.src, !isFlatImageName(src) else { continue }
             let filename = (src as NSString).lastPathComponent
@@ -57,9 +65,9 @@ public enum LuceArchive {
             guard renamed[src] == nil || renamed[src] == newName else {
                 throw ArchiveError.invalidImageSource(src)
             }
-            if let existing = renamed.first(where: { $0.value == newName && $0.key != src }) {
+            guard takenNames.insert(newName).inserted else {
                 throw ArchiveError.invalidImageSource(
-                    "\(src) and \(existing.key) would both map to \(newName)")
+                    "\(src) would collide with an existing entry \(newName)")
             }
             renamed[src] = newName
         }
