@@ -173,6 +173,32 @@ final class FormatSafetyTests: XCTestCase {
         }
     }
 
+    func testHugeObjectFrameOriginIsRefused() throws {
+        var model = makeModel()
+        model.objects = [PlacedObject(id: "far-origin", page: 0,
+                                      frame: RectModel(x: 1e300, y: 0, width: 10, height: 10))]
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidObjectFrame = error else {
+                return XCTFail("expected invalidObjectFrame, got \(error)")
+            }
+        }
+    }
+
+    func testHugeStandoffIsRefused() throws {
+        var model = makeModel()
+        var object = PlacedObject(id: "huge-standoff", page: 0,
+                                  frame: RectModel(x: 0, y: 0, width: 10, height: 10))
+        object.standoff = 1e300
+        model.objects = [object]
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidObjectFrame = error else {
+                return XCTFail("expected invalidObjectFrame, got \(error)")
+            }
+        }
+    }
+
     func testExportSurvivesHostileCellGeometry() throws {
         // Defense in depth: even if a model with hostile cell geometry reaches
         // the exporter (bypassing decode), export must not trap or OOM.

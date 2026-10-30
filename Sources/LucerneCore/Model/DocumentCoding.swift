@@ -113,13 +113,14 @@ public enum DocumentCoding {
               page.margins.top + page.margins.bottom < page.height else {
             throw DocumentError.invalidPageGeometry
         }
-        for object in model.objects where object.anchorMode == .page {
-            guard let page = object.page else { continue }
-            guard (0..<LucerneDocumentModel.maximumPageCount).contains(page) else {
-                throw DocumentError.invalidObjectPage(objectID: object.id, found: page)
-            }
+        for object in model.objects {
+            // Frame/standoff geometry is validated for every anchor mode, not
+            // just page-anchored objects — an inline object with a huge frame
+            // reaches the same layout code.
             if let frame = object.frame {
                 guard frame.x.isFinite, frame.y.isFinite,
+                      abs(frame.x) <= TableGeometry.maximumPageDimension,
+                      abs(frame.y) <= TableGeometry.maximumPageDimension,
                       frame.width.isFinite, frame.height.isFinite,
                       frame.width >= 0, frame.height >= 0,
                       frame.width <= TableGeometry.maximumPageDimension,
@@ -127,8 +128,14 @@ public enum DocumentCoding {
                     throw DocumentError.invalidObjectFrame(objectID: object.id)
                 }
             }
-            guard object.standoff.isFinite, object.standoff >= 0 else {
+            guard object.standoff.isFinite, object.standoff >= 0,
+                  object.standoff <= TableGeometry.maximumPageDimension else {
                 throw DocumentError.invalidObjectFrame(objectID: object.id)
+            }
+            guard object.anchorMode == .page else { continue }
+            guard let page = object.page else { continue }
+            guard (0..<LucerneDocumentModel.maximumPageCount).contains(page) else {
+                throw DocumentError.invalidObjectPage(objectID: object.id, found: page)
             }
         }
         for paragraph in model.body {
