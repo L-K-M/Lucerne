@@ -29,6 +29,7 @@ public enum MiniZip {
         case notAZip
         case corrupt(String)
         case unsupported(String)
+        case duplicateEntry(String)
     }
 
     /// Upper bound on a single entry's uncompressed size. The size field in a
@@ -68,8 +69,14 @@ public enum MiniZip {
         var output = Data()
         var central = Data()
         var offsets: [(entry: Entry, crc: UInt32, offset: UInt32)] = []
+        var seenNames = Set<String>()
 
         for entry in entries {
+            // Two entries with one name are ambiguous for every reader (first or
+            // last wins, tool-dependent), so the writer refuses them outright.
+            guard seenNames.insert(entry.name).inserted else {
+                throw ZipError.duplicateEntry(entry.name)
+            }
             if entry.data.count > maxEntrySize {
                 throw ZipError.unsupported(
                     "An entry (\(entry.name)) is too large to store: \(entry.data.count) bytes "
@@ -179,6 +186,7 @@ public enum MiniZip {
         var cursor = Int(cdOffset)
 
         var result: [Entry] = []
+        var seenNames = Set<String>()
         for _ in 0 ..< total {
             guard cursor + 46 <= bytes.count, readLE32(bytes, cursor) == centralHeaderSig else {
                 throw ZipError.corrupt("bad central directory header")
@@ -199,6 +207,11 @@ public enum MiniZip {
             }
             let name = String(decoding: bytes[cursor + 46 ..< cursor + 46 + nameLen], as: UTF8.self)
             cursor = recordEnd
+            // A duplicate name makes the archive ambiguous (which entry wins is
+            // reader-dependent), so refuse it instead of silently picking one.
+            guard seenNames.insert(name).inserted else {
+                throw ZipError.duplicateEntry(name)
+            }
 
             do {
                 let payload = try readLocalEntry(bytes, localOffset: localOffset,
@@ -328,6 +341,7 @@ extension MiniZip.ZipError: LocalizedError {
         case .notAZip:                 return "The file is not a valid .luce archive."
         case .corrupt(let message):    return message
         case .unsupported(let message): return message
+        case .duplicateEntry(let name): return "The archive contains two entries named \"\(name)\"."
         }
     }
 }

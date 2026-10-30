@@ -195,3 +195,97 @@ final class MiniZipDeflateReadTests: XCTestCase {
         XCTAssertThrowsError(try MiniZip.entries(from: corrupt))
     }
 }
+
+/// Entry-name safety for the .luce writer/reader: duplicate names are refused on
+/// both paths, and image `src` values are normalized to flat `images/<file>` names
+/// on write while spec-legal sources outside `images/` still load on read.
+final class ZipEntryNameSafetyTests: XCTestCase {
+
+    private let imagePayload = Data([0x89, 0x50, 0x4e, 0x47])
+
+    private func modelWithImage(src: String) -> LucerneDocumentModel {
+        var model = DefaultDocuments.empty()
+        model.objects = [PlacedObject(id: "img", type: "image", src: src, page: 0,
+                                      frame: RectModel(x: 10, y: 10, width: 50, height: 50))]
+        return model
+    }
+
+    func testWriterRejectsDuplicateEntryNames() {
+        let entries = [MiniZip.Entry(name: "a.txt", data: Data("one".utf8)),
+                       MiniZip.Entry(name: "a.txt", data: Data("two".utf8))]
+        XCTAssertThrowsError(try MiniZip.archive(entries, maxEntrySize: MiniZip.maxEntrySize)) { error in
+            guard case MiniZip.ZipError.duplicateEntry("a.txt") = error else {
+                return XCTFail("expected duplicateEntry, got \(error)")
+            }
+        }
+    }
+
+    func testReaderRejectsDuplicateEntryNames() throws {
+        // The writer now refuses duplicates, so craft one by renaming the second
+        // of two same-length entries ("b.txt" -> "a.txt") in both headers.
+        var data = MiniZip.archive([
+            MiniZip.Entry(name: "a.txt", data: Data("one".utf8)),
+            MiniZip.Entry(name: "b.txt", data: Data("two".utf8))
+        ])
+        let old = Data("b.txt".utf8), new = Data("a.txt".utf8)
+        var cursor = 0
+        while let range = data.range(of: old, in: cursor..<data.count) {
+            data.replaceSubrange(range, with: new)
+            cursor = range.lowerBound + new.count
+        }
+        XCTAssertThrowsError(try MiniZip.entries(from: data)) { error in
+            guard case MiniZip.ZipError.duplicateEntry("a.txt") = error else {
+                return XCTFail("expected duplicateEntry, got \(error)")
+            }
+        }
+    }
+
+    func testWriteNormalizesNonImagesSourceToFlatName() throws {
+        let model = modelWithImage(src: "pictures/lake.png")
+        let data = try LuceArchive.write(model: model,
+                                         images: ["pictures/lake.png": imagePayload])
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model.objects.first?.src, "images/lake.png")
+        XCTAssertEqual(contents.images["images/lake.png"], imagePayload)
+    }
+
+    func testWriteRefusesUnusableImageSource() {
+        let model = modelWithImage(src: "/")
+        XCTAssertThrowsError(try LuceArchive.write(model: model,
+                                                   images: ["/": imagePayload])) { error in
+            guard case LuceArchive.ArchiveError.invalidImageSource = error else {
+                return XCTFail("expected invalidImageSource, got \(error)")
+            }
+        }
+    }
+
+    func testWriteRefusesDotDotImageSource() {
+        let model = modelWithImage(src: "..")
+        XCTAssertThrowsError(try LuceArchive.write(model: model, images: ["..": imagePayload])) { error in
+            guard case LuceArchive.ArchiveError.invalidImageSource = error else {
+                return XCTFail("expected invalidImageSource, got \(error)")
+            }
+        }
+    }
+
+    func testReadCollectsReferencedSourceOutsideImagesPrefix() throws {
+        // Spec: `src` MUST name an archive entry; "images/" is only conventional.
+        let model = modelWithImage(src: "pictures/a.png")
+        let archive = MiniZip.archive([
+            MiniZip.Entry(name: LuceArchive.documentEntryName,
+                          data: try DocumentCoding.encode(model)),
+            MiniZip.Entry(name: "pictures/a.png", data: imagePayload)
+        ])
+        let contents = try LuceArchive.read(archive)
+        XCTAssertEqual(contents.images["pictures/a.png"], imagePayload,
+                       "a referenced payload outside images/ must be collected so the file stays savable")
+    }
+
+    func testRoundTripPreservesFlatImageSource() throws {
+        let model = modelWithImage(src: "images/lake.png")
+        let data = try LuceArchive.write(model: model, images: ["images/lake.png": imagePayload])
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model, model)
+        XCTAssertEqual(contents.images["images/lake.png"], imagePayload)
+    }
+}
