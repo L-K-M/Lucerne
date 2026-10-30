@@ -325,3 +325,249 @@ Ordered by fit and reuse of shipped machinery.
   direct formatting when styles are changed or reapplied.
 - Prefer pure, testable model/layout helpers. Extract collaborators only around
   coherent behavior and tests, not to reduce line count.
+
+---
+
+# Phase 1 review consolidation (chonk.md, 2026-10-30)
+
+Findings from the three-repo review (Lucerne, Sion at L-K-M/Sion, Rigi) that are
+**not** yet implemented. Every blocking and important finding from that review is
+implemented in an open PR (Lucerne #58-62, Sion #89-97, Rigi #4-6) and is therefore
+not repeated here; see those PRs for verification notes. Paths are repo-qualified.
+Remaining entries below are nice-to-have, ordered by value within each focus area.
+
+## Bugs
+
+### Mermaid arrow matched inside labels
+bugs — nice-to-have
+`Sion/Sources/SionCore/Import/MermaidImporter.swift:225-231` scans for the arrow
+from column 0, so `A|"-->"|--> B` is rejected as unrecognized instead of parsed
+as a link. Suggested fix: scan for the arrow after the parsed source node. Effort S.
+
+### Newlines inside run text corrupt the recovery Markdown
+bugs — nice-to-have
+`Lucerne/Sources/LucerneCore/Model/MarkdownExporter.swift` passes `"\n"` through
+`escape()` and `blockEscape` inspects only the first line, so a run `"a\n# b"`
+exports a real heading and newlines split GFM table rows and list items in
+`content.md` and every `history/` snapshot. Suggested fix: flatten/escape newlines
+in `inlineMarkdown`. Effort S.
+
+### Colliding or out-of-range table cells vanish from Markdown export
+bugs — nice-to-have
+`Lucerne/Sources/LucerneCore/Model/MarkdownExporter.swift:133-138` silently
+overwrites duplicate coordinates and drops out-of-range cells. Suggested fix:
+fall back to plain paragraph blocks and signal the loss. Effort S.
+
+### Windowless Sion save writes no preview
+bugs — nice-to-have
+`Sion/Sources/SionKit/Document/SionDrawingDocument.swift:156-161` renders a preview
+only via the first window; windowless autosave/revert skips it though
+`SionSceneRenderer` exists. Suggested fix: fall back to renderer-backed preview.
+Effort S. Needs on-device QA.
+
+### Rigi ClassicPopUp menu may pop above its control
+bugs — nice-to-have
+`Rigi/Sources/RigiUI/ClassicControls.swift:464` pops at `y: bounds.height + 1` on a
+non-flipped control (compare ClassicSizeField's deliberate `y: 0`). Verify visually
+on a Mac, then use `y: 0`. Effort S.
+
+### MainActor.assumeIsolated in nonisolated Sion document IO
+bugs — nice-to-have
+`Sion/Sources/SionKit/Document/SionDrawingDocument.swift:177-229` crashes if AppKit
+ever calls these off-main. Suggested fix: hop to the main actor explicitly. Effort S.
+
+### Sion history filename collisions can drop a revision
+bugs — nice-to-have
+`Sion/Sources/SionCore/Archive/SionArchive.swift:332-344` keys `history/` entries by
+timestamp + 12-hex prefix; a collision silently overwrites. Suggested fix: detect
+and extend the prefix. Effort S.
+
+## General issues
+
+### ClassicWindow does not pin the Aqua appearance itself
+theming — nice-to-have
+`Rigi/Sources/RigiUI/ClassicControls.swift:924-950` relies on each app setting
+`window.appearance = .aqua`. Suggested fix: set it in `init`. Effort S.
+
+### document.json parsed twice on open
+performance — nice-to-have
+`Lucerne/Sources/LucerneCore/Model/DocumentCoding.swift:67-77` runs a version probe
+decode plus the full model decode. Suggested fix: single decode + post-hoc version
+check. Effort S.
+
+### Non-throwing MiniZip.archive returns empty Data on failure
+general — nice-to-have
+`Lucerne/Sources/LucerneCore/IO/MiniZip.swift:56-61` turns an "impossible" throw
+into a valid-looking empty archive. Suggested fix: delete the overload or
+`preconditionFailure`. Effort S.
+
+### Raw selector strings and README-as-Help in Lucerne
+general — nice-to-have
+`Lucerne/Sources/Lucerne/MainMenu.swift:34-43` builds `Selector(selector)` unchecked;
+`AppDelegate.swift:162-165` opens the GitHub README as Help. Suggested fix:
+`#selector` + menu-walk test; a product Help book. Effort S-M. Needs on-device QA.
+
+## Performance problems, stuttering, and jank
+
+### Sion object snap scans the whole scene per mouse-move
+performance — nice-to-have
+`Sion/Sources/SionKit/Canvas/SionCanvasView.swift:2566-2589` rebuilds rotated bounds
+for every visible element per `mouseDragged`; the spatial index in
+`SceneRenderContext` exists but is unused here. Suggested fix: viewport-cull and use
+the index. Effort M. Needs on-device QA.
+
+### Per-keystroke whole-document work in Lucerne
+performance — nice-to-have
+`EditorController.swift:260-269, 225-251, 2478-2503, 586`, scroll-driven all-page
+layout (`DocumentWindowController.swift:496-506`), double relayout per formatting
+command, quadratic list-marker scans (`ListMarkerLayoutManager.swift:37-61`),
+full-resolution image decode/draw on the main thread. Suggested fix: cache by edit
+generation, index objects by page, coalesce relayout, decode off-main. Effort M-L.
+Needs on-device QA.
+
+### Rigi hot draw paths allocate per frame
+performance — nice-to-have
+`Rigi/Sources/RigiUI/ClassicControls.swift:51-69, 180-202` builds NSGradients and
+attributed strings per draw. Suggested fix: cache the six bezel gradients and glyph
+strings. Effort S.
+
+### Connector route resampling recomputed per call
+performance — nice-to-have
+`Sion/Sources/SionCore/Geometry/ConnectorRouting.swift:150-230` resamples 24 points
+per curve segment on every `point(atFraction:)`/`polylinePoints` call (per connector
+label per frame and per export). Suggested fix: lazily cache the sampled polyline.
+Effort S.
+
+### Sion per-command O(n) scans and whole-scene validation per transaction
+performance — nice-to-have
+`Sion/Sources/SionCore/Editing/SceneCommand.swift`, `SceneEditor.swift:180-195` run
+per-pointer-sample during gestures. Suggested fix: revision-scoped ID index,
+incremental validation, change sets. Effort L.
+
+## Missing features
+
+### Rigi status bar has no hover-help API
+missing feature — nice-to-have
+`Rigi/Sources/RigiUI/StatusBarView.swift:24-26` exposes only `message`, but
+`docs/interface-guidelines.md:45` promises hover help. Suggested fix:
+`setHoverMessage(_:)` with tracking in the view. Effort S.
+
+### Document-wide Select All / copy / delete are page-local in Lucerne
+usability — nice-to-have (large)
+`Lucerne/Sources/Lucerne/MainMenu.swift:126-132` targets the first-responder page
+view only. A storage-relative surrogate is M effort; true cross-page drag selection
+is L. Needs on-device QA.
+
+### Ordinary Return duplicates .lucerneParagraphID
+bugs — nice-to-have
+`Lucerne/Sources/LucerneKit/Text/PageTextView.swift:83-90` lets Return inherit the
+old paragraph ID, so both halves of a split save with the same ID. Suggested fix:
+mint a fresh ID per split + defensive dedupe in `snapshotModel`. Effort S-M. Needs
+on-device QA.
+
+### Sion nudge keypresses each create an undo entry
+usability — nice-to-have
+`Sion/Sources/SionKit/Canvas/SionCanvasView.swift:646-655` ->
+`SionEditorController.swift:1030-1035`; holding an arrow floods Undo. Suggested fix:
+coalesce same-direction nudges within a short window. Effort M. Needs on-device QA.
+
+### Repeated paste stacks exactly on top of itself in Sion
+usability — nice-to-have
+`Sion/Sources/SionKit/Canvas/SionCanvasView.swift:923-948` always pastes at the
+visible canvas center. Suggested fix: cascade offset or pasteboard-identity
+tracking. Effort S.
+
+## Visual issues and layout problems
+
+### Header/footer zones paint over each other
+visual — nice-to-have
+`Lucerne/Sources/LucerneKit/Views/PageContainerView.swift:99-116` draws all three
+zones into one full-width rect with tail truncation; long left+center strings
+overlap. Suggested fix: three measured columns with truncation priority. Effort S-M.
+Needs on-device QA.
+
+### Rigi segmented-control geometry leaves an unpainted strip
+visual — nice-to-have
+`Rigi/Sources/RigiUI/ClassicControls.swift:328-364` outlines all of `bounds` while
+segments sum `widths`, and separator phases differ from
+`ClassicNativeControls.swift:38-41`. Suggested fix: clip to bounds, round
+boundaries, unify phase. Effort S.
+
+### Fixed 24 pt list gutters overprint text for wide markers
+visual — nice-to-have
+`Lucerne/Sources/LucerneCore/Model/ListSupport.swift:18-31` +
+`LucerneKit/Text/ListMarkerLayoutManager.swift:119-128`: a wide "1000." marker at
+level >= 1 spills over item text. Suggested fix: measure the marker and widen the
+gutter per level. Effort S-M. Needs on-device QA.
+
+## Usability: is the interface fast, convenient, and clear?
+
+### Custom controls are unreachable by keyboard and unlabeled for VoiceOver
+usability — nice-to-have (large)
+Rigi's hand-drawn controls (`ClassicControls.swift`, `StatusBarView.swift`) are
+mouse-only with no focus rings or AX labels, contradicting
+`Rigi/docs/interface-guidelines.md:55,64-66,122-131`; same for Lucerne's
+ruler/palette/image handles and Sion's canvas (single AX group,
+`SionCanvasView.swift:154-156,2952-2973`). Suggested fix: acceptsFirstResponder +
+keyDown + AX roles/labels + focus rings; element-level canvas AX. Effort M-L. Needs
+on-device QA.
+
+### Find panel recounts the whole document on every Cmd-G
+usability — nice-to-have
+`Lucerne/Sources/LucerneKit/Views/FindPanelController.swift:175-194, 215-245` is
+O(n*matches) per Find Next. Suggested fix: cache the count per (query, storage
+generation). Effort S. Needs on-device QA.
+
+### Welcome/Navigator not keyboard-operable; palettes active with no document
+usability — nice-to-have
+`Lucerne/Sources/Lucerne/WelcomeWindowController.swift:103,185-188`,
+`NavigatorView.swift:64-68,83`, `FloatingPalette.swift:243-303` (only the Styles
+palette goes inert with no letter open). Suggested fix: Return activation, initial
+responder, semantic indentation, inert state for all palettes. Effort S-M. Needs
+on-device QA.
+
+### Ruler commits only on mouse-up
+usability — nice-to-have
+`Lucerne/Sources/LucerneKit/Views/LucerneRulerView.swift:258-334` applies via a full
+table rebuild on mouse-up only. Suggested fix: live preview + Esc-revert + arrow-key
+adjustment. Effort M. Needs on-device QA.
+
+## Aesthetics and theming
+
+### No dark-mode story; apps pinned to light Aqua
+theming — nice-to-have (product decision)
+`Sion/Sources/SionKit/Document/SionDocumentWindowController.swift:75` and Lucerne's
+matching pin. Deliberate for Rigi-classic consistency; decide, then theme tokens.
+Effort M+.
+
+### Utility windows mix chrome styles
+visual — nice-to-have
+Lucerne About/Settings/Find use stock NSWindow/NSPanel vs ClassicWindow documents;
+Rigi's gallery torn-off palette lacks autosave/title
+(`Rigi/Sources/RigiGallery/GalleryPalettes.swift:65-80`). Suggested fix: shared
+utility-window skin; gallery parity. Effort S-M. Needs on-device QA.
+
+## Novel, delightful, or quirky ideas worth trying
+
+### Lucerne: live x/y/w/h of a dragged image in the status bar
+delight — nice-to-have
+The `onStatusHint` channel already exists (`EditorController.swift:2391`); cheap
+precursor to magnetic guides. Effort S.
+
+### Lucerne: coalesce arrow-key image nudges into one undo group
+delight — nice-to-have
+`FloatingImageView.swift:250-255` commits one "Move Image" per keypress. Effort S.
+
+### Sion: overlap click-cycling, tool shortcuts, snap-to-grid, snap flare, zen mode
+delight — nice-to-have
+Cheap delights on existing affordances (`SionCanvasView`, `SceneSnapping`): cycle
+overlapping selections on repeated click, V/R/O/T/C tool shortcuts, a snap-to-grid
+toggle, a flare when a connector endpoint enters snap radius, and Cmd-. dimming of
+non-selected objects. Effort S-M each.
+
+### Rigi: per-segment tooltips and gradient-cached hover animation
+delight — nice-to-have
+Per-segment tooltips on `ClassicSegmentedControl` that preview alignment live;
+caching the six bezel gradients (above) also enables a cheap hover "breathe" on the
+active segment. The private-API corner-mask fallback (`ClassicControls.swift:936`)
+is deliberately kept. Effort S-M.
