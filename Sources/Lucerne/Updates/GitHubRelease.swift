@@ -19,12 +19,15 @@ struct GitHubRelease: Decodable {
         let contentType: String
         let size: Int
         let browserDownloadURL: URL
+        /// GitHub's content digest, e.g. "sha256:…" (absent on very old API responses).
+        let digest: String?
 
         enum CodingKeys: String, CodingKey {
             case name
             case contentType = "content_type"
             case size
             case browserDownloadURL = "browser_download_url"
+            case digest
         }
     }
 
