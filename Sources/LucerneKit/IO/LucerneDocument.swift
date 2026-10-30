@@ -60,11 +60,15 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     public override func data(ofType typeName: String) throws -> Data {
         let model = editor?.snapshotModel() ?? pendingModel
         let images = editor?.imageData ?? pendingImages
-        // Append the current text to the staggered Markdown backup trail.
+        // Append the current text to the staggered Markdown backup trail. The
+        // export is computed once and reused for content.md so a save doesn't
+        // render the Markdown twice (chonk finding 27).
+        let markdown = MarkdownExporter.export(model)
         return try HistoryArchiveWriter.write(history: &history,
-                                               addingMarkdown: MarkdownExporter.export(model),
+                                               addingMarkdown: markdown,
                                                now: Date()) { updatedHistory in
-            try LuceArchive.write(model: model, images: images, history: updatedHistory)
+            try LuceArchive.write(model: model, images: images, history: updatedHistory,
+                                  precomputedMarkdown: markdown)
         }
     }
 
