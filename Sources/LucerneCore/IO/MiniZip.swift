@@ -206,17 +206,17 @@ public enum MiniZip {
             }
             let name = String(decoding: bytes[cursor + 46 ..< cursor + 46 + nameLen], as: UTF8.self)
             cursor = recordEnd
-            // Aggregate budget for authoritative entries: a bomb spread across many
-            // entries must fail the read instead of allocating each entry's share.
-            // Best-effort (droppable) entries stay under the per-entry cap only.
-            if !isDroppable(name) {
-                let sum = totalUncompressed.addingReportingOverflow(uncompressedSize)
-                guard !sum.overflow, sum.partialValue <= maxTotalUncompressedSize else {
-                    throw ZipError.corrupt("aggregate uncompressed size exceeds the "
-                        + "\(maxTotalUncompressedSize)-byte budget")
-                }
-                totalUncompressed = sum.partialValue
+            // Aggregate budget over ALL entries: the droppable prefix is a
+            // name-based predicate on attacker-controlled names, so exempting
+            // droppable entries would let a bomb route around the budget by
+            // naming everything history/*. Droppable only relaxes payload
+            // corruption, not size.
+            let sum = totalUncompressed.addingReportingOverflow(uncompressedSize)
+            guard !sum.overflow, sum.partialValue <= maxTotalUncompressedSize else {
+                throw ZipError.corrupt("aggregate uncompressed size exceeds the "
+                    + "\(maxTotalUncompressedSize)-byte budget")
             }
+            totalUncompressed = sum.partialValue
 
             do {
                 let payload = try readLocalEntry(bytes, localOffset: localOffset,

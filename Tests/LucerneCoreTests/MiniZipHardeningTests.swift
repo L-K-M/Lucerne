@@ -214,18 +214,22 @@ final class MiniZipAggregateBudgetTests: XCTestCase {
         }
     }
 
-    func testAggregateBudgetCountsOnlyNonDroppableEntries() throws {
+    func testAggregateBudgetAppliesToDroppableNamesToo() {
+        // Review feedback on #61: the droppable prefix is attacker-controlled, so
+        // history/*-named entries must count toward the aggregate budget as well.
         let data = MiniZip.archive([
             MiniZip.Entry(name: "document.json", data: Data("{}".utf8)),
             MiniZip.Entry(name: "history/2026-01-01.md", data: Data("long recovery text".utf8))
         ])
-        // The history entry alone exceeds the tiny budget, but droppable entries
-        // don't count toward it, so the read succeeds and keeps both entries.
-        let entries = try MiniZip.entries(
+        XCTAssertThrowsError(try MiniZip.entries(
             from: data,
             droppingCorruptEntriesWhere: { $0.hasPrefix("history/") },
-            maxTotalUncompressedSize: 3)
-        XCTAssertEqual(entries.map { $0.name }, ["document.json", "history/2026-01-01.md"])
+            maxTotalUncompressedSize: 10)) { error in
+            guard case MiniZip.ZipError.corrupt(let message) = error,
+                  message.contains("aggregate") else {
+                return XCTFail("expected aggregate-budget corruption, got \(error)")
+            }
+        }
     }
 
     func testWriteReusesPrecomputedMarkdown() throws {
