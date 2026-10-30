@@ -195,3 +195,59 @@ final class MiniZipDeflateReadTests: XCTestCase {
         XCTAssertThrowsError(try MiniZip.entries(from: corrupt))
     }
 }
+
+/// chonk.md finding 27 (partial): the reader must bound the aggregate
+/// uncompressed size of authoritative entries, not just each entry, and a save
+/// must not run the Markdown export twice.
+final class MiniZipAggregateBudgetTests: XCTestCase {
+
+    func testAggregateBudgetRejectsManyEntries() {
+        let data = MiniZip.archive([
+            MiniZip.Entry(name: "a.txt", data: Data("hello".utf8)),
+            MiniZip.Entry(name: "b.txt", data: Data("world!".utf8))
+        ])
+        XCTAssertThrowsError(try MiniZip.entries(from: data, maxTotalUncompressedSize: 10)) { error in
+            guard case MiniZip.ZipError.corrupt(let message) = error,
+                  message.contains("aggregate") else {
+                return XCTFail("expected aggregate-budget corruption, got \(error)")
+            }
+        }
+    }
+
+    func testAggregateBudgetAppliesToDroppableNamesToo() {
+        // Review feedback on #61: the droppable prefix is attacker-controlled, so
+        // history/*-named entries must count toward the aggregate budget as well.
+        let data = MiniZip.archive([
+            MiniZip.Entry(name: "document.json", data: Data("{}".utf8)),
+            MiniZip.Entry(name: "history/2026-01-01.md", data: Data("long recovery text".utf8))
+        ])
+        XCTAssertThrowsError(try MiniZip.entries(
+            from: data,
+            droppingCorruptEntriesWhere: { $0.hasPrefix("history/") },
+            maxTotalUncompressedSize: 10)) { error in
+            guard case MiniZip.ZipError.corrupt(let message) = error,
+                  message.contains("aggregate") else {
+                return XCTFail("expected aggregate-budget corruption, got \(error)")
+            }
+        }
+    }
+
+    func testWriteReusesPrecomputedMarkdown() throws {
+        let model = DefaultDocuments.empty()
+        let data = try LuceArchive.write(model: model, images: [:],
+                                         precomputedMarkdown: "CUSTOM MARKDOWN")
+        let entries = try MiniZip.entries(from: data)
+        let content = try XCTUnwrap(entries.first { $0.name == LuceArchive.markdownEntryName })
+        XCTAssertEqual(String(decoding: content.data, as: UTF8.self), "CUSTOM MARKDOWN",
+                       "the caller-supplied export must be used verbatim (no double export)")
+    }
+
+    func testWriteStillExportsMarkdownWhenNotPrecomputed() throws {
+        let model = DefaultDocuments.empty()
+        let data = try LuceArchive.write(model: model, images: [:])
+        let entries = try MiniZip.entries(from: data)
+        let content = try XCTUnwrap(entries.first { $0.name == LuceArchive.markdownEntryName })
+        XCTAssertEqual(String(decoding: content.data, as: UTF8.self),
+                       MarkdownExporter.export(model) + "")
+    }
+}
