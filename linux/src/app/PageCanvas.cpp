@@ -1,5 +1,6 @@
 #include "app/PageCanvas.h"
 #include "app/DocumentBridge.h"
+#include "app/DocumentUnits.h"
 #include "core/Furniture.h"
 
 #include <QApplication>
@@ -170,7 +171,7 @@ void PageCanvas::paintEvent(QPaintEvent *event) {
                 std::max(8.0, body.size.value_or(12.0) * 0.8);
             QFont font = DocumentBridge::displayFont(
                 body.font.value_or(QStringLiteral("Helvetica")), size, false, false);
-            painter.setFont(font);
+            painter.setFont(DocumentUnits::fontForDevice(font, *painter.device()));
             painter.setPen(QColor(0, 0, 0, 150));
             const QRectF textArea = layout->textAreaRect(i);
             auto drawBand = [&](const PageFurniture &furniture, const QRectF &band) {

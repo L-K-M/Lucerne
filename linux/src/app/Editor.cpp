@@ -1,5 +1,6 @@
 #include "app/Editor.h"
 #include "app/DocumentBridge.h"
+#include "app/DocumentUnits.h"
 #include "core/DefaultDocuments.h"
 #include "core/Furniture.h"
 #include "core/Markdown.h"
@@ -564,8 +565,9 @@ void Editor::renderPage(QPainter *painter, int pageIndex) const {
     if (hasHeader || hasFooter) {
         const ParagraphStyle body = m_model.resolvedStyle(DocumentModel::defaultStyleRole());
         const double size = std::max(8.0, body.size.value_or(12.0) * 0.8);
-        painter->setFont(DocumentBridge::displayFont(
-            body.font.value_or(QStringLiteral("Helvetica")), size, false, false));
+        const QFont font = DocumentBridge::displayFont(
+            body.font.value_or(QStringLiteral("Helvetica")), size, false, false);
+        painter->setFont(DocumentUnits::fontForDevice(font, *painter->device()));
         painter->setPen(QColor(0, 0, 0, 150));
         const QRectF textArea = m_layout->textAreaRect(pageIndex);
         auto drawBand = [&](const PageFurniture &furniture, const QRectF &band) {
