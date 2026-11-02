@@ -7,6 +7,9 @@
 #include "testutil.h"
 
 #include <QtTest>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <limits>
 
@@ -128,6 +131,88 @@ private slots:
         } catch (const CodingError &error) {
             QCOMPARE(int(error.kind()), int(CodingError::Kind::InvalidListLevel));
         }
+    }
+
+    void unsafePageGeometryIsRejected_data() {
+        QTest::addColumn<QString>("field");
+        QTest::addColumn<double>("value");
+        QTest::newRow("zero width") << QStringLiteral("width") << 0.0;
+        QTest::newRow("negative width") << QStringLiteral("width") << -1.0;
+        QTest::newRow("huge width") << QStringLiteral("width") << 1e100;
+        QTest::newRow("zero height") << QStringLiteral("height") << 0.0;
+        QTest::newRow("huge height") << QStringLiteral("height") << 1e100;
+        QTest::newRow("negative margin") << QStringLiteral("left") << -1.0;
+        QTest::newRow("horizontal margins") << QStringLiteral("left") << 600.0;
+        QTest::newRow("vertical margins") << QStringLiteral("top") << 900.0;
+        QTest::newRow("no text width") << QStringLiteral("width") << 144.0;
+        QTest::newRow("sliver height") << QStringLiteral("height") << 144.5;
+    }
+
+    void unsafePageGeometryIsRejected() {
+        QFETCH(QString, field);
+        QFETCH(double, value);
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto page = root.value(QStringLiteral("page")).toObject();
+        if (field == QLatin1String("width") || field == QLatin1String("height")) {
+            page.insert(field, value);
+        } else {
+            auto margins = page.value(QStringLiteral("margins")).toObject();
+            margins.insert(field, value);
+            page.insert(QStringLiteral("margins"), margins);
+        }
+        root.insert(QStringLiteral("page"), page);
+        EXPECT_THROW(Coding::decode(QJsonDocument(root).toJson()), CodingError);
+    }
+
+    void unsafeObjectGeometryIsRejected_data() {
+        QTest::addColumn<QString>("field");
+        QTest::addColumn<double>("value");
+        QTest::newRow("negative width") << QStringLiteral("width") << -1.0;
+        QTest::newRow("zero height") << QStringLiteral("height") << 0.0;
+        QTest::newRow("huge width") << QStringLiteral("width") << 1e100;
+        QTest::newRow("huge x") << QStringLiteral("x") << 1e100;
+        QTest::newRow("negative standoff") << QStringLiteral("standoff") << -1.0;
+        QTest::newRow("huge standoff") << QStringLiteral("standoff") << 1e100;
+    }
+
+    void unsafeObjectGeometryIsRejected() {
+        QFETCH(QString, field);
+        QFETCH(double, value);
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto objects = root.value(QStringLiteral("objects")).toArray();
+        auto object = objects[0].toObject();
+        if (field == QLatin1String("standoff")) {
+            object.insert(field, value);
+        } else {
+            auto frame = object.value(QStringLiteral("frame")).toObject();
+            frame.insert(field, value);
+            object.insert(QStringLiteral("frame"), frame);
+        }
+        objects[0] = object;
+        root.insert(QStringLiteral("objects"), objects);
+        EXPECT_THROW(Coding::decode(QJsonDocument(root).toJson()), CodingError);
+    }
+
+    void largePagesAndImageOverhangRemainSupported() {
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto page = root.value(QStringLiteral("page")).toObject();
+        page.insert(QStringLiteral("width"), 100000);
+        page.insert(QStringLiteral("height"), 100000);
+        root.insert(QStringLiteral("page"), page);
+
+        auto objects = root.value(QStringLiteral("objects")).toArray();
+        auto object = objects[0].toObject();
+        auto frame = object.value(QStringLiteral("frame")).toObject();
+        frame.insert(QStringLiteral("x"), -20);
+        frame.insert(QStringLiteral("y"), -10);
+        object.insert(QStringLiteral("frame"), frame);
+        objects[0] = object;
+        root.insert(QStringLiteral("objects"), objects);
+
+        const auto model = Coding::decode(QJsonDocument(root).toJson());
+        QCOMPARE(model.page.width, 100000.0);
+        QCOMPARE(model.objects[0].frame->x, -20.0);
+        QCOMPARE(Coding::decode(Coding::encode(model)), model);
     }
 
     void missingRequiredMemberIsMalformed() {

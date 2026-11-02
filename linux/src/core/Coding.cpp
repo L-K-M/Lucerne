@@ -257,11 +257,44 @@ PageFurniture decodeFurniture(const QJsonObject &o, const QString &ctx) {
     return f;
 }
 
-/// Codable verifies representation; these are the value checks that depend on
-/// editor constraints (mirrors DocumentCoding.validateSemantics).
+// Keeps 2,000 pages at 4x zoom within signed scrollbar coordinates, with headroom.
+constexpr double maximumGeometryMagnitude = 100000;
+constexpr double minimumContentExtent = 1;
+
+bool boundedCoordinate(double value) {
+    return std::isfinite(value) && std::abs(value) <= maximumGeometryMagnitude;
+}
+
+bool positiveExtent(double value) {
+    return boundedCoordinate(value) && value > 0;
+}
+
+/// Validate geometry before untrusted values reach Qt layout and integer conversion.
 void validateSemantics(const DocumentModel &model) {
+    const PageConfig &page = model.page;
+    if (!positiveExtent(page.width) || !positiveExtent(page.height))
+        malformed(QStringLiteral("Page dimensions must be positive and at most %1 points.")
+                      .arg(maximumGeometryMagnitude));
+    for (const double margin : {page.margins.top, page.margins.left,
+                                page.margins.bottom, page.margins.right}) {
+        if (!boundedCoordinate(margin) || margin < 0)
+            malformed(QStringLiteral("Page margins must be finite, nonnegative distances."));
+    }
+    if (page.width - page.margins.left - page.margins.right <= minimumContentExtent
+        || page.height - page.margins.top - page.margins.bottom <= minimumContentExtent)
+        malformed(QStringLiteral("Page margins must leave a text area larger than one point."));
+
     for (const PlacedObject &object : model.objects) {
-        if (object.anchorMode() != PlacedObject::Anchor::Page || !object.page) continue;
+        if (object.anchorMode() != PlacedObject::Anchor::Page) continue;
+        if (!boundedCoordinate(object.standoff) || object.standoff < 0)
+            malformed(QStringLiteral("Object \"%1\" has an invalid wrap standoff.").arg(object.id));
+        if (object.frame) {
+            const RectModel &frame = *object.frame;
+            if (!boundedCoordinate(frame.x) || !boundedCoordinate(frame.y)
+                || !positiveExtent(frame.width) || !positiveExtent(frame.height))
+                malformed(QStringLiteral("Object \"%1\" has invalid frame geometry.").arg(object.id));
+        }
+        if (!object.page) continue;
         if (*object.page < 0 || *object.page >= DocumentModel::maximumPageCount()) {
             throw CodingError(CodingError::Kind::InvalidObjectPage,
                 QStringLiteral("Placed object \"%1\" has page index %2; page indexes "

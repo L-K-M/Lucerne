@@ -43,6 +43,8 @@ private:
 namespace Coding {
 
 /// Parses and validates a document.json payload. Throws CodingError.
+/// Qt rendering limits geometry magnitudes to 100,000 points; page extents must
+/// be positive, with nonnegative margins leaving more than one point for text.
 DocumentModel decode(const QByteArray &json);
 
 /// Serializes the model to the stable reference form described above.
