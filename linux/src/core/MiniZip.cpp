@@ -252,8 +252,8 @@ QVector<Entry> entries(const QByteArray &bytes,
     qint64 uncompressedTotal = 0;
     qsizetype cursor = qsizetype(cdOffset);
 
-    // Preflight every record before inflating anything; droppable entries still
-    // consume the budget and cannot hide duplicate names or malformed directories.
+    // Preflight all records before inflation. Invalid optional sizes can be
+    // skipped without allocation; names and directory structure remain strict.
     for (int i = 0; i < total; ++i) {
         if (cursor + centralHeaderSize > eocd || readLE32(bytes, cursor) != centralHeaderSig)
             corrupt(QStringLiteral("bad central directory header"));
@@ -270,21 +270,23 @@ QVector<Entry> entries(const QByteArray &bytes,
         if (recordEnd > eocd) corrupt(QStringLiteral("central directory entry overruns its bounds"));
         if ((flags & encryptedFlag) || readLE16(bytes, cursor + 34) != 0)
             unsupported(QStringLiteral("encrypted or multi-disk ZIP entries are not supported"));
-        if (compressedSize > maxEntrySize || uncompressedSize > maxEntrySize)
-            corrupt(QStringLiteral("entry size out of bounds"));
-        compressedTotal += compressedSize;
-        uncompressedTotal += uncompressedSize;
-        if (compressedTotal > maxTotalSize || uncompressedTotal > maxTotalSize)
-            corrupt(QStringLiteral("ZIP aggregate extraction size exceeds the application limit"));
-
         const QByteArray nameBytes = bytes.mid(cursor + centralHeaderSize, nameLen);
         const QString name = QString::fromUtf8(nameBytes);
         if (name.toUtf8() != nameBytes) corrupt(QStringLiteral("ZIP entry name is not UTF-8"));
         if (names.contains(name)) corrupt(QStringLiteral("duplicate ZIP entry name"));
         names.insert(name);
+        cursor = recordEnd;
+
+        if (compressedSize > maxEntrySize || uncompressedSize > maxEntrySize) {
+            if (isDroppable && isDroppable(name)) continue;
+            corrupt(QStringLiteral("entry size out of bounds"));
+        }
+        compressedTotal += compressedSize;
+        uncompressedTotal += uncompressedSize;
+        if (compressedTotal > maxTotalSize || uncompressedTotal > maxTotalSize)
+            corrupt(QStringLiteral("ZIP aggregate extraction size exceeds the application limit"));
         records.append({name, nameBytes, flags, method, crc,
                         int(compressedSize), int(uncompressedSize), localOffset});
-        cursor = recordEnd;
     }
     if (cursor != eocd) corrupt(QStringLiteral("central directory size does not match its records"));
 

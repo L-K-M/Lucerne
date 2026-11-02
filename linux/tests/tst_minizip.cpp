@@ -83,6 +83,35 @@ private slots:
         QCOMPARE(entries.first().name, QStringLiteral("document.json"));
     }
 
+    void oversizedOptionalDeclarationsAreDropped_data() {
+        QTest::addColumn<QString>("name");
+        QTest::addColumn<int>("sizeOffset");
+        QTest::newRow("history compressed") << QStringLiteral("history/old.md") << 20;
+        QTest::newRow("history expanded") << QStringLiteral("history/old.md") << 24;
+        QTest::newRow("markdown compressed") << QStringLiteral("content.md") << 20;
+        QTest::newRow("markdown expanded") << QStringLiteral("content.md") << 24;
+    }
+
+    void oversizedOptionalDeclarationsAreDropped() {
+        QFETCH(QString, name);
+        QFETCH(int, sizeOffset);
+        QByteArray archive = MiniZip::archive({{"document.json", "{}"}, {name, "old"}});
+        const qsizetype central = archive.lastIndexOf(QByteArray("PK\x01\x02", 4));
+        QVERIFY(central > 0);
+        const quint32 invalidSize = quint32(MiniZip::maxEntrySize) + 1;
+        for (int i = 0; i < 4; ++i)
+            archive[central + sizeOffset + i] = char((invalidSize >> (8 * i)) & 0xff);
+
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+        try {
+            const auto recovered = MiniZip::entries(archive,
+                [&](const QString &candidate) { return candidate == name; });
+            QCOMPARE(recovered, (QVector<MiniZip::Entry>{{"document.json", "{}"}}));
+        } catch (const MiniZip::ZipError &error) {
+            QFAIL(qPrintable(error.message()));
+        }
+    }
+
     void duplicateNamesAreRejectedByWriter() {
         EXPECT_THROW(MiniZip::archive({{"document.json", "first"},
                                        {"document.json", "second"}}), MiniZip::ZipError);
