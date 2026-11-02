@@ -1,14 +1,16 @@
 # Lucerne forward analysis
 
 Canonical unresolved work, consolidated on 2026-11-02 from the earlier analysis,
-`sol.md`, `fable-is-awesome.md`, the three-repository review, and Solution 2.
+`sol.md`, `fable-is-awesome.md`, the three-repository review, Solution 2, and
+Sol's source review.
 Implemented work, including fixes in open PRs, is omitted. Open does not mean
 merged or approved; implementation and verification belong to the relevant PR.
 Historical audits remain historical, not duplicate live backlogs.
 
-Solution 2 reviewed Lucerne source and ran 108 Swift core tests and all 10 Qt
-suites on Linux. AppKit interaction, VoiceOver, real printers, and measured Mac
-scrolling/typing latency remain unverified. Cross-repository Sion/Rigi findings
+Linux baselines passed 108 Swift core tests and all 10 Qt suites. Sol's open fixes
+also include an 11-suite run with PDF menu/dialog failure coverage. AppKit
+interaction, VoiceOver, real printers, and measured Mac scrolling/typing latency
+remain unverified. Cross-repository Sion/Rigi findings
 below are retained from the earlier analysis, not re-audited here.
 
 Effort: **S** = hours to one day; **M** = roughly 2-5 days; **L** = weeks.
@@ -134,6 +136,20 @@ compromising undo ordering.
 
 Seal the session before non-style text/undo work. Verify style-edit → type →
 undo/redo on a Mac. Effort M; risk medium.
+
+### Restore first-paragraph metadata through Qt undo
+
+bugs — important
+
+On pristine main at `c1a3bba`, load a Body paragraph, apply Heading 1 at its start,
+then undo. `Editor::snapshotModel()` still reports `heading1`, while
+`Editor::isModified()` reports clean. This was reproduced independently while
+checking selection-boundary tests. It is not fixed by those tests' neighbor checks.
+
+Make first-block structural metadata participate in unified undo alongside visual
+formatting. Add failure-first tests for style/list/break/table metadata, dirty
+state, and undo/redo on first, middle and last blocks. Start at
+`linux/src/app/Editor.cpp` and `DocumentBridge.cpp`. Effort M.
 
 ### Treat Page Setup as a complete transaction
 
@@ -344,8 +360,22 @@ general issues — nice-to-have
 Unit tests do not establish launch, menu reachability, lifecycle/save-review,
 AppleScript execution or updater behavior in the assembled application.
 
-Add launch/menu/save-review/SDEF/updater fixtures and bundle smoke tests. Include
-plist/SDEF validation and multi-document quit review. Effort M/L.
+Extend Qt coverage beyond PDF export. Add launch/menu/save-review/SDEF/updater
+fixtures and bundle smoke tests, including plist/SDEF validation and
+multi-document quit review. Effort M/L.
+
+### Finish Qt composition before clipboard and selection changes
+
+bugs — nice-to-have
+
+`linux/src/app/PageCanvas.cpp`, in `paste()` and `selectAllText()`, can change text
+or selection while text-mode preedit remains active. The image-selection guards
+do not establish a general composition lifecycle. Backend commit ordering and
+actual data-loss impact remain unverified.
+
+Test preedit → paste/Select All → commit with a real input method. Define commit
+versus cancellation and synchronize backend reset with clearing displayed preedit;
+do not assume clearing the overlay alone cancels composition. Effort S/M.
 
 ### Isolate the private corner-mask API
 
@@ -422,16 +452,30 @@ after every layout change, even when text layout itself resumes incrementally.
 Measure long lists/outlines; cache decorations and update changed ranges.
 Effort M. Includes S2-11.
 
+### Profile Qt image invalidation across pages
+
+performance — nice-to-have
+
+`linux/src/app/PageLayout.cpp:43-60` computes old/new exclusions for every page on
+each drag sample, repeatedly scanning objects. Page-aware comparison is required
+for correctness, but its cost is unmeasured for image-heavy long documents.
+
+Profile after the page-identity fix; index flow geometry by page only if this
+scan dominates. Preserve unchanged-flow checks. Effort M including measurement.
+
 ### Move bounded archive work off the editing thread
 
 performance — nice-to-have
 
 Mac save/autosave and `linux/src/app/Editor.cpp:137-150` snapshot text, generate
-Markdown, checksum images and assemble the ZIP synchronously. Large images or
-history can temporarily prevent input.
+Markdown, checksum images and assemble the ZIP synchronously. History and archive
+writing render the same Markdown twice (`LucerneDocument.swift:61-68`,
+`LuceArchive.swift:52`, and the Qt equivalents). Large images or history can
+temporarily prevent input; latency remains unmeasured.
 
-Capture immutable UI state on main, then archive/write asynchronously. Preserve
-transactional history and error reporting; consider streaming only after profiling.
+Reuse one immutable Markdown rendering first, then capture UI state on main and
+archive/write asynchronously. Preserve transactional history and error reporting;
+consider streaming only after profiling.
 Effort L; concurrency risk high. Includes the save portion of S2-12.
 
 ### Decode and resize images without blocking input
@@ -513,7 +557,8 @@ Measure macOS CI time before adding a cache. Effort S; risk low.
 visual issues and layout problems — nice-to-have
 
 `Sources/LucerneKit/Views/PageContainerView.swift:99-116` and
-`linux/src/app/Editor.cpp:571-582` draw left, center and right text into one band.
+`linux/src/app/Editor.cpp:571-582` and `PageCanvas.cpp:174-184` draw left, center
+and right text into one band.
 Long title/date/page combinations can overpaint on screen and in PDF/print.
 
 Measure zones, reserve nonoverlapping rectangles and define truncation priority.
@@ -733,6 +778,30 @@ Spelling lacks an explicit document/selection language contract.
 
 Add language support together with document-wide spelling state, keeping automatic
 correction opt-in. Effort M/L.
+
+### Preserve Qt rich formatting on the clipboard
+
+missing features — nice-to-have
+
+`linux/src/app/PageCanvas.cpp:766-775,812-827` copies and pastes plain text.
+Cross-letter reuse loses run formatting, paragraph styles and list membership,
+even though canonical save preserves them.
+
+Keep plain-text fallback and add a validated Lucerne fragment MIME format. Define
+style/image import, fresh IDs, and Mac compatibility before claiming lossless
+cross-platform copy. Effort M per UI.
+
+### Add Linux spell checking
+
+missing features — nice-to-have
+
+`linux/README.md:86-92` documents the missing spellchecker. The custom canvas input
+path does not inherit a standard text widget's spelling service, leaving Linux
+letter writers without misspelling cues or correction menus.
+
+Integrate a system spelling service behind editor commands, with locale-aware
+language selection and optional correction. Verify dependency redistribution and
+language availability. Effort M.
 
 ### Add Linux table editing beyond the documented fallback
 
