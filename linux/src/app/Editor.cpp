@@ -609,6 +609,7 @@ void Editor::renderPage(QPainter *painter, int pageIndex) const {
         if (image.isNull()) {
             painter->fillRect(rect, QColor(237, 237, 237));
             painter->setPen(QColor(0, 0, 0, 110));
+            painter->setFont(DocumentUnits::fontForDevice(QFont(), *painter->device()));
             painter->drawText(rect, Qt::AlignCenter, tr("Image"));
         } else {
             painter->drawImage(rect, image);

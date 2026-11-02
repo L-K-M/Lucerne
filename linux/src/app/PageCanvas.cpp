@@ -231,6 +231,8 @@ void PageCanvas::paintEvent(QPaintEvent *event) {
             painter.setBrush(Qt::NoBrush);
             painter.drawRect(rect.adjusted(1, 1, -1, -1));
             painter.setPen(QColor(0, 0, 0, 110));
+            // Furniture must not leak its font into image placeholders.
+            painter.setFont(DocumentUnits::fontForDevice(QFont(), *painter.device()));
             painter.drawText(rect, Qt::AlignCenter, tr("Image"));
         } else {
             painter.drawImage(rect, image);

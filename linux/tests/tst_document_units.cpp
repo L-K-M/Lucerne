@@ -35,6 +35,20 @@ DocumentModel letter() {
     return model;
 }
 
+bool rendersIdenticallyAcrossDpis(const Editor &editor) {
+    const PageConfig &page = editor.model().page;
+    const QSize size(qCeil(page.width), qCeil(page.height));
+    QImage pointImage = imageAtDpi(size, pointsPerInch);
+    QImage highDpiImage = imageAtDpi(size, 2 * pointsPerInch);
+    for (QImage *image : {&pointImage, &highDpiImage}) {
+        QPainter painter(image);
+        editor.renderPage(&painter, 0);
+    }
+    return pointImage.sizeInBytes() == highDpiImage.sizeInBytes()
+        && std::memcmp(pointImage.constBits(), highDpiImage.constBits(),
+                       size_t(pointImage.sizeInBytes())) == 0;
+}
+
 } // namespace
 
 class tst_document_units : public QObject {
@@ -76,17 +90,23 @@ private slots:
         Editor editor;
         editor.loadModel(model, {});
 
-        const QSize size(qCeil(model.page.width), qCeil(model.page.height));
-        QImage pointImage = imageAtDpi(size, pointsPerInch);
-        QImage highDpiImage = imageAtDpi(size, 2 * pointsPerInch);
-        for (QImage *image : {&pointImage, &highDpiImage}) {
-            QPainter painter(image);
-            editor.renderPage(&painter, 0);
-        }
-        QCOMPARE(pointImage.sizeInBytes(), highDpiImage.sizeInBytes());
-        QVERIFY2(std::memcmp(pointImage.constBits(), highDpiImage.constBits(),
-                             size_t(pointImage.sizeInBytes())) == 0,
+        QVERIFY2(rendersIdenticallyAcrossDpis(editor),
                  "page text, furniture and markers must not change with device DPI");
+    }
+
+    void imagePlaceholderUsesDocumentUnits() {
+        DocumentModel model = letter();
+        PlacedObject object;
+        object.id = "missing";
+        object.page = 0;
+        object.frame = RectModel{100, 200, 100, 50};
+        object.src = QStringLiteral("images/missing.png");
+        model.objects = {object};
+        Editor editor;
+        editor.loadModel(model, {});
+
+        QVERIFY2(rendersIdenticallyAcrossDpis(editor),
+                 "image placeholders must not inherit an unscaled ambient font");
     }
 };
 
