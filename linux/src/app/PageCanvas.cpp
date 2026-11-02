@@ -288,6 +288,11 @@ void PageCanvas::selectObject(const QString &id) {
     if (m_selectedObject == id) return;
     commitPendingNudge();   // the burst belongs to the object being left
     m_selectedObject = id;
+    if (!id.isEmpty()) {
+        clearPreedit();
+        m_cursor.clearSelection();
+        emit cursorChanged();
+    }
     emit selectionStateChanged();
     if (!id.isEmpty())
         emit statusMessage(tr("Image selected — drag to move · drag a corner to resize "
@@ -554,7 +559,9 @@ void PageCanvas::keyPressEvent(QKeyEvent *event) {
         case Qt::Key_Up: nudgeSelectedObject(0, -step); return;
         case Qt::Key_Down: nudgeSelectedObject(0, step); return;
         default:
-            break;
+            // The text caret is hidden while an image owns selection.
+            event->ignore();
+            return;
         }
     }
 
@@ -757,6 +764,7 @@ void PageCanvas::setBlockLineSpacing(double multiple) {
 
 void PageCanvas::setTextCursor(const QTextCursor &cursor) {
     clearPreedit();
+    selectObject(QString());
     m_cursor = cursor;
     refreshCurrentFormat();
     restartCaretBlink();
@@ -809,6 +817,7 @@ void PageCanvas::paste() {
         }
     }
     if (mime->hasText()) {
+        selectObject(QString());
         QString text = mime->text();
         text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
         // Paragraph breaks stay paragraph breaks.
@@ -827,6 +836,7 @@ void PageCanvas::paste() {
 }
 
 void PageCanvas::selectAllText() {
+    selectObject(QString());
     m_cursor.select(QTextCursor::Document);
     emit cursorChanged();
     emit selectionStateChanged();
@@ -860,6 +870,11 @@ void PageCanvas::clearPreedit() {
 }
 
 void PageCanvas::inputMethodEvent(QInputMethodEvent *event) {
+    if (!m_selectedObject.isEmpty()) {
+        event->ignore();
+        return;
+    }
+
     // An active selection is replaced by the composition/commit (standard
     // editor behavior); do it before anchoring the preedit.
     if (m_cursor.hasSelection()
