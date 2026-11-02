@@ -127,6 +127,53 @@ private slots:
         }
     }
 
+    void duplicateAuthoritativeEntriesAreRejected() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto original = MiniZip::entries(data);
+        for (const QString &name : {LuceArchive::documentEntryName(),
+                                   QStringLiteral("images/photo.png")}) {
+            auto entries = original;
+            if (name == LuceArchive::documentEntryName()) {
+                entries.append({name, original.first().data});
+            } else {
+                entries.append({name, QByteArrayLiteral("first image")});
+                entries.append({name, QByteArrayLiteral("second image")});
+            }
+            EXPECT_THROW(LuceArchive::read(MiniZip::archive(entries)), MiniZip::ZipError);
+        }
+    }
+
+    void writerRejectsUnsafeImageSources() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        PlacedObject object;
+        object.id = "image";
+        object.page = 0;
+        object.frame = RectModel{10, 10, 20, 20};
+        for (const QString &src : {QStringLiteral("document.json"),
+                                  QStringLiteral("../photo.png"),
+                                  QStringLiteral("images/../photo.png"),
+                                  QStringLiteral("images/sub/photo.png"),
+                                  QStringLiteral("images/a\\b.png"),
+                                  QStringLiteral("images/.."),
+                                  QStringLiteral("images/"),
+                                  QStringLiteral("images/a\0b.png")}) {
+            object.src = src;
+            model.objects = {object};
+            const QMap<QString, QByteArray> images{{src, QByteArrayLiteral("image bytes")}};
+            EXPECT_THROW(LuceArchive::write(model, images), std::runtime_error);
+        }
+
+        object.src = QStringLiteral("images/été.png");
+        model.objects = {object};
+        const QMap<QString, QByteArray> images{{*object.src, QByteArrayLiteral("image bytes")}};
+        const auto roundTrip = tryRead(LuceArchive::write(model, images));
+        QVERIFY(roundTrip);
+        QCOMPARE(roundTrip->images, images);
+    }
+
     void kitchenSinkDecodesEveryModelledFeature() {
         REQUIRE_FIXTURE(data, "kitchen-sink.luce");
         const auto parsed = tryRead(data);

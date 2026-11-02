@@ -3,7 +3,6 @@
 #include "core/Markdown.h"
 #include "core/MiniZip.h"
 
-#include <QFileInfo>
 #include <QSet>
 
 #include <algorithm>
@@ -12,6 +11,14 @@ namespace lucerne {
 namespace LuceArchive {
 
 namespace {
+
+bool isFlatImageSource(const QString &src) {
+    if (!src.startsWith(imagesPrefix())) return false;
+    const QString filename = src.mid(imagesPrefix().size());
+    return !filename.isEmpty() && filename != QLatin1String(".")
+        && filename != QLatin1String("..") && !filename.contains(QLatin1Char('/'))
+        && !filename.contains(QLatin1Char('\\')) && !filename.contains(QChar::Null);
+}
 
 QSet<QString> referencedImageSources(const DocumentModel &model) {
     QSet<QString> referenced;
@@ -32,6 +39,11 @@ QByteArray write(const DocumentModel &model, const QMap<QString, QByteArray> &im
     QStringList referenced = referencedImageSources(model).values();
     std::sort(referenced.begin(), referenced.end());
     for (const QString &src : referenced) {
+        if (!isFlatImageSource(src))
+            throw std::runtime_error(
+                QStringLiteral("Can't save the image source %1; use images/<filename>.")
+                    .arg(src).toStdString());
+
         const auto it = images.constFind(src);
         if (it == images.constEnd())
             throw std::runtime_error(
@@ -61,6 +73,18 @@ Contents read(const QByteArray &data) {
         return name != documentEntryName() && !name.startsWith(imagesPrefix());
     });
 
+    // Authoritative names must identify one payload, never first/last-wins data.
+    QSet<QString> authoritativeNames;
+    for (const MiniZip::Entry &entry : entries) {
+        if (entry.name != documentEntryName() && !entry.name.startsWith(imagesPrefix()))
+            continue;
+        if (authoritativeNames.contains(entry.name))
+            throw MiniZip::ZipError(MiniZip::ZipError::Kind::Corrupt,
+                QStringLiteral("The archive repeats an authoritative entry (%1).")
+                    .arg(entry.name));
+        authoritativeNames.insert(entry.name);
+    }
+
     const auto documentEntry = std::find_if(entries.begin(), entries.end(),
         [](const MiniZip::Entry &e) { return e.name == documentEntryName(); });
     if (documentEntry == entries.end())
@@ -70,13 +94,7 @@ Contents read(const QByteArray &data) {
     contents.model = Coding::decode(documentEntry->data);
 
     for (const MiniZip::Entry &entry : entries) {
-        if (!entry.name.startsWith(imagesPrefix()) || entry.name.endsWith(QLatin1Char('/')))
-            continue;
-        // Accept only flat, well-formed names ("images/<file>") — reject the
-        // zip-slip shape ("images/../../x") now so a future "extract images"
-        // feature can't be caught out by it.
-        const QString filename = QFileInfo(entry.name).fileName();
-        if (filename.isEmpty() || entry.name != imagesPrefix() + filename) continue;
+        if (!isFlatImageSource(entry.name)) continue;
         contents.images.insert(entry.name, entry.data);
     }
 
