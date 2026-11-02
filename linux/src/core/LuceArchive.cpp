@@ -3,6 +3,7 @@
 #include "core/Markdown.h"
 #include "core/MiniZip.h"
 
+#include <QFileInfo>
 #include <QSet>
 
 #include <algorithm>
@@ -11,6 +12,12 @@ namespace lucerne {
 namespace LuceArchive {
 
 namespace {
+
+// Keep legacy Unix filenames readable; writes enforce portable flat names.
+bool isReadableImageSource(const QString &src) {
+    const QString filename = QFileInfo(src).fileName();
+    return !filename.isEmpty() && src == imagesPrefix() + filename;
+}
 
 bool isFlatImageSource(const QString &src) {
     if (!src.startsWith(imagesPrefix())) return false;
@@ -76,7 +83,7 @@ Contents read(const QByteArray &data) {
     // Authoritative names must identify one payload, never first/last-wins data.
     QSet<QString> authoritativeNames;
     for (const MiniZip::Entry &entry : entries) {
-        if (entry.name != documentEntryName() && !entry.name.startsWith(imagesPrefix()))
+        if (entry.name != documentEntryName() && !isReadableImageSource(entry.name))
             continue;
         if (authoritativeNames.contains(entry.name))
             throw MiniZip::ZipError(MiniZip::ZipError::Kind::Corrupt,
@@ -94,7 +101,7 @@ Contents read(const QByteArray &data) {
     contents.model = Coding::decode(documentEntry->data);
 
     for (const MiniZip::Entry &entry : entries) {
-        if (!isFlatImageSource(entry.name)) continue;
+        if (!isReadableImageSource(entry.name)) continue;
         contents.images.insert(entry.name, entry.data);
     }
 

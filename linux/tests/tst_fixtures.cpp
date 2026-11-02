@@ -143,6 +143,33 @@ private slots:
         }
     }
 
+    void duplicateIgnoredImageEntriesRemainTolerated() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        for (const QString &name : {QStringLiteral("images/"),
+                                   QStringLiteral("images/sub/photo.png")}) {
+            auto entries = MiniZip::entries(data);
+            entries.append({name, QByteArray()});
+            entries.append({name, QByteArray()});
+            const auto parsed = tryRead(MiniZip::archive(entries));
+            QVERIFY2(parsed, qPrintable(name));
+        }
+    }
+
+    void legacyImageNamesKeepTheirPayloadsOnRead() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        for (const QString &name : {QStringLiteral("images/a\\b.png"),
+                                   QStringLiteral("images/."), QStringLiteral("images/..")}) {
+            auto entries = MiniZip::entries(data);
+            entries.append({name, QByteArrayLiteral("legacy image")});
+            const auto parsed = tryRead(MiniZip::archive(entries));
+            QVERIFY(parsed);
+            QCOMPARE(parsed->images.value(name), QByteArrayLiteral("legacy image"));
+
+            entries.append({name, QByteArrayLiteral("ambiguous image")});
+            EXPECT_THROW(LuceArchive::read(MiniZip::archive(entries)), MiniZip::ZipError);
+        }
+    }
+
     void writerRejectsUnsafeImageSources() {
         REQUIRE_FIXTURE(data, "minimal.luce");
         const auto parsed = tryRead(data);
