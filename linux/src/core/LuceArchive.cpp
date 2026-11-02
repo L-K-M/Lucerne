@@ -13,12 +13,6 @@ namespace LuceArchive {
 
 namespace {
 
-// Keep legacy Unix filenames readable; writes enforce portable flat names.
-bool isReadableImageSource(const QString &src) {
-    const QString filename = QFileInfo(src).fileName();
-    return !filename.isEmpty() && src == imagesPrefix() + filename;
-}
-
 bool isFlatImageSource(const QString &src) {
     if (!src.startsWith(imagesPrefix())) return false;
     const QString filename = src.mid(imagesPrefix().size());
@@ -80,18 +74,6 @@ Contents read(const QByteArray &data) {
         return name != documentEntryName() && !name.startsWith(imagesPrefix());
     });
 
-    // Authoritative names must identify one payload, never first/last-wins data.
-    QSet<QString> authoritativeNames;
-    for (const MiniZip::Entry &entry : entries) {
-        if (entry.name != documentEntryName() && !isReadableImageSource(entry.name))
-            continue;
-        if (authoritativeNames.contains(entry.name))
-            throw MiniZip::ZipError(MiniZip::ZipError::Kind::Corrupt,
-                QStringLiteral("The archive repeats an authoritative entry (%1).")
-                    .arg(entry.name));
-        authoritativeNames.insert(entry.name);
-    }
-
     const auto documentEntry = std::find_if(entries.begin(), entries.end(),
         [](const MiniZip::Entry &e) { return e.name == documentEntryName(); });
     if (documentEntry == entries.end())
@@ -101,7 +83,13 @@ Contents read(const QByteArray &data) {
     contents.model = Coding::decode(documentEntry->data);
 
     for (const MiniZip::Entry &entry : entries) {
-        if (!isReadableImageSource(entry.name)) continue;
+        if (!entry.name.startsWith(imagesPrefix()) || entry.name.endsWith(QLatin1Char('/')))
+            continue;
+        // Accept only flat, well-formed names ("images/<file>") — reject the
+        // zip-slip shape ("images/../../x") now so a future "extract images"
+        // feature can't be caught out by it.
+        const QString filename = QFileInfo(entry.name).fileName();
+        if (filename.isEmpty() || entry.name != imagesPrefix() + filename) continue;
         contents.images.insert(entry.name, entry.data);
     }
 

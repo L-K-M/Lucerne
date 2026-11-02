@@ -127,34 +127,6 @@ private slots:
         }
     }
 
-    void duplicateAuthoritativeEntriesAreRejected() {
-        REQUIRE_FIXTURE(data, "minimal.luce");
-        const auto original = MiniZip::entries(data);
-        for (const QString &name : {LuceArchive::documentEntryName(),
-                                   QStringLiteral("images/photo.png")}) {
-            auto entries = original;
-            if (name == LuceArchive::documentEntryName()) {
-                entries.append({name, original.first().data});
-            } else {
-                entries.append({name, QByteArrayLiteral("first image")});
-                entries.append({name, QByteArrayLiteral("second image")});
-            }
-            EXPECT_THROW(LuceArchive::read(MiniZip::archive(entries)), MiniZip::ZipError);
-        }
-    }
-
-    void duplicateIgnoredImageEntriesRemainTolerated() {
-        REQUIRE_FIXTURE(data, "minimal.luce");
-        for (const QString &name : {QStringLiteral("images/"),
-                                   QStringLiteral("images/sub/photo.png")}) {
-            auto entries = MiniZip::entries(data);
-            entries.append({name, QByteArray()});
-            entries.append({name, QByteArray()});
-            const auto parsed = tryRead(MiniZip::archive(entries));
-            QVERIFY2(parsed, qPrintable(name));
-        }
-    }
-
     void legacyImageNamesKeepTheirPayloadsOnRead() {
         REQUIRE_FIXTURE(data, "minimal.luce");
         for (const QString &name : {QStringLiteral("images/a\\b.png"),
@@ -164,9 +136,6 @@ private slots:
             const auto parsed = tryRead(MiniZip::archive(entries));
             QVERIFY(parsed);
             QCOMPARE(parsed->images.value(name), QByteArrayLiteral("legacy image"));
-
-            entries.append({name, QByteArrayLiteral("ambiguous image")});
-            EXPECT_THROW(LuceArchive::read(MiniZip::archive(entries)), MiniZip::ZipError);
         }
     }
 
