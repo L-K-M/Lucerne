@@ -371,7 +371,7 @@ void Editor::applyParagraphStyleFormats(QTextCursor &cursor, const QString &role
 }
 
 void Editor::applyStyle(QTextCursor cursor, const QString &role) {
-    if (!m_model.styles.contains(role)) return;
+    if (cursor.isNull() || !m_model.styles.contains(role)) return;
     cursor.beginEditBlock();
     const int start = cursor.selectionStart();
     const int end = lastSelectedPosition(cursor);
@@ -399,6 +399,7 @@ void Editor::redefineStyle(const QString &role, const ParagraphStyle &def) {
 // MARK: - Lists
 
 void Editor::toggleList(QTextCursor cursor, bool ordered, const QString &marker) {
+    if (cursor.isNull()) return;
     cursor.beginEditBlock();
     const int start = cursor.selectionStart();
     const int end = lastSelectedPosition(cursor);
@@ -448,6 +449,7 @@ void Editor::toggleList(QTextCursor cursor, bool ordered, const QString &marker)
 }
 
 void Editor::changeListLevel(QTextCursor cursor, int delta) {
+    if (cursor.isNull()) return;
     cursor.beginEditBlock();
     const int start = cursor.selectionStart();
     const int end = lastSelectedPosition(cursor);
@@ -466,6 +468,7 @@ void Editor::changeListLevel(QTextCursor cursor, int delta) {
 }
 
 void Editor::insertPageBreak(QTextCursor cursor) {
+    if (cursor.isNull()) return;
     cursor.beginEditBlock();
     // A paragraph break first when not at a paragraph start, then flag the
     // (new) paragraph — matching the Mac's semantics.

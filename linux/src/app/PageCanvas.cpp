@@ -7,6 +7,7 @@
 #include <QClipboard>
 #include <QDateTime>
 #include <QGuiApplication>
+#include <QInputMethod>
 #include <QMimeData>
 #include <QPainter>
 #include <QPaintEvent>
@@ -294,6 +295,7 @@ void PageCanvas::selectObject(const QString &id) {
         emit cursorChanged();
     }
     emit selectionStateChanged();
+    QGuiApplication::inputMethod()->update(Qt::ImEnabled | Qt::ImCursorRectangle);
     if (!id.isEmpty())
         emit statusMessage(tr("Image selected — drag to move · drag a corner to resize "
                               "(Shift for free aspect) · arrows to nudge · Delete to remove"));
@@ -749,20 +751,33 @@ void PageCanvas::mergeCharFormat(const QTextCharFormat &format) {
 void PageCanvas::setBlockAlignment(Qt::Alignment alignment) {
     QTextBlockFormat format;
     format.setAlignment(alignment);
-    m_cursor.mergeBlockFormat(format);
-    emit cursorChanged();
-    setFocus();
+    mergeParagraphFormat(format);
 }
 
 void PageCanvas::setBlockLineSpacing(double multiple) {
     QTextBlockFormat format;
     format.setLineHeight(multiple * 100.0, QTextBlockFormat::ProportionalHeight);
-    m_cursor.mergeBlockFormat(format);
+    mergeParagraphFormat(format);
+}
+
+void PageCanvas::mergeParagraphFormat(const QTextBlockFormat &format) {
+    if (!m_selectedObject.isEmpty()) return;
+
+    QTextCursor cursor = m_cursor;
+    if (cursor.hasSelection()) {
+        // Qt includes the block at selectionEnd(); exclude the boundary block.
+        const int start = cursor.selectionStart();
+        const int end = cursor.selectionEnd() - 1;
+        cursor.setPosition(start);
+        cursor.setPosition(end, QTextCursor::KeepAnchor);
+    }
+    cursor.mergeBlockFormat(format);
     emit cursorChanged();
     setFocus();
 }
 
 void PageCanvas::setTextCursor(const QTextCursor &cursor) {
+    if (cursor.isNull()) return;
     clearPreedit();
     selectObject(QString());
     m_cursor = cursor;
@@ -906,6 +921,8 @@ void PageCanvas::inputMethodEvent(QInputMethodEvent *event) {
 
 QVariant PageCanvas::inputMethodQuery(Qt::InputMethodQuery query) const {
     switch (query) {
+    case Qt::ImEnabled:
+        return m_selectedObject.isEmpty() && testAttribute(Qt::WA_InputMethodEnabled);
     case Qt::ImCursorRectangle: {
         const QRectF rect = cursorRect(m_cursor);
         const QPointF device = fromCanvas(rect.topLeft());
@@ -918,9 +935,7 @@ QVariant PageCanvas::inputMethodQuery(Qt::InputMethodQuery query) const {
     case Qt::ImCurrentSelection:
         return m_cursor.selectedText();
     default:
-        // The base class answers ImEnabled (from WA_InputMethodEnabled),
-        // ImHints and friends — returning an invalid QVariant here would tell
-        // IBus/Fcitx that IME is off and composition would never start.
+        // Preserve the base answers for input hints and other platform queries.
         return QAbstractScrollArea::inputMethodQuery(query);
     }
 }
@@ -964,12 +979,11 @@ int PageCanvas::currentPage() const {
 }
 
 void PageCanvas::revealPosition(int position) {
-    m_cursor.setPosition(std::clamp(position, 0,
-                                    m_editor->document()->characterCount() - 1));
-    refreshCurrentFormat();
+    QTextCursor cursor = m_cursor;
+    cursor.setPosition(std::clamp(position, 0,
+                                  m_editor->document()->characterCount() - 1));
+    setTextCursor(cursor);
     ensureCursorVisible();
-    emit cursorChanged();
-    viewport()->update();
     setFocus();
 }
 

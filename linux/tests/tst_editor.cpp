@@ -17,7 +17,7 @@
 
 using namespace lucerne;
 
-enum class ParagraphCommand { Style, List, Nesting };
+enum class ParagraphCommand { Style, List, Nesting, Alignment, Spacing };
 enum class TextTarget { ForwardSelection, BackwardSelection, Caret };
 Q_DECLARE_METATYPE(ParagraphCommand)
 Q_DECLARE_METATYPE(TextTarget)
@@ -206,7 +206,8 @@ private slots:
         QTest::addColumn<ParagraphCommand>("command");
         QTest::addColumn<TextTarget>("target");
         for (const auto command : {ParagraphCommand::Style, ParagraphCommand::List,
-                                   ParagraphCommand::Nesting}) {
+                                   ParagraphCommand::Nesting, ParagraphCommand::Alignment,
+                                   ParagraphCommand::Spacing}) {
             for (const auto target : {TextTarget::ForwardSelection,
                                       TextTarget::BackwardSelection, TextTarget::Caret}) {
                 const QByteArray name = QByteArray::number(int(command)) + '-'
@@ -254,6 +255,18 @@ private slots:
         case ParagraphCommand::Nesting:
             editor.changeListLevel(cursor, 1);
             break;
+        case ParagraphCommand::Alignment: {
+            PageCanvas canvas(&editor);
+            canvas.setTextCursor(cursor);
+            canvas.setBlockAlignment(Qt::AlignRight);
+            break;
+        }
+        case ParagraphCommand::Spacing: {
+            PageCanvas canvas(&editor);
+            canvas.setTextCursor(cursor);
+            canvas.setBlockLineSpacing(2.0);
+            break;
+        }
         }
         const auto after = editor.snapshotModel().body;
         const int changed = target == TextTarget::Caret ? 1 : 0;
@@ -282,6 +295,45 @@ private slots:
         QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("unchanged clipboard"));
         canvas.cutSelection();
         QCOMPARE(editor.document()->toPlainText(), before);
+    }
+
+    void imageSelectionDisablesParagraphCommands() {
+        Editor editor;
+        DocumentModel model = DefaultDocuments::sampleLetter();
+        model.body.first().style = QStringLiteral("body");
+        ListItemModel item;
+        item.list = QStringLiteral("list");
+        model.body.first().list = item;
+        editor.loadModel(model, DefaultDocuments::sampleLetterImages());
+        PageCanvas canvas(&editor);
+        canvas.selectObject(QStringLiteral("img1"));
+        const auto before = editor.snapshotModel().body;
+        editor.applyStyle(canvas.textCursor(), QStringLiteral("quote"));
+        QVERIFY(editor.snapshotModel().body == before);
+        editor.toggleList(canvas.textCursor(), true, QString());
+        QVERIFY(editor.snapshotModel().body == before);
+        editor.changeListLevel(canvas.textCursor(), 1);
+        QVERIFY(editor.snapshotModel().body == before);
+        canvas.setBlockAlignment(Qt::AlignRight);
+        QVERIFY(editor.snapshotModel().body == before);
+        canvas.setBlockLineSpacing(2.0);
+        QVERIFY(editor.snapshotModel().body == before);
+    }
+
+    void imageSelectionDisablesIme() {
+        Editor editor;
+        editor.loadModel(DefaultDocuments::sampleLetter(),
+                         DefaultDocuments::sampleLetterImages());
+        PageCanvas canvas(&editor);
+        canvas.selectObject(QStringLiteral("img1"));
+        QInputMethodQueryEvent imageQuery(Qt::ImEnabled);
+        QApplication::sendEvent(&canvas, &imageQuery);
+        QVERIFY(!imageQuery.value(Qt::ImEnabled).toBool());
+
+        canvas.selectObject(QString());
+        QInputMethodQueryEvent textQuery(Qt::ImEnabled);
+        QApplication::sendEvent(&canvas, &textQuery);
+        QVERIFY(textQuery.value(Qt::ImEnabled).toBool());
     }
 
     void imageSelectionRejectsTextInput() {
@@ -326,6 +378,11 @@ private slots:
         canvas.paste();
         QVERIFY(canvas.selectedObjectId().isEmpty());
         QVERIFY(editor.document()->toPlainText().contains(QStringLiteral("visible paste")));
+
+        canvas.selectObject(QStringLiteral("img1"));
+        canvas.revealPosition(3);
+        QVERIFY(canvas.selectedObjectId().isEmpty());
+        QCOMPARE(canvas.textCursor().position(), 3);
     }
 
     void objectCommandsAreUndoable() {

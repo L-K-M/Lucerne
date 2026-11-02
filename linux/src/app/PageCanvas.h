@@ -25,7 +25,10 @@ public:
 
     Editor *editor() const { return m_editor; }
 
-    QTextCursor textCursor() const { return m_cursor; }
+    // Image selection has no active text target for toolbar/menu commands.
+    QTextCursor textCursor() const {
+        return m_selectedObject.isEmpty() ? m_cursor : QTextCursor();
+    }
     void setTextCursor(const QTextCursor &cursor);
 
     // Formatting entry points (selection, or the pending typing format).
@@ -120,6 +123,7 @@ private:
     void handleReturn();
     void insertPlainText(const QString &text);
     void refreshCurrentFormat();
+    void mergeParagraphFormat(const QTextBlockFormat &format);
     void restartCaretBlink();
     /// Ends any in-flight IME composition display (ghost preedit text must not
     /// be stranded when the caret leaves the composing block).
