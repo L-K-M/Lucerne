@@ -83,6 +83,103 @@ private slots:
         QCOMPARE(entries.first().name, QStringLiteral("document.json"));
     }
 
+    void duplicateNamesAreRejectedByWriter() {
+        EXPECT_THROW(MiniZip::archive({{"document.json", "first"},
+                                       {"document.json", "second"}}), MiniZip::ZipError);
+    }
+
+    void duplicateNamesAreRejectedByReader() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "first"}, {"b.txt", "second"}});
+        archive.replace("b.txt", "a.txt");
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void aggregateDeclaredSizesAreCheckedBeforeExtraction() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "a"}, {"b.txt", "b"}});
+        const QByteArray signature("PK\x01\x02", 4);
+        // Each declaration is legal alone; together they exceed 512 MiB.
+        for (qsizetype at = archive.indexOf(signature); at >= 0;
+             at = archive.indexOf(signature, at + 4)) {
+            archive[at + 24] = char(1);
+            archive[at + 25] = char(0);
+            archive[at + 26] = char(0);
+            archive[at + 27] = char(0x10);
+        }
+        try {
+            MiniZip::entries(archive, [](const QString &) { return true; });
+            QFAIL("aggregate extraction budget was not enforced");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(error.message().contains(QStringLiteral("aggregate")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void entryCountIsBoundedOnWriteAndRead() {
+        constexpr int entryBudget = 4096;
+        QVector<MiniZip::Entry> entries;
+        for (int i = 0; i <= entryBudget; ++i)
+            entries.append({QString::number(i), {}});
+        EXPECT_THROW(MiniZip::archive(entries), MiniZip::ZipError);
+
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype eocd = archive.size() - 22;
+        for (const int offset : {8, 10}) {
+            archive[eocd + offset] = char(1);
+            archive[eocd + offset + 1] = char(0x10);
+        }
+        try {
+            MiniZip::entries(archive);
+            QFAIL("entry count was not bounded");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(error.message().contains(QStringLiteral("entry count")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void writerChecksAggregateBeforeAllocatingOutput() {
+        const QByteArray sharedPayload(1024 * 1024, 'x');
+        QVector<MiniZip::Entry> entries;
+        const int count = int(MiniZip::maxTotalSize / sharedPayload.size()) + 1;
+        for (int i = 0; i < count; ++i)
+            entries.append({QString::number(i), sharedPayload});
+        EXPECT_THROW(MiniZip::archive(entries), MiniZip::ZipError);
+    }
+
+    void entryCountAtTheLimitRoundTrips() {
+        QVector<MiniZip::Entry> entries;
+        for (int i = 0; i < MiniZip::maxEntryCount; ++i)
+            entries.append({QString::number(i), {}});
+        QCOMPARE(MiniZip::entries(MiniZip::archive(entries)), entries);
+    }
+
+    void storedSizeMismatchIsRejected() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype central = archive.indexOf(QByteArray("PK\x01\x02", 4));
+        archive[central + 24] = char(2);
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void encryptedEntryIsRejected() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype central = archive.indexOf(QByteArray("PK\x01\x02", 4));
+        archive[6] = char(1);
+        archive[central + 8] = char(1);
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void localNameMustMatchDirectoryName() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        archive[30] = 'b';
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void directorySizeMustMatchItsRecords() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype eocd = archive.size() - 22;
+        archive[eocd + 12] = char(quint8(archive[eocd + 12]) + 1);
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
     void notAZipIsRejected() {
         EXPECT_THROW(MiniZip::entries(QByteArrayLiteral("plain text")), MiniZip::ZipError);
     }

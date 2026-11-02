@@ -1,6 +1,7 @@
 #include "core/MiniZip.h"
 
 #include <zlib.h>
+#include <QSet>
 
 #include <cstring>
 
@@ -16,6 +17,11 @@ constexpr quint16 dosDate1980 = 0x0021;   // 1980-01-01 (deterministic)
 constexpr quint16 dosTimeZero = 0x0000;
 /// General-purpose flag bit 11 (EFS): names are UTF-8, not CP437.
 constexpr quint16 utf8NameFlag = 0x0800;
+constexpr quint16 encryptedFlag = 0x0001;
+constexpr quint16 storedMethod = 0;
+constexpr int localHeaderSize = 30;
+constexpr int centralHeaderSize = 46;
+constexpr int endOfCentralSize = 22;
 
 void appendLE16(QByteArray &out, quint16 v) {
     out += char(v & 0xff);
@@ -64,18 +70,22 @@ QByteArray inflateRawDeflate(const QByteArray &input, int expectedSize, bool &ok
 }
 
 QByteArray readLocalEntry(const QByteArray &bytes, qsizetype localOffset, quint16 method,
-                          int compressedSize, int uncompressedSize) {
-    if (localOffset < 0 || localOffset + 30 > bytes.size()
+                          quint16 flags, const QByteArray &name, int compressedSize,
+                          int uncompressedSize, qsizetype centralStart) {
+    if (localOffset < 0 || localOffset + localHeaderSize > centralStart
         || readLE32(bytes, localOffset) != localHeaderSig)
         corrupt(QStringLiteral("bad local header"));
-    if (compressedSize < 0 || uncompressedSize < 0
-        || compressedSize > maxEntrySize || uncompressedSize > maxEntrySize)
-        corrupt(QStringLiteral("entry size out of bounds"));
     const int nameLen = readLE16(bytes, localOffset + 26);
     const int extraLen = readLE16(bytes, localOffset + 28);
-    const qsizetype dataStart = localOffset + 30 + nameLen + extraLen;
-    if (dataStart + compressedSize > bytes.size())
+    const qsizetype dataStart = localOffset + localHeaderSize + nameLen + extraLen;
+    if (dataStart + compressedSize > centralStart)
         corrupt(QStringLiteral("entry data out of bounds"));
+    if (readLE16(bytes, localOffset + 6) != flags
+        || readLE16(bytes, localOffset + 8) != method
+        || bytes.mid(localOffset + localHeaderSize, nameLen) != name)
+        corrupt(QStringLiteral("local header disagrees with central directory"));
+    if (method == storedMethod && compressedSize != uncompressedSize)
+        corrupt(QStringLiteral("stored entry size mismatch"));
     const QByteArray compressed = bytes.mid(dataStart, compressedSize);
 
     switch (method) {
@@ -112,6 +122,28 @@ quint32 crc32(const QByteArray &data) {
 }
 
 QByteArray archive(const QVector<Entry> &entries) {
+    if (entries.size() > maxEntryCount)
+        unsupported(QStringLiteral("ZIP entry count exceeds the application limit"));
+
+    // Reject the whole save before allocating output, including name/header overhead.
+    QSet<QString> names;
+    qint64 totalSize = 0;
+    qint64 archiveSize = endOfCentralSize;
+    for (const Entry &entry : entries) {
+        if (names.contains(entry.name)) corrupt(QStringLiteral("duplicate ZIP entry name"));
+        names.insert(entry.name);
+        const QByteArray nameBytes = entry.name.toUtf8();
+        if (QString::fromUtf8(nameBytes) != entry.name)
+            unsupported(QStringLiteral("ZIP entry name is not UTF-8"));
+        const qsizetype nameSize = nameBytes.size();
+        if (nameSize > 0xffff || entry.data.size() > maxEntrySize)
+            unsupported(QStringLiteral("ZIP entry exceeds the application size limit"));
+        totalSize += entry.data.size();
+        archiveSize += entry.data.size() + localHeaderSize + centralHeaderSize + 2 * nameSize;
+        if (totalSize > maxTotalSize || archiveSize > maxArchiveSize)
+            unsupported(QStringLiteral("ZIP aggregate size exceeds the application limit"));
+    }
+
     QByteArray output;
     QByteArray central;
     struct Record {
@@ -122,15 +154,7 @@ QByteArray archive(const QVector<Entry> &entries) {
     QVector<Record> records;
 
     for (const Entry &entry : entries) {
-        if (entry.data.size() > maxEntrySize)
-            unsupported(QStringLiteral("An entry (%1) is too large to store: %2 bytes "
-                                       "exceeds the %3-byte limit.")
-                            .arg(entry.name).arg(entry.data.size()).arg(maxEntrySize));
-        if (quint64(output.size()) > 0xffffffffULL)
-            unsupported(QStringLiteral("The archive exceeds ZIP's 4 GiB size limit."));
         const QByteArray nameBytes = entry.name.toUtf8();
-        if (nameBytes.size() > 0xffff)
-            unsupported(QStringLiteral("An entry name is too long to store."));
         const quint32 dataLen = quint32(entry.data.size());
         const quint32 offset = quint32(output.size());
         const quint32 crc = crc32(entry.data);
@@ -153,10 +177,6 @@ QByteArray archive(const QVector<Entry> &entries) {
         records.append({&entry, crc, offset});
     }
 
-    if (records.size() > 0xffff)
-        unsupported(QStringLiteral("The archive has too many entries for a non-ZIP64 ZIP."));
-    if (quint64(output.size()) > 0xffffffffULL)
-        unsupported(QStringLiteral("The archive exceeds ZIP's 4 GiB size limit."));
     const quint32 centralStart = quint32(output.size());
 
     for (const Record &record : records) {
@@ -181,9 +201,6 @@ QByteArray archive(const QVector<Entry> &entries) {
         central += nameBytes;
     }
     output += central;
-    if (quint64(central.size()) > 0xffffffffULL)
-        unsupported(QStringLiteral("The archive's central directory exceeds ZIP's 4 GiB limit."));
-
     // End of central directory
     appendLE32(output, endOfCentralSig);
     appendLE16(output, 0);                   // disk number
@@ -203,44 +220,85 @@ QVector<Entry> entries(const QByteArray &bytes,
                                  QStringLiteral("The file is not a valid .luce archive."));
 
     const int total = readLE16(bytes, eocd + 10);
+    const quint32 cdSize = readLE32(bytes, eocd + 12);
     const quint32 cdOffset = readLE32(bytes, eocd + 16);
-    // ZIP64 parks sentinels in these fields; fail with an honest "unsupported"
-    // rather than chasing 0xFFFFFFFF as a real offset.
-    if (total == 0xffff || cdOffset == 0xffffffffU)
+    // ZIP64 uses sentinels rather than ordinary sizes/offsets.
+    if (total == 0xffff || cdOffset == 0xffffffffU || cdSize == 0xffffffffU)
         unsupported(QStringLiteral("This archive uses ZIP64 extensions, which Lucerne "
                                    "can't open."));
+    if (readLE16(bytes, eocd + 4) != 0 || readLE16(bytes, eocd + 6) != 0
+        || readLE16(bytes, eocd + 8) != total)
+        unsupported(QStringLiteral("multi-disk ZIP archives are not supported"));
+    if (total > maxEntryCount)
+        unsupported(QStringLiteral("ZIP entry count exceeds the application limit"));
+    if (bytes.size() > maxArchiveSize)
+        unsupported(QStringLiteral("ZIP aggregate archive size exceeds the application limit"));
+    if (quint64(cdOffset) + cdSize != quint64(eocd))
+        corrupt(QStringLiteral("invalid central directory bounds"));
+
+    struct Record {
+        QString name;
+        QByteArray nameBytes;
+        quint16 flags;
+        quint16 method;
+        quint32 crc;
+        int compressedSize;
+        int uncompressedSize;
+        qsizetype localOffset;
+    };
+    QVector<Record> records;
+    QSet<QString> names;
+    qint64 compressedTotal = 0;
+    qint64 uncompressedTotal = 0;
     qsizetype cursor = qsizetype(cdOffset);
 
-    QVector<Entry> result;
+    // Preflight every record before inflating anything; droppable entries still
+    // consume the budget and cannot hide duplicate names or malformed directories.
     for (int i = 0; i < total; ++i) {
-        if (cursor + 46 > bytes.size() || readLE32(bytes, cursor) != centralHeaderSig)
+        if (cursor + centralHeaderSize > eocd || readLE32(bytes, cursor) != centralHeaderSig)
             corrupt(QStringLiteral("bad central directory header"));
+        const quint16 flags = readLE16(bytes, cursor + 8);
         const quint16 method = readLE16(bytes, cursor + 10);
         const quint32 crc = readLE32(bytes, cursor + 16);
-        const int compressedSize = int(readLE32(bytes, cursor + 20));
-        const int uncompressedSize = int(readLE32(bytes, cursor + 24));
+        const quint32 compressedSize = readLE32(bytes, cursor + 20);
+        const quint32 uncompressedSize = readLE32(bytes, cursor + 24);
         const int nameLen = readLE16(bytes, cursor + 28);
         const int extraLen = readLE16(bytes, cursor + 30);
         const int commentLen = readLE16(bytes, cursor + 32);
         const qsizetype localOffset = qsizetype(readLE32(bytes, cursor + 42));
-        const qsizetype recordEnd = cursor + 46 + nameLen + extraLen + commentLen;
-        if (recordEnd > bytes.size())
-            corrupt(QStringLiteral("central directory entry overruns the file"));
-        const QString name = QString::fromUtf8(bytes.constData() + cursor + 46, nameLen);
-        cursor = recordEnd;
+        const qsizetype recordEnd = cursor + centralHeaderSize + nameLen + extraLen + commentLen;
+        if (recordEnd > eocd) corrupt(QStringLiteral("central directory entry overruns its bounds"));
+        if ((flags & encryptedFlag) || readLE16(bytes, cursor + 34) != 0)
+            unsupported(QStringLiteral("encrypted or multi-disk ZIP entries are not supported"));
+        if (compressedSize > maxEntrySize || uncompressedSize > maxEntrySize)
+            corrupt(QStringLiteral("entry size out of bounds"));
+        compressedTotal += compressedSize;
+        uncompressedTotal += uncompressedSize;
+        if (compressedTotal > maxTotalSize || uncompressedTotal > maxTotalSize)
+            corrupt(QStringLiteral("ZIP aggregate extraction size exceeds the application limit"));
 
+        const QByteArray nameBytes = bytes.mid(cursor + centralHeaderSize, nameLen);
+        const QString name = QString::fromUtf8(nameBytes);
+        if (name.toUtf8() != nameBytes) corrupt(QStringLiteral("ZIP entry name is not UTF-8"));
+        if (names.contains(name)) corrupt(QStringLiteral("duplicate ZIP entry name"));
+        names.insert(name);
+        records.append({name, nameBytes, flags, method, crc,
+                        int(compressedSize), int(uncompressedSize), localOffset});
+        cursor = recordEnd;
+    }
+    if (cursor != eocd) corrupt(QStringLiteral("central directory size does not match its records"));
+
+    QVector<Entry> result;
+    for (const Record &record : records) {
         try {
-            QByteArray payload = readLocalEntry(bytes, localOffset, method,
-                                                compressedSize, uncompressedSize);
-            // The central directory carries the entry's CRC-32; checking it
-            // catches truncation and bit rot the structure checks can't.
-            if (crc32(payload) != crc)
-                corrupt(QStringLiteral("CRC mismatch for %1").arg(name));
-            result.append({name, payload});
+            QByteArray payload = readLocalEntry(bytes, record.localOffset, record.method,
+                record.flags, record.nameBytes, record.compressedSize,
+                record.uncompressedSize, qsizetype(cdOffset));
+            if (crc32(payload) != record.crc)
+                corrupt(QStringLiteral("CRC mismatch for %1").arg(record.name));
+            result.append({record.name, payload});
         } catch (const ZipError &) {
-            // Damage confined to a droppable entry's own payload skips just
-            // that entry; the central-directory walk above stays strict.
-            if (isDroppable && isDroppable(name)) continue;
+            if (isDroppable && isDroppable(record.name)) continue;
             throw;
         }
     }

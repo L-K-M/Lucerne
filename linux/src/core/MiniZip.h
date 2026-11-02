@@ -41,12 +41,15 @@ private:
 /// Upper bound on a single entry's uncompressed size: the size field of a
 /// hostile archive must not size an inflate buffer unchecked.
 constexpr int maxEntrySize = 512 * 1024 * 1024;
+constexpr qint64 maxTotalSize = 512LL * 1024 * 1024;
+constexpr qint64 maxArchiveSize = 1024LL * 1024 * 1024;
+constexpr int maxEntryCount = 4096;
 
 /// Builds a stored-only ZIP. Throws ZipError on the same limits the reader
-/// enforces (entry size cap, 32-bit offsets), so a save can never produce an
-/// archive this code then refuses to reopen.
+/// enforces (entry/aggregate sizes, count, unique names), so saves remain readable.
 QByteArray archive(const QVector<Entry> &entries);
 
+/// Preflights all names, sizes and directory records before extracting payloads.
 /// Reads every entry, verifying structure and each entry's CRC-32. Strict by
 /// default; `isDroppable` names entries whose own corruption merely drops them
 /// (the .luce recovery snapshots) instead of failing the whole read.
