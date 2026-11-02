@@ -1,17 +1,17 @@
 # Lucerne forward analysis
 
 Canonical unresolved work, consolidated on 2026-11-02 from the earlier analysis,
-`sol.md`, `fable-is-awesome.md`, the three-repository review, Solution 2, and
-Sol's source review.
+`sol.md`, `fable-is-awesome.md`, the three-repository review, Sol's source review,
+and Solutions 2/3.
 Implemented work, including fixes in open PRs, is omitted. Open does not mean
 merged or approved; implementation and verification belong to the relevant PR.
 Historical audits remain historical, not duplicate live backlogs.
 
-Linux baselines passed 108 Swift core tests and all 10 Qt suites. Sol's open fixes
-also include an 11-suite run with PDF menu/dialog failure coverage. AppKit
-interaction, VoiceOver, real printers, and measured Mac scrolling/typing latency
-remain unverified. Cross-repository Sion/Rigi findings
-below are retained from the earlier analysis, not re-audited here.
+Linux baselines passed 108 Swift core tests and all 10 Qt suites. The open PDF
+menu/dialog and typography fix branches each passed 11 suites independently.
+AppKit interaction, VoiceOver, real printers, and measured Mac scrolling/typing
+latency remain unverified. Cross-repository Sion/Rigi findings below are retained,
+not re-audited here.
 
 Effort: **S** = hours to one day; **M** = roughly 2-5 days; **L** = weeks.
 Earlier P0/P1 integrity priorities retain their stronger severity where a later
@@ -26,11 +26,17 @@ bugs — important
 
 RTF/HTML paste can display links, highlights, unsupported lists and attributes
 that saving or style reapplication later removes. Cross-document copy also lacks
-a lossless Lucerne fragment contract.
+a lossless Lucerne fragment contract. On Linux,
+`linux/src/app/PageCanvas.cpp:770-835` copies/pastes plain text, losing styles,
+lists and direct formatting between letters even though canonical save preserves
+them.
 
 Normalize to representable attributes, mint paragraph IDs, disclose discarded
-formatting, and add a private fragment pasteboard type. Test supported/unsupported
-attributes and cross-document round trips. Effort M/L; data-preservation risk high.
+formatting, and add validated Lucerne fragment pasteboard/MIME types with
+plain-text fallback. Define style/image import and Mac compatibility before
+claiming lossless cross-platform copy. Test supported/unsupported attributes and
+cross-document round trips. Effort M/L, M per UI; data-preservation risk high.
+Includes S3-10.
 
 ### Preserve complete empty and trailing paragraph state
 
@@ -82,7 +88,8 @@ boxes, sections or other format extensions. Effort M/L; risk high.
 
 usability — important
 
-`Sources/Lucerne/MainMenu.swift:126-132` targets the first-responder page view.
+`Sources/Lucerne/MainMenu.swift:126-132` targets the first-responder page view;
+`Sources/LucerneKit/Views/PageTextView.swift:7-9` documents the per-page pattern.
 Command-A, copy, delete and formatting do not consistently behave like commands
 on one document; full cross-page drag/Shift selection remains a documented gap.
 
@@ -96,7 +103,9 @@ usability — important
 
 Classic controls lack complete roles, labels, values, actions, focus rings and
 keyboard behavior. This affects the format bar, palettes, ruler, images, Welcome
-and Navigator. `linux/src/app/PageCanvas.h` also lacks an accessible text interface.
+and Navigator, including `Sources/LucerneKit/Views/LucerneRulerView.swift`,
+`FloatingImageView.swift` and `NavigatorView.swift:64-83`.
+`linux/src/app/PageCanvas.h` also lacks an accessible text interface.
 Rigi's controls conflict with its interface guidelines at lines 55, 64-66 and
 122-131; Sion's canvas exposes one group (`SionCanvasView.swift:154-156,2952-2973`).
 
@@ -251,6 +260,17 @@ coordinates or discard cells outside its assembled grid.
 Fall back to plain paragraph blocks and signal the loss when a grid is invalid.
 Keep this distinct from numeric decode bounds and the Qt Markdown fix. Effort S.
 
+### Require QtTest when testing is enabled
+
+general issues — nice-to-have
+
+`linux/CMakeLists.txt:88-90` makes test targets conditional on QtTest discovery.
+A custom SDK without QtTest can configure successfully while omitting all tests;
+the configured CI images do include QtTest.
+
+Add an explicit BUILD_TESTING option and require QtTest when enabled. Verify both
+test-enabled and app-only configurations. Effort S. Includes S3-09.
+
 ### Remove the empty-archive fallback API
 
 general issues — nice-to-have
@@ -308,6 +328,9 @@ formats and nondefault starts. Effort M.
 missing features — nice-to-have
 
 The model/spec describe paragraph anchors while the app renders page anchors.
+`Sources/LucerneKit/Document/EditorController.swift:389-417` and
+`linux/src/app/PageCanvas.cpp:219-223` skip unresolved paragraph-anchored images,
+so third-party files can preserve an object without displaying it.
 
 Implement anchor resolution or mark the v1 form reserved/unsupported while
 preserving its data. Keep rectangular page-anchored placement the baseline.
@@ -468,14 +491,14 @@ scan dominates. Preserve unchanged-flow checks. Effort M including measurement.
 performance — nice-to-have
 
 Mac save/autosave and `linux/src/app/Editor.cpp:137-150` snapshot text, generate
-Markdown, checksum images and assemble the ZIP synchronously. History and archive
-writing render the same Markdown twice (`LucerneDocument.swift:61-68`,
-`LuceArchive.swift:52`, and the Qt equivalents). Large images or history can
-temporarily prevent input; latency remains unmeasured.
+Markdown, checksum images and assemble the ZIP synchronously. Qt history and
+archive writing render the same Markdown twice (`Editor.cpp:137-150` and
+`linux/src/core/LuceArchive.cpp:43-44`). Large images or history can temporarily
+prevent input; latency remains unmeasured.
 
-Reuse one immutable Markdown rendering first, then capture UI state on main and
-archive/write asynchronously. Preserve transactional history and error reporting;
-consider streaming only after profiling.
+Reuse one immutable Qt Markdown rendering first, then capture UI state on main
+and archive/write asynchronously. Preserve transactional history and error
+reporting; consider streaming only after profiling.
 Effort L; concurrency risk high. Includes the save portion of S2-12.
 
 ### Decode and resize images without blocking input
@@ -483,8 +506,9 @@ Effort L; concurrency risk high. Includes the save portion of S2-12.
 performance — nice-to-have
 
 Full-resolution Mac image decoding/drawing and
-`linux/src/app/Editor.cpp:171-180,201-204` run on the UI thread. Image-heavy letters
-and live resizing are the main risks.
+`linux/src/app/Editor.cpp:171-180,201-204` run on the UI thread; Qt's
+`PageCanvas.cpp:225-229` requests original-image decoding during paint.
+Image-heavy letters and live resizing are the main risks, not measured stalls.
 
 Validate/decode off-main and cache display-size representations. Use a lower-cost
 live-resize preview without changing original image bytes. Effort M/L; fidelity
@@ -556,10 +580,10 @@ Measure macOS CI time before adding a cache. Effort S; risk low.
 
 visual issues and layout problems — nice-to-have
 
-`Sources/LucerneKit/Views/PageContainerView.swift:99-116` and
-`linux/src/app/Editor.cpp:571-582` and `PageCanvas.cpp:174-184` draw left, center
-and right text into one band.
-Long title/date/page combinations can overpaint on screen and in PDF/print.
+`Sources/LucerneKit/Views/PageContainerView.swift:99-116`,
+`linux/src/app/PageCanvas.cpp:176-185` and `Editor.cpp:571-582` draw left, center
+and right text into one band. Long title/date/page combinations can overpaint on
+screen and in PDF/print.
 
 Measure zones, reserve nonoverlapping rectangles and define truncation priority.
 Add a compact live preview. Effort S/M; Mac visual QA needed. Includes S2-16.
@@ -570,7 +594,9 @@ visual issues and layout problems — nice-to-have
 
 `Sources/LucerneCore/Model/ListSupport.swift:18-31` and
 `Sources/LucerneKit/Text/ListMarkerLayoutManager.swift:119-128` use a fixed 24-point
-step. Wide decimal/Roman markers such as “1000.” at large sizes can touch item text.
+step. Qt paints labels at `linux/src/app/PageLayout.cpp:370-379` with the same
+fixed-gutter risk. Wide decimal/Roman markers such as “1000.” at large sizes can
+touch item text.
 
 Measure markers and widen each level's gutter consistently on both platforms.
 Effort S/M; Mac QA needed. Includes S2-17.
@@ -581,7 +607,8 @@ usability — nice-to-have
 
 `Sources/LucerneKit/Views/ToolbarView.swift:370,387-393` rounds fractional font sizes
 and retains a previous line-spacing preset for custom spacing.
-`linux/src/app/MainWindow.cpp:830-834` also retains stale spacing selections.
+`linux/src/app/MainWindow.cpp:836-837` also retains stale spacing selections:
+a 1.3-spaced paragraph can show the previously selected preset.
 
 Preserve decimal sizes and show Custom/mixed values rather than an old preset.
 Effort S/M plus UI QA. Includes S2-18.
@@ -779,18 +806,6 @@ Spelling lacks an explicit document/selection language contract.
 Add language support together with document-wide spelling state, keeping automatic
 correction opt-in. Effort M/L.
 
-### Preserve Qt rich formatting on the clipboard
-
-missing features — nice-to-have
-
-`linux/src/app/PageCanvas.cpp:766-775,812-827` copies and pastes plain text.
-Cross-letter reuse loses run formatting, paragraph styles and list membership,
-even though canonical save preserves them.
-
-Keep plain-text fallback and add a validated Lucerne fragment MIME format. Define
-style/image import, fresh IDs, and Mac compatibility before claiming lossless
-cross-platform copy. Effort M per UI.
-
 ### Add Linux spell checking
 
 missing features — nice-to-have
@@ -803,6 +818,18 @@ Integrate a system spelling service behind editor commands, with locale-aware
 language selection and optional correction. Verify dependency redistribution and
 language availability. Effort M.
 
+### Recover unsaved Linux drafts
+
+missing features — nice-to-have
+
+`linux/README.md` lists crash-draft recovery as a parity gap. An unsaved Linux
+letter disappears if its process exits unexpectedly; manual saves do not protect
+those drafts.
+
+Write atomic, rotated draft archives and offer explicit restore/discard on next
+launch. Test interrupted writes and recovery without overwriting saved letters.
+Effort M, roughly 2-4 days. Includes S3-11.
+
 ### Add Linux table editing beyond the documented fallback
 
 missing features — nice-to-have
@@ -814,16 +841,27 @@ visual grids. Cross-platform letters retain metadata but are not grid-editable.
 Show a fallback notice first; implement table layout/editing separately without
 silently dropping metadata. Effort S for the notice, L for parity. Includes S2-14.
 
-### Add irregular wrap and image overhang only after rectangular flow
+### Add irregular wrap only after rectangular flow
 
 missing features — nice-to-have
 
-Irregular alpha wrap falls back to a rectangle; page-boundary image overhang is
-clipped in the supported baseline.
+Irregular alpha wrap falls back to a rectangle.
 
-Keep page anchoring and rectangular wrap reliable. Implement alpha outlines and
-overhang with explicit clipping/layout tests when needed. Effort L and M,
-respectively; paragraph anchors are tracked separately.
+Keep page anchoring and rectangular wrap reliable. Implement alpha outlines with
+explicit layout tests when needed. Effort L; paragraph anchors are tracked
+separately.
+
+### Match Linux image-overhang preview and output
+
+visual issues and layout problems — nice-to-have
+
+`linux/src/app/PageCanvas.cpp:219-258` draws overhanging images into the desk or
+next page, while `Editor.cpp:551-553` clips PDF/print to the anchoring sheet.
+The Mac supported baseline also clips page-boundary overhang.
+
+Choose one preview/output policy and share clipping. Either clip the Qt canvas
+to its page or implement overhang consistently with explicit layout/output tests.
+Effort S for preview parity, M for genuine overhang. Includes S3-13.
 
 ### Treat floating text boxes as a format extension
 
@@ -898,8 +936,9 @@ novel, delightful, or quirky ideas worth trying — nice-to-have
 already tracks page-relative positions. Letterhead alignment still needs trial
 and error.
 
-Show live x/y/width/height first. Add optional guides/snapping to margins, center,
-furniture baselines, fold marks and other objects, with modifier bypass.
+Show live x/y/width/height in ruler units first; restore normal status after
+commit/cancel. Add optional guides/snapping to margins, center, furniture baselines,
+fold marks and other objects, with modifier bypass.
 Effort S for readout, M for guides. Includes S2-26.
 
 ### Add a local Signature Shelf
