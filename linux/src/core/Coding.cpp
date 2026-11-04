@@ -257,44 +257,56 @@ PageFurniture decodeFurniture(const QJsonObject &o, const QString &ctx) {
     return f;
 }
 
-// Keeps 2,000 pages at 4x zoom within signed scrollbar coordinates, with headroom.
-constexpr double maximumGeometryMagnitude = 100000;
-constexpr double minimumContentExtent = 1;
-
 bool boundedCoordinate(double value) {
-    return std::isfinite(value) && std::abs(value) <= maximumGeometryMagnitude;
+    return std::isfinite(value) && std::abs(value) <= TableGeometry::maximumPageDimension();
 }
 
 bool positiveExtent(double value) {
     return boundedCoordinate(value) && value > 0;
 }
 
-/// Validate geometry before untrusted values reach Qt layout and integer conversion.
+bool nonnegativeExtent(double value) {
+    return std::isfinite(value) && value >= 0
+        && value <= TableGeometry::maximumPageDimension();
+}
+
+/// Validate geometry before untrusted values reach Qt layout and integer
+/// conversion (the C++ mirror of DocumentCoding.validateSemantics — the bounds
+/// and the inputs they reject are identical in both apps).
 void validateSemantics(const DocumentModel &model) {
     const PageConfig &page = model.page;
     if (!positiveExtent(page.width) || !positiveExtent(page.height))
         malformed(QStringLiteral("Page dimensions must be positive and at most %1 points.")
-                      .arg(maximumGeometryMagnitude));
+                      .arg(TableGeometry::maximumPageDimension()));
     for (const double margin : {page.margins.top, page.margins.left,
                                 page.margins.bottom, page.margins.right}) {
-        if (!boundedCoordinate(margin) || margin < 0)
+        if (!std::isfinite(margin) || margin < 0)
             malformed(QStringLiteral("Page margins must be finite, nonnegative distances."));
     }
-    if (page.width - page.margins.left - page.margins.right <= minimumContentExtent
-        || page.height - page.margins.top - page.margins.bottom <= minimumContentExtent)
-        malformed(QStringLiteral("Page margins must leave a text area larger than one point."));
+    if (page.margins.left + page.margins.right >= page.width
+        || page.margins.top + page.margins.bottom >= page.height)
+        malformed(QStringLiteral("Page margins must leave a text area: left + right "
+                                 "must be less than the page width and top + bottom "
+                                 "less than the page height."));
 
     for (const PlacedObject &object : model.objects) {
-        if (object.anchorMode() != PlacedObject::Anchor::Page) continue;
-        if (!boundedCoordinate(object.standoff) || object.standoff < 0)
-            malformed(QStringLiteral("Object \"%1\" has an invalid wrap standoff.").arg(object.id));
+        // Frame/standoff geometry is validated for every anchor mode, not just
+        // page-anchored objects — an inline object with a huge frame reaches
+        // the same layout code.
         if (object.frame) {
             const RectModel &frame = *object.frame;
             if (!boundedCoordinate(frame.x) || !boundedCoordinate(frame.y)
-                || !positiveExtent(frame.width) || !positiveExtent(frame.height))
-                malformed(QStringLiteral("Object \"%1\" has invalid frame geometry.").arg(object.id));
+                || !nonnegativeExtent(frame.width) || !nonnegativeExtent(frame.height))
+                malformed(QStringLiteral("Object \"%1\" has invalid frame geometry: "
+                                         "origin must be within -%2 and %2 points, "
+                                         "size between 0 and %2.")
+                            .arg(object.id).arg(TableGeometry::maximumPageDimension()));
         }
-        if (!object.page) continue;
+        if (!nonnegativeExtent(object.standoff))
+            malformed(QStringLiteral("Object \"%1\" has an invalid wrap standoff "
+                                     "(0 to %2 points).")
+                        .arg(object.id).arg(TableGeometry::maximumPageDimension()));
+        if (object.anchorMode() != PlacedObject::Anchor::Page || !object.page) continue;
         if (*object.page < 0 || *object.page >= DocumentModel::maximumPageCount()) {
             throw CodingError(CodingError::Kind::InvalidObjectPage,
                 QStringLiteral("Placed object \"%1\" has page index %2; page indexes "
@@ -312,6 +324,13 @@ void validateSemantics(const DocumentModel &model) {
                                "be between 0 and %3.")
                     .arg(paragraph.id).arg(level).arg(ListGeometry::maximumLevel()));
         }
+    }
+    for (const Paragraph &paragraph : model.body) {
+        if (!paragraph.cell || TableGeometry::isValidCell(*paragraph.cell)) continue;
+        throw CodingError(CodingError::Kind::InvalidTableCell,
+            QStringLiteral("Paragraph \"%1\" is a table cell whose row, column, or "
+                           "spans are out of range (0..<%2).")
+                .arg(paragraph.id).arg(TableGeometry::maximumExtent()));
     }
 }
 
