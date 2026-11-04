@@ -411,4 +411,18 @@ extension ZipEntryNameSafetyTests {
         XCTAssertFalse(markdown.contains("pictures/lake.png"))
         XCTAssertTrue(markdown.contains("images/lake.png"))
     }
+
+    func testRenamedPayloadReplacesAStaleUnreferencedImage() throws {
+        // An unreferenced payload already stored under the rename target must
+        // not shadow the picture the object actually shows.
+        let stale = Data([0x01]), fresh = Data([0x02])
+        let model = modelWithImage(src: "aaa/a.png")
+        for _ in 0..<20 {   // Dictionary order varies between runs; repeat.
+            let data = try LuceArchive.write(model: model,
+                                             images: ["images/a.png": stale, "aaa/a.png": fresh])
+            let contents = try LuceArchive.read(data)
+            XCTAssertEqual(contents.model.objects.first?.src, "images/a.png")
+            XCTAssertEqual(contents.images["images/a.png"], fresh)
+        }
+    }
 }

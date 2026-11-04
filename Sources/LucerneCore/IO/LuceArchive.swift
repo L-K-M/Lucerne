@@ -86,9 +86,14 @@ public enum LuceArchive {
                     model.objects[index].src = newName
                 }
             }
+            // A renamed payload must win over a stale, unreferenced image already
+            // stored under its new name; dictionary order would otherwise decide.
             var moved: [String: Data] = [:]
-            for (key, value) in images {
-                moved[renamed[key] ?? key] = value
+            for (key, value) in images where renamed[key] == nil {
+                moved[key] = value
+            }
+            for (source, newName) in renamed {
+                if let data = images[source] { moved[newName] = data }
             }
             images = moved
         }
