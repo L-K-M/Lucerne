@@ -60,13 +60,7 @@ jobs:
         # Exercise the exact bundle assembly the release workflow depends on, so a
         # broken make-app.sh surfaces here (in the gated workflow) rather than at
         # release time. make-app.sh does a release build; that build cost is the point.
-        run: Scripts/make-app.sh
+        run: Scripts/make-app.sh --strict
 
       - name: Verify the assembled bundle
-        run: |
-          APP="dist/Lucerne.app"
-          test -x "$APP/Contents/MacOS/Lucerne"               || { echo "::error::missing executable $APP/Contents/MacOS/Lucerne"; exit 1; }
-          test -f "$APP/Contents/Info.plist"                  || { echo "::error::missing $APP/Contents/Info.plist"; exit 1; }
-          test -f "$APP/Contents/Resources/Lucerne.sdef"      || { echo "::error::missing $APP/Contents/Resources/Lucerne.sdef"; exit 1; }
-          test -f "$APP/Contents/Resources/AppIcon.icns"      || { echo "::error::missing $APP/Contents/Resources/AppIcon.icns"; exit 1; }
-          test -f "$APP/Contents/Resources/DocumentIcon.icns" || { echo "::error::missing $APP/Contents/Resources/DocumentIcon.icns"; exit 1; }
+        run: Scripts/verify-app.sh dist/Lucerne.app

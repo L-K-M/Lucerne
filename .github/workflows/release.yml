@@ -67,24 +67,84 @@ jobs:
         # Builds Release, assembles dist/Lucerne.app, and ad-hoc signs it (identity "-").
         # That isn't a Developer ID signature and the app is not notarized, but it IS
         # required to launch on Apple Silicon; Gatekeeper still warns on first open.
-        run: Scripts/make-app.sh
+        run: Scripts/make-app.sh --strict
 
       - name: Package zip + DMG
         run: |
           APP="dist/$APP_NAME.app"
           [ -d "$APP" ] || { echo "::error::built $APP_NAME.app not found"; exit 1; }
-          ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.zip"
-          DMG="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.dmg"
+          APP_ARCHS="$(lipo -archs "$APP/Contents/MacOS/$APP_NAME")"
+          case "$APP_ARCHS" in
+            arm64|x86_64)
+              ARTIFACT_ARCH="$APP_ARCHS"
+              ;;
+            "arm64 x86_64"|"x86_64 arm64")
+              ARTIFACT_ARCH="universal"
+              ;;
+            *)
+              echo "::error::unsupported app architecture list: $APP_ARCHS"
+              exit 1
+              ;;
+          esac
+          ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-$ARTIFACT_ARCH.zip"
+          DMG="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-$ARTIFACT_ARCH.dmg"
+          rm -f "$ZIP" "$DMG"
           ditto -c -k --keepParent "$APP" "$ZIP"
-          # create-dmg can exit non-zero on a headless runner even on success — verify the file.
+          unzip -tq "$ZIP"
+
+          ZIP_ROOT="$(mktemp -d "$RUNNER_TEMP/lucerne-zip.XXXXXX")"
+          cleanup_zip() {
+            rm -rf "$ZIP_ROOT"
+          }
+          trap cleanup_zip EXIT
+          ditto -x -k "$ZIP" "$ZIP_ROOT"
+          Scripts/verify-app.sh "$ZIP_ROOT/$APP_NAME.app"
+          rm -rf "$ZIP_ROOT"
+          trap - EXIT
+
+          # create-dmg can return nonzero on a headless runner after writing a
+          # valid image. Preserve that compatibility only after full validation.
+          set +e
           create-dmg \
             --volname "$APP_NAME $VERSION" \
             --window-size 540 380 \
             --icon-size 100 \
             --icon "$APP_NAME.app" 150 185 \
             --app-drop-link 390 185 \
-            "$DMG" "$APP" || true
-          [ -f "$DMG" ] || { echo "::error::DMG was not created"; exit 1; }
+            "$DMG" "$APP"
+          CREATE_DMG_STATUS=$?
+          set -e
+
+          [ -s "$DMG" ] || { echo "::error::DMG was not created or is empty"; exit 1; }
+          hdiutil verify "$DMG"
+
+          MOUNT_ROOT="$(mktemp -d "$RUNNER_TEMP/lucerne-dmg.XXXXXX")"
+          MOUNT_POINT="$MOUNT_ROOT/mount"
+          mkdir "$MOUNT_POINT"
+          DMG_MOUNTED=0
+          cleanup_dmg() {
+            if [ "$DMG_MOUNTED" -eq 1 ]; then
+              hdiutil detach "$MOUNT_POINT" >/dev/null || true
+            fi
+            rm -rf "$MOUNT_ROOT"
+          }
+          trap cleanup_dmg EXIT
+
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT_POINT"
+          DMG_MOUNTED=1
+          Scripts/verify-app.sh "$MOUNT_POINT/$APP_NAME.app"
+          [ -L "$MOUNT_POINT/Applications" ] \
+            || { echo "::error::DMG is missing the Applications link"; exit 1; }
+          [ "$(readlink "$MOUNT_POINT/Applications")" = "/Applications" ] \
+            || { echo "::error::DMG Applications link has the wrong target"; exit 1; }
+          hdiutil detach "$MOUNT_POINT"
+          DMG_MOUNTED=0
+          rm -rf "$MOUNT_ROOT"
+          trap - EXIT
+
+          if [ "$CREATE_DMG_STATUS" -ne 0 ]; then
+            echo "::warning::create-dmg exited with status $CREATE_DMG_STATUS; the resulting DMG passed integrity and bundle verification."
+          fi
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
