@@ -42,9 +42,10 @@ void PageLayout::setObjects(const QVector<PlacedObject> &objects) {
     // not trigger a re-paginate on every image sync.
     const PageMetrics m = metrics();
     auto flowRects = [&](const QVector<PlacedObject> &objs) {
-        QVector<RectModel> rects;
-        for (int p = 0; p <= m_pageCount; ++p)
-            rects += ExclusionPathController::exclusionRects(p, objs, m);
+        // Identical rectangles on different pages still change text flow.
+        QVector<QVector<RectModel>> rects;
+        for (int p = 0; p < m_pageCount; ++p)
+            rects.append(ExclusionPathController::exclusionRects(p, objs, m));
         return rects;
     };
     auto maxPage = [](const QVector<PlacedObject> &objs) {
