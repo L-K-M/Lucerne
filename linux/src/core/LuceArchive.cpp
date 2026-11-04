@@ -88,10 +88,15 @@ QByteArray write(const DocumentModel &model, const QMap<QString, QByteArray> &im
             const auto target = renamed.constFind(*object.src);
             if (target != renamed.constEnd()) object.src = *target;
         }
+        // A renamed payload must win over a stale, unreferenced image already
+        // stored under its new name, whatever the map's key order.
         QMap<QString, QByteArray> moved;
         for (auto it = payloads.constBegin(); it != payloads.constEnd(); ++it) {
-            const auto target = renamed.constFind(it.key());
-            moved.insert(target != renamed.constEnd() ? *target : it.key(), it.value());
+            if (!renamed.contains(it.key())) moved.insert(it.key(), it.value());
+        }
+        for (auto it = renamed.constBegin(); it != renamed.constEnd(); ++it) {
+            const auto payload = payloads.constFind(it.key());
+            if (payload != payloads.constEnd()) moved.insert(it.value(), *payload);
         }
         payloads = moved;
     }

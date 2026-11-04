@@ -171,6 +171,26 @@ private slots:
                  QByteArrayLiteral("\x89PNG"));
     }
 
+    void writerRenamedPayloadReplacesAStaleUnreferencedImage() {
+        // "aaa/" sorts before "images/" in QMap order, which used to let the
+        // stale unreferenced payload overwrite the renamed one.
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("image"), QStringLiteral("aaa/a.png"))};
+        const QMap<QString, QByteArray> images{
+            {QStringLiteral("images/a.png"), QByteArrayLiteral("stale")},
+            {QStringLiteral("aaa/a.png"), QByteArrayLiteral("fresh")}};
+
+        const auto rewritten = tryRead(LuceArchive::write(model, images));
+        QVERIFY(rewritten);
+        QCOMPARE(rewritten->model.objects.first().src,
+                 std::optional<QString>(QStringLiteral("images/a.png")));
+        QCOMPARE(rewritten->images.value(QStringLiteral("images/a.png")),
+                 QByteArrayLiteral("fresh"));
+    }
+
     void writerRenamesASharedNonFlatSourceOnce() {
         // Two placements of one picture must not make the document unsavable.
         REQUIRE_FIXTURE(data, "minimal.luce");
