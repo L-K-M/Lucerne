@@ -8,11 +8,19 @@
 #include "core/DefaultDocuments.h"
 #include "core/LuceArchive.h"
 
+#include <QApplication>
+#include <QClipboard>
+#include <QInputMethodEvent>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QtTest>
 
 using namespace lucerne;
+
+enum class ParagraphCommand { Style, List, Nesting, Alignment, Spacing };
+enum class TextTarget { ForwardSelection, BackwardSelection, Caret };
+Q_DECLARE_METATYPE(ParagraphCommand)
+Q_DECLARE_METATYPE(TextTarget)
 
 class tst_editor : public QObject {
     Q_OBJECT
@@ -214,6 +222,189 @@ private slots:
         QCOMPARE(after.body.first().runs.first().bold, std::optional<bool>());
         QCOMPARE(after.body.first().runs[1].text, QStringLiteral("bold"));
         QCOMPARE(after.body.first().runs[1].bold, std::optional<bool>(true));
+    }
+
+    void paragraphCommandsStayWithinTheirTarget_data() {
+        QTest::addColumn<ParagraphCommand>("command");
+        QTest::addColumn<TextTarget>("target");
+        for (const auto command : {ParagraphCommand::Style, ParagraphCommand::List,
+                                   ParagraphCommand::Nesting, ParagraphCommand::Alignment,
+                                   ParagraphCommand::Spacing}) {
+            for (const auto target : {TextTarget::ForwardSelection,
+                                      TextTarget::BackwardSelection, TextTarget::Caret}) {
+                const QByteArray name = QByteArray::number(int(command)) + '-'
+                    + QByteArray::number(int(target));
+                QTest::newRow(name.constData()) << command << target;
+            }
+        }
+    }
+
+    void paragraphCommandsStayWithinTheirTarget() {
+        QFETCH(ParagraphCommand, command);
+        QFETCH(TextTarget, target);
+        DocumentModel model = DefaultDocuments::empty();
+        Paragraph first;
+        first.id = QStringLiteral("first");
+        first.style = QStringLiteral("body");
+        first.runs = {Run{QStringLiteral("First paragraph")}};
+        ListItemModel item;
+        item.list = QStringLiteral("list");
+        first.list = item;
+        Paragraph second = first;
+        second.id = QStringLiteral("second");
+        second.runs = {Run{QStringLiteral("Second paragraph")}};
+        model.body = {first, second};
+        Editor editor;
+        editor.loadModel(model, {});
+        const auto before = editor.snapshotModel().body;
+        const int boundary = editor.document()->begin().next().position();
+        QTextCursor cursor(editor.document());
+        if (target == TextTarget::ForwardSelection) {
+            cursor.setPosition(boundary, QTextCursor::KeepAnchor);
+        } else {
+            cursor.setPosition(boundary);
+            if (target == TextTarget::BackwardSelection)
+                cursor.setPosition(0, QTextCursor::KeepAnchor);
+        }
+
+        switch (command) {
+        case ParagraphCommand::Style:
+            editor.applyStyle(cursor, QStringLiteral("heading1"));
+            break;
+        case ParagraphCommand::List:
+            editor.toggleList(cursor, true, QString());
+            break;
+        case ParagraphCommand::Nesting:
+            editor.changeListLevel(cursor, 1);
+            break;
+        case ParagraphCommand::Alignment: {
+            PageCanvas canvas(&editor);
+            canvas.setTextCursor(cursor);
+            canvas.setBlockAlignment(Qt::AlignRight);
+            break;
+        }
+        case ParagraphCommand::Spacing: {
+            PageCanvas canvas(&editor);
+            canvas.setTextCursor(cursor);
+            canvas.setBlockLineSpacing(2.0);
+            break;
+        }
+        }
+        const auto after = editor.snapshotModel().body;
+        const int changed = target == TextTarget::Caret ? 1 : 0;
+        QVERIFY(after[changed] != before[changed]);
+        QVERIFY2(after[1 - changed] == before[1 - changed],
+                 "the adjacent unselected paragraph must remain unchanged");
+        editor.undoStack()->undo();
+        QVERIFY(editor.snapshotModel().body[1 - changed] == before[1 - changed]);
+        editor.undoStack()->redo();
+        QVERIFY(editor.snapshotModel().body == after);
+    }
+
+    void selectingAnImageClearsTheTextSelection() {
+        Editor editor;
+        editor.loadModel(DefaultDocuments::sampleLetter(),
+                         DefaultDocuments::sampleLetterImages());
+        PageCanvas canvas(&editor);
+        QTextCursor cursor(editor.document());
+        cursor.setPosition(5, QTextCursor::KeepAnchor);
+        canvas.setTextCursor(cursor);
+        const QString before = editor.document()->toPlainText();
+        canvas.selectObject(QStringLiteral("img1"));
+        QVERIFY(!canvas.textCursor().hasSelection());
+        QGuiApplication::clipboard()->setText(QStringLiteral("unchanged clipboard"));
+        canvas.copySelection();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("unchanged clipboard"));
+        canvas.cutSelection();
+        QCOMPARE(editor.document()->toPlainText(), before);
+    }
+
+    void imageSelectionDisablesParagraphCommands() {
+        Editor editor;
+        DocumentModel model = DefaultDocuments::sampleLetter();
+        model.body.first().style = QStringLiteral("body");
+        ListItemModel item;
+        item.list = QStringLiteral("list");
+        model.body.first().list = item;
+        editor.loadModel(model, DefaultDocuments::sampleLetterImages());
+        PageCanvas canvas(&editor);
+        canvas.selectObject(QStringLiteral("img1"));
+        const auto before = editor.snapshotModel().body;
+        editor.applyStyle(canvas.textCursor(), QStringLiteral("quote"));
+        QVERIFY(editor.snapshotModel().body == before);
+        editor.toggleList(canvas.textCursor(), true, QString());
+        QVERIFY(editor.snapshotModel().body == before);
+        editor.changeListLevel(canvas.textCursor(), 1);
+        QVERIFY(editor.snapshotModel().body == before);
+        canvas.setBlockAlignment(Qt::AlignRight);
+        QVERIFY(editor.snapshotModel().body == before);
+        canvas.setBlockLineSpacing(2.0);
+        QVERIFY(editor.snapshotModel().body == before);
+    }
+
+    void imageSelectionDisablesIme() {
+        Editor editor;
+        editor.loadModel(DefaultDocuments::sampleLetter(),
+                         DefaultDocuments::sampleLetterImages());
+        PageCanvas canvas(&editor);
+        canvas.selectObject(QStringLiteral("img1"));
+        QInputMethodQueryEvent imageQuery(Qt::ImEnabled);
+        QApplication::sendEvent(&canvas, &imageQuery);
+        QVERIFY(!imageQuery.value(Qt::ImEnabled).toBool());
+
+        canvas.selectObject(QString());
+        QInputMethodQueryEvent textQuery(Qt::ImEnabled);
+        QApplication::sendEvent(&canvas, &textQuery);
+        QVERIFY(textQuery.value(Qt::ImEnabled).toBool());
+    }
+
+    void imageSelectionRejectsTextInput() {
+        Editor editor;
+        editor.loadModel(DefaultDocuments::sampleLetter(),
+                         DefaultDocuments::sampleLetterImages());
+        PageCanvas canvas(&editor);
+        canvas.selectObject(QStringLiteral("img1"));
+        const QString before = editor.document()->toPlainText();
+        for (const auto key : {Qt::Key_Return, Qt::Key_Enter, Qt::Key_Tab, Qt::Key_Backtab}) {
+            QTest::keyClick(&canvas, key);
+            QCOMPARE(editor.document()->toPlainText(), before);
+        }
+        QTest::keyClick(&canvas, Qt::Key_Return, Qt::ShiftModifier);
+        QInputMethodEvent event;
+        event.setCommitString(QStringLiteral("hidden edit"));
+        QApplication::sendEvent(&canvas, &event);
+        QCOMPARE(editor.document()->toPlainText(), before);
+        QCOMPARE(canvas.selectedObjectId(), QStringLiteral("img1"));
+        QVERIFY(!editor.isModified());
+    }
+
+    void textCommandsLeaveImageSelection() {
+        Editor editor;
+        editor.loadModel(DefaultDocuments::sampleLetter(),
+                         DefaultDocuments::sampleLetterImages());
+        PageCanvas canvas(&editor);
+        canvas.selectObject(QStringLiteral("img1"));
+        canvas.selectAllText();
+        QVERIFY(canvas.selectedObjectId().isEmpty());
+        QVERIFY(canvas.textCursor().hasSelection());
+
+        canvas.selectObject(QStringLiteral("img1"));
+        QTextCursor match(editor.document());
+        match.setPosition(5, QTextCursor::KeepAnchor);
+        canvas.setTextCursor(match);
+        QVERIFY(canvas.selectedObjectId().isEmpty());
+        QCOMPARE(canvas.textCursor().selectedText(), match.selectedText());
+
+        canvas.selectObject(QStringLiteral("img1"));
+        QGuiApplication::clipboard()->setText(QStringLiteral("visible paste"));
+        canvas.paste();
+        QVERIFY(canvas.selectedObjectId().isEmpty());
+        QVERIFY(editor.document()->toPlainText().contains(QStringLiteral("visible paste")));
+
+        canvas.selectObject(QStringLiteral("img1"));
+        canvas.revealPosition(3);
+        QVERIFY(canvas.selectedObjectId().isEmpty());
+        QCOMPARE(canvas.textCursor().position(), 3);
     }
 
     void objectCommandsAreUndoable() {

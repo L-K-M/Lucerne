@@ -18,6 +18,11 @@ namespace lucerne {
 
 namespace {
 
+int lastSelectedPosition(const QTextCursor &cursor) {
+    // Selection ends are exclusive; a caret still targets its own paragraph.
+    return cursor.hasSelection() ? cursor.selectionEnd() - 1 : cursor.position();
+}
+
 /// Proxy that folds QTextDocument's built-in undo into the unified stack.
 /// The document has already performed the edit when the command is pushed, so
 /// the mandatory first redo() is a no-op.
@@ -369,10 +374,10 @@ void Editor::applyParagraphStyleFormats(QTextCursor &cursor, const QString &role
 }
 
 void Editor::applyStyle(QTextCursor cursor, const QString &role) {
-    if (!m_model.styles.contains(role)) return;
+    if (cursor.isNull() || !m_model.styles.contains(role)) return;
     cursor.beginEditBlock();
     const int start = cursor.selectionStart();
-    const int end = cursor.selectionEnd();
+    const int end = lastSelectedPosition(cursor);
     QTextBlock block = m_doc->findBlock(start);
     while (block.isValid() && block.position() <= end) {
         QTextCursor blockCursor(block);
@@ -397,9 +402,10 @@ void Editor::redefineStyle(const QString &role, const ParagraphStyle &def) {
 // MARK: - Lists
 
 void Editor::toggleList(QTextCursor cursor, bool ordered, const QString &marker) {
+    if (cursor.isNull()) return;
     cursor.beginEditBlock();
     const int start = cursor.selectionStart();
-    const int end = cursor.selectionEnd();
+    const int end = lastSelectedPosition(cursor);
 
     // If the caret paragraph already carries this exact kind, the command
     // removes the list (the Mac toggle); otherwise it applies it, joining the
@@ -446,9 +452,10 @@ void Editor::toggleList(QTextCursor cursor, bool ordered, const QString &marker)
 }
 
 void Editor::changeListLevel(QTextCursor cursor, int delta) {
+    if (cursor.isNull()) return;
     cursor.beginEditBlock();
     const int start = cursor.selectionStart();
-    const int end = cursor.selectionEnd();
+    const int end = lastSelectedPosition(cursor);
     for (QTextBlock block = m_doc->findBlock(start);
          block.isValid() && block.position() <= end; block = block.next()) {
         QTextCharFormat bcf = block.charFormat();
@@ -464,6 +471,7 @@ void Editor::changeListLevel(QTextCursor cursor, int delta) {
 }
 
 void Editor::insertPageBreak(QTextCursor cursor) {
+    if (cursor.isNull()) return;
     cursor.beginEditBlock();
     // A paragraph break first when not at a paragraph start, then flag the
     // (new) paragraph — matching the Mac's semantics.
