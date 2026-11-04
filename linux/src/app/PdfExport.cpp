@@ -12,8 +12,9 @@ namespace {
 
 constexpr int pointsPerInch = 72;
 
-// QSaveFile that also refuses to commit after an incomplete write. Before Qt
-// 6.9 commit() only aborts on an error recorded by writeData: a short write
+// QSaveFile that also refuses to commit after an incomplete write. In Qt 6.2
+// through at least 6.8, commit() only aborts on an error recorded by writeData
+// (later Qt checks the close too, but CI ships 6.2 and 6.4): a short write
 // sets no error at all, and a failure in the final buffered flush inside
 // commit() is recorded but never checked — either way the truncated temporary
 // file would replace the destination. Opened Unbuffered, every write surfaces
