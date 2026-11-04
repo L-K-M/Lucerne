@@ -85,6 +85,7 @@ public final class PageTextView: NSTextView {
         let continueList = editor?.caretWillContinueList(in: self) ?? false
         let demote = !continueList && (editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false)
         super.insertNewline(sender)
+        editor?.didInsertParagraphBreak(in: self)
         if continueList { editor?.didInsertListContinuationNewline(in: self) }
         else if demote { editor?.startBodyParagraphAfterHeadingNewline(in: self) }
     }
