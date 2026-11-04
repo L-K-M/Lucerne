@@ -180,7 +180,8 @@ public enum MiniZip {
     /// names the entries whose own corruption (bad payload or CRC mismatch) merely
     /// drops them from the result instead — for best-effort content (e.g. the
     /// .luce recovery snapshots) that shouldn't block opening an intact document.
-    /// Upper bound on the sum of uncompressed sizes of the non-droppable entries.
+    /// Upper bound on the sum of declared uncompressed sizes of all entries,
+    /// droppable ones included.
     /// Per-entry caps alone don't stop a decompression bomb spread across many
     /// entries (65 535 × 512 MiB), so the aggregate is bounded too.
     public static let maxTotalUncompressedSize = 2 * 1024 * 1024 * 1024
