@@ -276,11 +276,34 @@ public final class EditorController: NSObject {
 
     private func pageBreakCharIndices() -> [Int] {
         guard textStorage.length > 0 else { return [] }
+        let ns = textStorage.string as NSString
         var result: [Int] = []
-        textStorage.enumerateAttribute(.lucernePageBreakBefore,
-                                       in: NSRange(location: 0, length: textStorage.length),
-                                       options: []) { value, range, _ in
-            if (value as? Bool) == true { result.append(range.location) }
+        // A break token repeated from the *immediately preceding* paragraph is the
+        // same break (Return inherits the marked range); a repeat further away is
+        // a pasted copy that keeps its own. Mirroring AttributedStringReader, a
+        // marker-less paragraph still honors the bare Boolean flag.
+        var previousMarkers: Set<String> = []
+        var location = 0
+        while location < ns.length {
+            var start = 0, end = 0
+            ns.getParagraphStart(&start, end: &end, contentsEnd: nil,
+                                 for: NSRange(location: location, length: 0))
+            // Like AttributedStringReader, only the paragraph's first character
+            // decides: a marker run that begins mid-paragraph (joined or pasted
+            // text) never breaks the page inside or before that paragraph.
+            let hasFlag = (textStorage.attribute(.lucernePageBreakBefore, at: start,
+                                                 effectiveRange: nil) as? Bool) == true
+            var markers: Set<String> = []
+            if let marker = textStorage.attribute(.lucernePageBreakMarker, at: start,
+                                                  effectiveRange: nil) as? String {
+                markers.insert(marker)
+            }
+            if markers.isEmpty ? hasFlag : !markers.isSubset(of: previousMarkers) {
+                result.append(start)
+            }
+            previousMarkers = markers
+            if end == location { break }
+            location = end
         }
         return result
     }
@@ -1485,6 +1508,7 @@ public final class EditorController: NSObject {
         ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                              for: NSRange(location: caret, length: 0))
         storage.beginEditing()
+        reconcilePageBreakAfterReturn(in: storage, caret: caret, typing: &typing)
         if end > start {
             storage.addAttribute(.lucerneParagraphID, value: newID,
                                  range: NSRange(location: start, length: end - start))
@@ -1506,6 +1530,59 @@ public final class EditorController: NSObject {
         }
         storage.endEditing()
         tv.typingAttributes = typing
+    }
+
+    /// Keep a forced break on one side of a Return split. NSTextView gives the new
+    /// paragraph the split paragraph's attributes, so a break marker stamped over
+    /// the whole original paragraph lands on both halves. Return at the very start
+    /// moves the break with the content (the empty first half loses it); anywhere
+    /// inside or at the end, the first half keeps it and the new half is unmarked.
+    private func reconcilePageBreakAfterReturn(
+        in storage: NSTextStorage, caret: Int,
+        typing: inout [NSAttributedString.Key: Any]
+    ) {
+        guard caret > 0 else { return }
+        let ns = storage.string as NSString
+        // The newline just inserted terminates the first half at caret - 1.
+        var firstStart = 0, firstEnd = 0, firstContentsEnd = 0
+        ns.getParagraphStart(&firstStart, end: &firstEnd, contentsEnd: &firstContentsEnd,
+                             for: NSRange(location: caret - 1, length: 0))
+        guard firstEnd == caret else { return }
+        let firstRange = NSRange(location: firstStart, length: firstEnd - firstStart)
+        var marked = false
+        storage.enumerateAttribute(.lucernePageBreakMarker, in: firstRange,
+                                   options: []) { value, _, stop in
+            if value is String { marked = true; stop.pointee = true }
+        }
+        if !marked {
+            storage.enumerateAttribute(.lucernePageBreakBefore, in: firstRange,
+                                       options: []) { value, _, stop in
+                if (value as? Bool) == true { marked = true; stop.pointee = true }
+            }
+        }
+        guard marked else { return }
+
+        if firstContentsEnd == firstStart {
+            // The first half is only the inserted newline: Return was pressed at
+            // the paragraph's start, so the break follows the content.
+            storage.removeAttribute(.lucernePageBreakBefore, range: firstRange)
+            storage.removeAttribute(.lucernePageBreakMarker, range: firstRange)
+            return
+        }
+
+        var secondStart = 0, secondEnd = 0
+        ns.getParagraphStart(&secondStart, end: &secondEnd, contentsEnd: nil,
+                             for: NSRange(location: caret, length: 0))
+        if secondEnd > secondStart {
+            let secondRange = NSRange(location: secondStart, length: secondEnd - secondStart)
+            storage.removeAttribute(.lucernePageBreakBefore, range: secondRange)
+            storage.removeAttribute(.lucernePageBreakMarker, range: secondRange)
+        }
+        // New text typed into the detached half must not manufacture another
+        // forced break, nor reintroduce the layout sentinel.
+        typing.removeValue(forKey: .lucernePageBreakBefore)
+        typing.removeValue(forKey: .lucernePageBreakMarker)
+        typing.removeValue(forKey: .lucernePageBreakSentinel)
     }
 
     private func stampTrailingParagraph(from attributes: [NSAttributedString.Key: Any],
@@ -1664,35 +1741,143 @@ public final class EditorController: NSObject {
     }
 
     /// Inserts a forced page break at the caret: the text from here on starts on a
-    /// new page. Implemented by flagging the paragraph that begins at the caret
-    /// (splitting the current paragraph first if the caret is mid-paragraph).
+    /// new page. Implemented by flagging the paragraph that begins at the caret —
+    /// splitting the current paragraph first if the caret is mid-paragraph — or by
+    /// flagging the following paragraph when the caret sits at a paragraph's end.
+    /// At the document end the break belongs to a trailing empty paragraph, which
+    /// gets an invisible sentinel carrier; an existing trailing empty paragraph is
+    /// reused rather than padded with another blank line.
     public func insertPageBreak() {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         withUndo("Insert Page Break") {
-            let ns = storage.string as NSString
-            let loc = min(tv.selectedRange().location, ns.length)
-            let atParagraphStart = loc == 0 || ns.character(at: loc - 1) == 0x0A || ns.character(at: loc - 1) == 0x0D
-            var markLoc = loc
-            var createdParagraph = false
-            if !atParagraphStart {
-                storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: loc)
-                markLoc = loc + 1
-                createdParagraph = true
+            let text = storage.string as NSString
+            let location = min(tv.selectedRange().location, text.length)
+            let startsParagraph = location == 0
+                || Self.isParagraphSeparator(text.character(at: location - 1))
+            // A caret at the visible end of a paragraph sits before its separator;
+            // the requested break belongs to the following paragraph, not to a
+            // freshly inserted blank one.
+            let endsParagraph = location < text.length
+                && Self.isParagraphSeparator(text.character(at: location))
+            var markLocation = location
+
+            if location == text.length {
+                if !startsParagraph {
+                    // The caret ends a non-empty paragraph: append one separator so
+                    // the new trailing paragraph can carry the break.
+                    storage.insert(NSAttributedString(string: "\n",
+                                                      attributes: tv.typingAttributes),
+                                   at: location)
+                }
+                markTrailingEmptyParagraph(in: storage, textView: tv)
+                return
             }
-            if markLoc >= storage.length {
-                // Page break at the very end: add an empty paragraph to carry it.
-                storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: storage.length)
-                createdParagraph = true
+            if endsParagraph, !startsParagraph {
+                markLocation = Self.locationAfterSeparator(at: location, in: text)
+                if markLocation == text.length {
+                    markTrailingEmptyParagraph(in: storage, textView: tv)
+                    return
+                }
+            } else if !startsParagraph {
+                storage.insert(NSAttributedString(string: "\n",
+                                                  attributes: tv.typingAttributes),
+                               at: location)
+                markLocation = location + 1
+                assignFreshIdentity(toParagraphAt: markLocation, textView: tv, storage: storage)
             }
-            if createdParagraph {
-                assignFreshIdentity(toParagraphAt: markLoc, textView: tv, storage: storage)
-            }
-            if markLoc < storage.length {
-                storage.addAttribute(.lucernePageBreakBefore, value: true,
-                                     range: NSRange(location: markLoc, length: 1))
-            }
-            tv.setSelectedRange(NSRange(location: min(markLoc, (storage.string as NSString).length), length: 0))
+            // At a paragraph start (including an empty middle paragraph) the
+            // paragraph here is marked in place.
+
+            let updated = storage.string as NSString
+            var start = 0, end = 0
+            updated.getParagraphStart(&start, end: &end, contentsEnd: nil,
+                                     for: NSRange(location: markLocation, length: 0))
+            let range = NSRange(location: start, length: end - start)
+            storage.addAttribute(.lucernePageBreakBefore, value: true, range: range)
+            storage.addAttribute(.lucernePageBreakMarker,
+                                 value: IDGenerator.next("page-break"), range: range)
+            tv.setSelectedRange(NSRange(location: start, length: 0))
         }
+    }
+
+    /// Gives the trailing empty paragraph a page break by appending the invisible
+    /// sentinel carrier. Its identity comes from the separator's trailing stamps
+    /// when they exist (the paragraph already had one), otherwise from the typing
+    /// attributes with a freshly minted id.
+    private func markTrailingEmptyParagraph(in storage: NSTextStorage,
+                                            textView tv: PageTextView) {
+        var attributes = tv.typingAttributes
+        var id = IDGenerator.next("p")
+        let ns = storage.string as NSString
+        if ns.length > 0,
+           Self.isParagraphSeparator(ns.character(at: ns.length - 1)) {
+            let term = ns.length - 1
+            if let existing = storage.attribute(.lucerneTrailingParagraphID, at: term,
+                                                effectiveRange: nil) as? String {
+                id = existing
+            }
+            if let role = storage.attribute(.lucerneTrailingStyleRole, at: term,
+                                            effectiveRange: nil) as? String {
+                attributes[.lucerneStyleRole] = role
+            }
+            if let ps = storage.attribute(.lucerneTrailingParagraphStyle, at: term,
+                                          effectiveRange: nil) {
+                attributes[.paragraphStyle] = ps
+            }
+            if let list = storage.attribute(.lucerneTrailingList, at: term,
+                                            effectiveRange: nil) {
+                attributes[.lucerneList] = list
+            }
+        }
+        for key in [NSAttributedString.Key.lucerneTrailingParagraphID,
+                    .lucerneTrailingStyleRole, .lucerneTrailingParagraphStyle,
+                    .lucerneTrailingList] {
+            attributes.removeValue(forKey: key)
+        }
+        attributes[.lucerneParagraphID] = id
+        attributes[.lucernePageBreakBefore] = true
+        attributes[.lucernePageBreakMarker] = IDGenerator.next("page-break")
+        attributes[.lucernePageBreakSentinel] = true
+        storage.insert(NSAttributedString(string: AttributedStringBuilder.pageBreakSentinel,
+                                          attributes: attributes),
+                       at: storage.length)
+
+        // Keep the separator's trailing stamps in sync, so the paragraph keeps the
+        // same identity if the carrier is ever removed.
+        if ns.length > 0 {
+            let term = NSRange(location: ns.length - 1, length: 1)
+            storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
+            storage.addAttribute(.lucerneTrailingStyleRole,
+                                 value: attributes[.lucerneStyleRole]
+                                    ?? LucerneDocumentModel.defaultStyleRole,
+                                 range: term)
+            if let ps = attributes[.paragraphStyle] {
+                storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps, range: term)
+            }
+            if let list = attributes[.lucerneList] {
+                storage.addAttribute(.lucerneTrailingList, value: list, range: term)
+            } else {
+                storage.removeAttribute(.lucerneTrailingList, range: term)
+            }
+        }
+
+        var typing = attributes
+        typing.removeValue(forKey: .lucernePageBreakSentinel)
+        tv.typingAttributes = typing
+        tv.setSelectedRange(NSRange(location: storage.length, length: 0))
+    }
+
+    private static func isParagraphSeparator(_ character: unichar) -> Bool {
+        character == 0x0A || character == 0x0D
+    }
+
+    private static func locationAfterSeparator(at location: Int, in text: NSString) -> Int {
+        guard text.character(at: location) == 0x0D,
+              location + 1 < text.length,
+              text.character(at: location + 1) == 0x0A else {
+            return location + 1
+        }
+        return location + 2
     }
 
     // MARK: - Tables
@@ -2923,9 +3108,10 @@ public final class EditorController: NSObject {
     /// survive; free-placed images are dropped (RTF can't express page-anchored
     /// frames — plan §4). The pictures live on in the .luce package and the PDF.
     public func makeRTFData() throws -> Data {
-        let range = NSRange(location: 0, length: textStorage.length)
+        let interchange = interchangeAttributedString()
+        let range = NSRange(location: 0, length: interchange.length)
         return try ExportValidation.requireData(
-            textStorage.rtf(from: range, documentAttributes: [:]), format: "RTF")
+            interchange.rtf(from: range, documentAttributes: [:]), format: "RTF")
     }
 
     /// Lossy Word (.docx) interchange export, mirroring `makeRTFData`. Text, fonts,
@@ -2933,13 +3119,21 @@ public final class EditorController: NSObject {
     /// (Office Open XML can't express page-anchored frames — plan §4). The pictures
     /// live on in the .luce package and the PDF.
     public func makeDOCXData() throws -> Data {
-        let range = NSRange(location: 0, length: textStorage.length)
+        let interchange = interchangeAttributedString()
+        let range = NSRange(location: 0, length: interchange.length)
         // The value dictionary is typed `[…: Any]`, so the document type is spelled
         // out in full (a leading-dot member can't infer its base against `Any`).
-        let data = try textStorage.data(
+        let data = try interchange.data(
             from: range,
             documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])
         return try ExportValidation.requireData(data, format: "Word")
+    }
+
+    /// Internal layout sentinels are not document text. Strip only attributed
+    /// sentinel characters from interchange copies, leaving the live editor and
+    /// any genuine zero-width spaces untouched.
+    private func interchangeAttributedString() -> NSAttributedString {
+        AttributedStringReader.removingPageBreakSentinels(from: textStorage)
     }
 
     /// The whole document as a single multi-page PDF (share / print / export).

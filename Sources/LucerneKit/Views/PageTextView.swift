@@ -63,6 +63,7 @@ public final class PageTextView: NSTextView {
         if Self.isPlainSpace(string), editor?.applyMarkdownShortcutOnSpace(in: self) == true {
             return
         }
+        if replacePageBreakSentinel(string, in: replacementRange) { return }
         super.insertText(string, replacementRange: replacementRange)
     }
 
@@ -70,6 +71,391 @@ public final class PageTextView: NSTextView {
         if let s = string as? String { return s == " " }
         if let s = string as? NSAttributedString { return s.string == " " }
         return false
+    }
+
+    /// Keep the internal layout carrier out of copied text and rich text. Normal
+    /// selections still use NSTextView's full pasteboard support.
+    public override func copy(_ sender: Any?) {
+        guard let storage = textStorage else { return super.copy(sender) }
+        let range = selectedRange()
+        guard range.length > 0, NSMaxRange(range) <= storage.length else {
+            return super.copy(sender)
+        }
+        let selected = storage.attributedSubstring(from: range)
+        let sanitized = AttributedStringReader.removingPageBreakSentinels(from: selected)
+        guard sanitized.length != selected.length else { return super.copy(sender) }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(sanitized.string, forType: .string)
+        if let rtf = sanitized.rtf(
+            from: NSRange(location: 0, length: sanitized.length), documentAttributes: [:]
+        ) {
+            pasteboard.setData(rtf, forType: .rtf)
+        }
+    }
+
+    /// A final empty page-break paragraph has an invisible layout carrier. Replace
+    /// that carrier as part of the first real insertion so it never remains as a
+    /// hidden caret position, while transferring the structural break attributes
+    /// to the inserted content in the same edit.
+    private func replacePageBreakSentinel(
+        _ value: Any, in requestedRange: NSRange
+    ) -> Bool {
+        let inserted = (value as? NSAttributedString)?.string ?? (value as? String) ?? ""
+        guard !inserted.isEmpty, let storage = textStorage, storage.length > 0 else {
+            return false
+        }
+        // A pure paragraph-separator insertion is a Return split, not content
+        // replacing the carrier: let it insert normally so the split logic can
+        // decide which side of the break keeps it.
+        if inserted.allSatisfy({ $0 == "\n" || $0 == "\r" }) { return false }
+
+        let editRange = requestedRange.location == NSNotFound ? selectedRange() : requestedRange
+        guard editRange.location <= storage.length else { return false }
+
+        var carrier: NSRange?
+        storage.enumerateAttribute(
+            .lucernePageBreakSentinel,
+            in: NSRange(location: 0, length: storage.length), options: []
+        ) { marker, range, stop in
+            guard (marker as? Bool) == true else { return }
+            let touches = editRange.length > 0
+                ? NSIntersectionRange(editRange, range).length > 0
+                : editRange.location >= range.location && editRange.location <= NSMaxRange(range)
+            if touches {
+                carrier = range
+                stop.pointee = true
+            }
+        }
+        guard let carrier else { return false }
+
+        let carrierAttributes = storage.attributes(at: carrier.location, effectiveRange: nil)
+        let structuralKeys: [NSAttributedString.Key] = [
+            .lucernePageBreakBefore, .lucernePageBreakMarker,
+            .lucerneStyleRole, .lucerneParagraphID, .lucerneList,
+        ]
+        var preparedTyping = typingAttributes
+        for key in structuralKeys {
+            if let structuralValue = carrierAttributes[key] {
+                preparedTyping[key] = structuralValue
+            } else {
+                preparedTyping.removeValue(forKey: key)
+            }
+        }
+        if preparedTyping[.paragraphStyle] == nil,
+           let paragraphStyle = carrierAttributes[.paragraphStyle] {
+            preparedTyping[.paragraphStyle] = paragraphStyle
+        }
+        preparedTyping.removeValue(forKey: .lucernePageBreakSentinel)
+
+        let range = NSUnionRange(editRange, carrier)
+        let prepared: NSMutableAttributedString
+        let isAttributedInsertion = value is NSAttributedString
+        if let attributed = value as? NSAttributedString {
+            prepared = NSMutableAttributedString(attributedString: attributed)
+            prepared.removeAttribute(.lucernePageBreakSentinel,
+                                     range: NSRange(location: 0, length: prepared.length))
+        } else {
+            prepared = NSMutableAttributedString(string: inserted, attributes: preparedTyping)
+        }
+
+        let preparedString = prepared.string as NSString
+        var location = 0
+        var paragraphIndex = 0
+        while location < preparedString.length {
+            var start = 0, end = 0, contentsEnd = 0
+            preparedString.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                             for: NSRange(location: location, length: 0))
+            let paragraphRange = NSRange(location: start, length: end - start)
+            if paragraphIndex == 0 {
+                for key in structuralKeys {
+                    if let structuralValue = carrierAttributes[key] {
+                        prepared.addAttribute(key, value: structuralValue, range: paragraphRange)
+                    } else {
+                        prepared.removeAttribute(key, range: paragraphRange)
+                    }
+                }
+                if let paragraphStyle = carrierAttributes[.paragraphStyle] {
+                    prepared.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
+                }
+            } else {
+                prepared.addAttribute(.lucerneParagraphID, value: IDGenerator.next("p"),
+                                      range: paragraphRange)
+                if !isAttributedInsertion {
+                    prepared.removeAttribute(.lucernePageBreakBefore, range: paragraphRange)
+                    prepared.removeAttribute(.lucernePageBreakMarker, range: paragraphRange)
+                }
+                if prepared.attribute(.lucerneStyleRole, at: start, effectiveRange: nil) == nil,
+                   let role = carrierAttributes[.lucerneStyleRole] {
+                    prepared.addAttribute(.lucerneStyleRole, value: role, range: paragraphRange)
+                }
+                if prepared.attribute(.paragraphStyle, at: start, effectiveRange: nil) == nil,
+                   let paragraphStyle = carrierAttributes[.paragraphStyle] {
+                    prepared.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
+                }
+            }
+            if end == location { break }
+            location = end
+            paragraphIndex += 1
+        }
+
+        guard shouldChangeText(in: range, replacementString: inserted) else { return true }
+        storage.replaceCharacters(in: range, with: prepared)
+        var continuationAttributes = prepared.length > 0
+            ? prepared.attributes(at: prepared.length - 1, effectiveRange: nil)
+            : preparedTyping
+        if let last = prepared.string.utf16.last, last == 0x0A || last == 0x0D {
+            continuationAttributes[.lucerneParagraphID] = IDGenerator.next("p")
+            continuationAttributes.removeValue(forKey: .lucernePageBreakBefore)
+            continuationAttributes.removeValue(forKey: .lucernePageBreakMarker)
+            continuationAttributes.removeValue(forKey: .lucernePageBreakSentinel)
+            let terminator = NSRange(location: range.location + prepared.length - 1, length: 1)
+            if let id = continuationAttributes[.lucerneParagraphID] {
+                storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: terminator)
+            }
+            if let role = continuationAttributes[.lucerneStyleRole] {
+                storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: terminator)
+            }
+            if let list = continuationAttributes[.lucerneList] {
+                storage.addAttribute(.lucerneTrailingList, value: list, range: terminator)
+            } else {
+                storage.removeAttribute(.lucerneTrailingList, range: terminator)
+            }
+        }
+        typingAttributes = continuationAttributes
+        setSelectedRange(NSRange(location: range.location + prepared.length, length: 0))
+        didChangeText()
+        return true
+    }
+
+    // Every deletion command — Backspace, forward delete, Cut, Edit ▸ Delete,
+    // word and line deletes — funnels through here, so the forced-break guard
+    // lives in one place instead of on each key. When a deletion removes the
+    // remaining text of a break-marked final paragraph, swap the doomed range
+    // for the invisible sentinel carrier in the same replacement: the paragraph
+    // still exists, it is only empty, so it keeps its break — and the swap is a
+    // single undoable change instead of a deletion plus a second insertion.
+    public override func shouldChangeText(in affectedCharRange: NSRange,
+                                          replacementString: String?) -> Bool {
+        guard replacementString == "",
+              let storage = textStorage,
+              let carrier = finalBreakCarrierAttributes(deleting: affectedCharRange) else {
+            return super.shouldChangeText(in: affectedCharRange,
+                                          replacementString: replacementString)
+        }
+        guard super.shouldChangeText(
+            in: affectedCharRange,
+            replacementString: AttributedStringBuilder.pageBreakSentinel) else {
+            return false
+        }
+        storage.replaceCharacters(
+            in: affectedCharRange,
+            with: NSAttributedString(string: AttributedStringBuilder.pageBreakSentinel,
+                                     attributes: carrier))
+        // The caret goes after the carrier, where Insert Page Break leaves it,
+        // so the next Backspace removes the break and the one after that removes
+        // the empty paragraph.
+        setSelectedRange(NSRange(location: affectedCharRange.location + 1, length: 0))
+        didChangeText()
+        return false
+    }
+
+    public override func didChangeText() {
+        super.didChangeText()
+        removeStrandedPageBreakSentinels()
+        removeOrphanedPageBreakAttributes()
+    }
+
+    private var isNormalizingPageBreakSentinels = false
+
+    /// An edit that joins the trailing break paragraph into its neighbour (forward
+    /// delete at the end of the previous paragraph, a selection spanning the
+    /// separator, a cut or a drag) leaves the invisible carrier inside real text,
+    /// where its attributes would mark that paragraph instead. Remove every carrier
+    /// that no longer forms a paragraph of its own. When it still starts a
+    /// paragraph that now has content, that paragraph keeps the carrier's break.
+    private func removeStrandedPageBreakSentinels() {
+        guard !isNormalizingPageBreakSentinels,
+              let storage = textStorage, storage.length > 0 else { return }
+        let ns = storage.string as NSString
+        var stranded: [Int] = []
+        storage.enumerateAttribute(.lucernePageBreakSentinel,
+                                   in: NSRange(location: 0, length: ns.length),
+                                   options: []) { value, range, _ in
+            guard (value as? Bool) == true else { return }
+            for index in range.location..<NSMaxRange(range)
+            where Self.isPageBreakSentinel(at: index, in: storage) {
+                let startsParagraph = index == 0
+                    || Self.isParagraphSeparator(ns.character(at: index - 1))
+                let endsParagraph = index + 1 == ns.length
+                    || Self.isParagraphSeparator(ns.character(at: index + 1))
+                if !(startsParagraph && endsParagraph) { stranded.append(index) }
+            }
+        }
+        guard !stranded.isEmpty else { return }
+
+        isNormalizingPageBreakSentinels = true
+        defer { isNormalizingPageBreakSentinels = false }
+        for index in stranded.reversed() {
+            let text = storage.string as NSString
+            let startsParagraph = index == 0
+                || Self.isParagraphSeparator(text.character(at: index - 1))
+            var end = index + 1
+            let replacement = NSMutableAttributedString()
+            if startsParagraph {
+                // Carry the break onto the content that now follows the carrier.
+                text.getParagraphStart(nil, end: &end, contentsEnd: nil,
+                                       for: NSRange(location: index + 1, length: 0))
+                let content = NSRange(location: index + 1, length: end - index - 1)
+                replacement.append(storage.attributedSubstring(from: content))
+                let whole = NSRange(location: 0, length: replacement.length)
+                for key in [NSAttributedString.Key.lucernePageBreakBefore, .lucernePageBreakMarker] {
+                    if let value = storage.attribute(key, at: index, effectiveRange: nil) {
+                        replacement.addAttribute(key, value: value, range: whole)
+                    }
+                }
+            }
+            let range = NSRange(location: index, length: end - index)
+            guard shouldChangeText(in: range, replacementString: replacement.string) else {
+                continue
+            }
+            storage.replaceCharacters(in: range, with: replacement)
+            didChangeText()
+        }
+    }
+
+    /// A join or paste can leave a paragraph's break attributes attached to text
+    /// that no longer starts the paragraph. The model reads a break only from a
+    /// paragraph's first character, so such a marker is dormant — until an edit
+    /// deletes the text in front of it and a dead break resurrects on the next
+    /// save. Strip break attributes from every run that does not carry the same
+    /// marker as its paragraph's first character. Runs are enumerated, not
+    /// characters, so this stays cheap on every keystroke.
+    private func removeOrphanedPageBreakAttributes() {
+        guard !isNormalizingPageBreakSentinels,
+              let storage = textStorage, storage.length > 0 else { return }
+        let ns = storage.string as NSString
+        let whole = NSRange(location: 0, length: ns.length)
+        var stripBoth: [NSRange] = []
+        var stripFlag: [NSRange] = []
+
+        // A marker token that is not the paragraph's own (the run does not begin
+        // at the paragraph's first character, which always carries the token for
+        // a genuine mark) is dead weight: lose the token and the flag with it.
+        storage.enumerateAttribute(.lucernePageBreakMarker, in: whole,
+                                   options: []) { value, range, _ in
+            guard let marker = value as? String else { return }
+            let paragraph = paragraphRange(containing: range.location, in: ns)
+            let first = storage.attribute(.lucernePageBreakMarker, at: paragraph.location,
+                                          effectiveRange: nil) as? String
+            guard marker != first else { return }
+            stripBoth.append(NSIntersectionRange(range, paragraph))
+        }
+        // The bare Boolean flag has no token to compare: it is the paragraph's
+        // own stamp only where the first character is flagged too and the run
+        // sits under the same marker (or under none, for a flag-only mark).
+        storage.enumerateAttribute(.lucernePageBreakBefore, in: whole,
+                                   options: []) { value, range, _ in
+            guard (value as? Bool) == true else { return }
+            let paragraph = paragraphRange(containing: range.location, in: ns)
+            let firstFlag = (storage.attribute(.lucernePageBreakBefore,
+                                               at: paragraph.location,
+                                               effectiveRange: nil) as? Bool) == true
+            let firstMarker = storage.attribute(.lucernePageBreakMarker,
+                                                at: paragraph.location,
+                                                effectiveRange: nil) as? String
+            storage.enumerateAttribute(.lucernePageBreakMarker,
+                                       in: NSIntersectionRange(range, paragraph),
+                                       options: []) { segment, segmentRange, _ in
+                let marker = segment as? String
+                let orphan = marker == firstMarker ? !firstFlag : marker == nil
+                guard orphan else { return }
+                stripFlag.append(segmentRange)
+            }
+        }
+        guard !stripBoth.isEmpty || !stripFlag.isEmpty else { return }
+
+        isNormalizingPageBreakSentinels = true
+        defer { isNormalizingPageBreakSentinels = false }
+        // A nil replacement string brackets an attributes-only change for undo.
+        for range in stripBoth where range.length > 0 {
+            guard shouldChangeText(in: range, replacementString: nil) else { continue }
+            storage.removeAttribute(.lucernePageBreakBefore, range: range)
+            storage.removeAttribute(.lucernePageBreakMarker, range: range)
+            didChangeText()
+        }
+        for range in stripFlag where range.length > 0 {
+            guard shouldChangeText(in: range, replacementString: nil) else { continue }
+            storage.removeAttribute(.lucernePageBreakBefore, range: range)
+            didChangeText()
+        }
+    }
+
+    private func paragraphRange(containing location: Int, in text: NSString) -> NSRange {
+        var start = 0, end = 0
+        text.getParagraphStart(&start, end: &end, contentsEnd: nil,
+                               for: NSRange(location: location, length: 0))
+        return NSRange(location: start, length: end - start)
+    }
+
+    private static func isPageBreakSentinel(at index: Int, in storage: NSTextStorage) -> Bool {
+        guard index >= 0, index < storage.length,
+              (storage.string as NSString).character(at: index) == 0x200B else { return false }
+        return (storage.attribute(.lucernePageBreakSentinel, at: index,
+                                  effectiveRange: nil) as? Bool) == true
+    }
+
+    private static func isParagraphSeparator(_ character: unichar) -> Bool {
+        character == 0x0A || character == 0x0D
+    }
+
+    /// The carrier attributes when `range` — a deletion about to happen — removes
+    /// exactly the remaining text of a break-marked final paragraph; nil in every
+    /// other case. Deleting the invisible carrier itself is deliberately excluded:
+    /// that removes the break, the way Backspace right after a page break removes
+    /// it in other word processors. A deletion covering only part of the final
+    /// paragraph needs no carrier — marked text survives — and one spanning a
+    /// paragraph boundary deletes the paragraph outright, not just its text.
+    private func finalBreakCarrierAttributes(
+        deleting range: NSRange
+    ) -> [NSAttributedString.Key: Any]? {
+        guard let storage = textStorage, storage.length > 0, range.length > 0,
+              NSMaxRange(range) >= storage.length, range.location < storage.length
+        else { return nil }
+        let ns = storage.string as NSString
+        let last = ns.character(at: ns.length - 1)
+        guard last != 0x0A, last != 0x0D else { return nil }
+        var start = 0
+        ns.getParagraphStart(&start, end: nil, contentsEnd: nil,
+                             for: NSRange(location: ns.length - 1, length: 0))
+        guard range.location == start else { return nil }
+        for index in range.location..<ns.length
+        where Self.isPageBreakSentinel(at: index, in: storage) {
+            return nil
+        }
+        var marked = false
+        let paragraph = NSRange(location: start, length: ns.length - start)
+        storage.enumerateAttribute(.lucernePageBreakMarker, in: paragraph,
+                                   options: []) { value, _, stop in
+            if value is String { marked = true; stop.pointee = true }
+        }
+        if !marked {
+            storage.enumerateAttribute(.lucernePageBreakBefore, in: paragraph,
+                                       options: []) { value, _, stop in
+                if (value as? Bool) == true { marked = true; stop.pointee = true }
+            }
+        }
+        guard marked else { return nil }
+        var carrier = storage.attributes(at: start, effectiveRange: nil)
+        carrier[.lucernePageBreakSentinel] = true
+        carrier[.lucernePageBreakBefore] = true
+        for key in [NSAttributedString.Key.lucerneTrailingParagraphID,
+                    .lucerneTrailingStyleRole, .lucerneTrailingParagraphStyle,
+                    .lucerneTrailingList] {
+            carrier.removeValue(forKey: key)
+        }
+        return carrier
     }
 
     // Return behaviour, in priority order:
@@ -208,7 +594,13 @@ public final class PageTextView: NSTextView {
         }
         let selection = selectedRange()
         let destination: [NSAttributedString.Key: Any]
-        if selection.length > 0, let storage = textStorage,
+        if let storage = textStorage,
+           let carrier = PasteNormalizer.pageBreakSentinelRange(touching: selection,
+                                                                in: storage) {
+            // Pasting into the trailing empty break paragraph takes its structure
+            // from the sentinel carrier itself, not from transient typing state.
+            destination = storage.attributes(at: carrier.location, effectiveRange: nil)
+        } else if selection.length > 0, let storage = textStorage,
            selection.location < storage.length {
             destination = storage.attributes(at: selection.location, effectiveRange: nil)
         } else {
