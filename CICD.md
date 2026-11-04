@@ -18,9 +18,12 @@ AppKit), and the release workflow assembles an unsigned, ad-hoc-codesigned
 Runs **Build & test** on `macos-14`: selects a recent Xcode, prints the Swift version,
 then `swift build -v` and `swift test -v`. It then runs `Scripts/GenerateIcons.swift`
 (asserting the two `.icns` files it should produce exist) and assembles the app bundle
-with `Scripts/make-app.sh`, asserting the built `dist/Lucerne.app` contains its
-executable, `Info.plist`, `Lucerne.sdef`, and the app/document icons — so bundle
-breakage surfaces in the gated CI run, not first at release time.
+with `Scripts/make-app.sh --strict` (which fails on any missing input or bundled
+resource and self-verifies after signing), then re-checks the result with
+`Scripts/verify-app.sh dist/Lucerne.app` — asserting the bundle's executable,
+`Info.plist` values, `Lucerne.sdef` (parsed as XML), icons, SwiftPM resource bundle,
+and ad-hoc signature — so bundle breakage surfaces in the gated CI run, not first at
+release time.
 
 > CI assembles the bundle with `Scripts/make-app.sh` — the same assembler
 > `release.yml` uses (below); local developers use `Scripts/build.sh`, which wraps it
@@ -55,15 +58,19 @@ green.
 
 It produces:
 
-- An **unsigned** `Lucerne.app` assembled by `Scripts/make-app.sh` (`swift build -c
-  release` → `dist/Lucerne.app`), with `CFBundleShortVersionString` **stamped from the
-  tag** (so the released app's version always matches the tag, regardless of the
-  committed plist).
+- An **unsigned** `Lucerne.app` assembled by `Scripts/make-app.sh --strict` (`swift
+  build -c release` → `dist/Lucerne.app`), with `CFBundleShortVersionString` **stamped
+  from the tag** (so the released app's version always matches the tag, regardless of
+  the committed plist).
 - The app is **ad-hoc codesigned** (`codesign --force --deep --sign -`, done inside
   `make-app.sh`). This is not a Developer ID signature and the app is not notarized — it
   is only required so the app can launch on Apple Silicon.
-- A `Lucerne-<version>.zip` (via `ditto`) and a `Lucerne-<version>.dmg` (via
-  `create-dmg`).
+- A `Lucerne-<version>-macos-<arch>.zip` (via `ditto`) and a
+  `Lucerne-<version>-macos-<arch>.dmg` (via `create-dmg`), where `<arch>` is `arm64`,
+  `x86_64`, or `universal` as reported by `lipo` on the built binary. Both are verified
+  before upload: the zip via `unzip -tq` plus `verify-app.sh` on the unzipped app, and
+  the DMG via `hdiutil verify` plus `verify-app.sh` and an `/Applications` symlink
+  check on the mounted image.
 
 Both files are attached to a GitHub Release (named `Lucerne <version>`, with
 auto-generated notes) via `softprops/action-gh-release`. The release body explains that,
