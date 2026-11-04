@@ -48,6 +48,38 @@ final class TextBridgeIntentTests: XCTestCase {
         XCTAssertEqual(restored[1].id, "trailer-1", "the trailing id must not churn")
     }
 
+    func testTrailingEmptyParagraphKeepsParagraphOverrides() throws {
+        let trailing = Paragraph(
+            id: "trailer-2",
+            style: "body",
+            align: "center",
+            indent: IndentModel(left: 24, right: 12, firstLine: 6),
+            tabStops: [TabStopModel(pos: 144, type: "right")],
+            lineSpacing: 1.5,
+            spaceBefore: 8,
+            spaceAfter: 10,
+            cell: TableCellModel(table: "table-1", row: 0, column: 0, width: 72),
+            runs: [Run(text: "")]
+        )
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "p1", style: "body", runs: [Run(text: "Hello")]),
+                trailing
+            ],
+            objects: [])
+
+        let restored = try XCTUnwrap(roundTrip(model).last)
+
+        XCTAssertEqual(restored.align, trailing.align)
+        XCTAssertEqual(restored.indent, trailing.indent)
+        XCTAssertEqual(restored.tabStops, trailing.tabStops)
+        XCTAssertEqual(restored.lineSpacing, trailing.lineSpacing)
+        XCTAssertEqual(restored.spaceBefore, trailing.spaceBefore)
+        XCTAssertEqual(restored.spaceAfter, trailing.spaceAfter)
+        XCTAssertEqual(restored.cell, trailing.cell)
+    }
+
     // 1.37 — bold+italic on a real family must resolve to a face with *both* traits,
     // and survive the bridge round-trip as run overrides.
     func testBoldItalicResolvesAndRoundTrips() {

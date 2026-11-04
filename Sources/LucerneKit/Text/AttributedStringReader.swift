@@ -39,17 +39,21 @@ public enum AttributedStringReader {
         if last == 0x0A || last == 0x0D {
             if let trailingRole = attr.attribute(.lucerneTrailingStyleRole,
                                                  at: length - 1, effectiveRange: nil) as? String {
-                // The builder stamped the trailing empty paragraph's own identity on
-                // the terminator. Take role + id from it and paragraph fields from the
-                // role's definition — the newline's paragraph style belongs to the
-                // *preceding* paragraph, so we must not read overrides off it (1.8).
-                var trailing = emptyParagraph(role: trailingRole)
+                // The builder stamped inert copies of the trailing empty paragraph's
+                // identity and style on the terminator. Its normal paragraphStyle
+                // belongs to the preceding paragraph and must not be read here.
+                let ps = attr.attribute(.lucerneTrailingParagraphStyle,
+                                        at: length - 1, effectiveRange: nil) as? NSParagraphStyle
+                var trailing = emptyParagraph(role: trailingRole, paragraphStyle: ps,
+                                              styleDef: model.resolved(trailingRole))
                 if let id = attr.attribute(.lucerneTrailingParagraphID,
                                            at: length - 1, effectiveRange: nil) as? String {
                     trailing.id = id
                 }
+                trailing.cell = tableCell(from: ps, tableIDs: &tableIDs)
                 trailing.list = ListItemCodec.decode(attr.attribute(.lucerneTrailingList,
                                                                      at: length - 1, effectiveRange: nil))
+                stripDerivedListIndent(&trailing)
                 paragraphs.append(trailing)
             } else {
                 // Fallback (storage without the trailing keys): inherit the final

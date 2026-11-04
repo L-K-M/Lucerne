@@ -56,6 +56,38 @@ final class TextBridgeRoundTripTests: XCTestCase {
         let restored = AttributedStringReader.paragraphs(from: attributed, styles: model.styles)
         XCTAssertEqual(restored[0].align, "center")
     }
+
+    func testFormattingTrailingEmptyParagraphSurvivesSnapshot() throws {
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "p1", style: "body", runs: [Run(text: "Hello")]),
+                Paragraph(id: "p2", style: "body",
+                          indent: IndentModel(left: 18, right: 9, firstLine: 3),
+                          lineSpacing: 1.25, spaceAfter: 7,
+                          runs: [Run(text: "")])
+            ],
+            objects: [])
+        let editor = EditorController(model: model)
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        textView.setSelectedRange(NSRange(location: editor.textStorage.length, length: 0))
+        editor.textViewBecameActive(textView)
+        let activeStyle = try XCTUnwrap(
+            textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+        XCTAssertEqual(activeStyle.headIndent, 18)
+        XCTAssertEqual(activeStyle.tailIndent, -9)
+
+        editor.setAlignment(.center)
+        editor.setTabStops([NSTextTab(textAlignment: .right, location: 144)])
+
+        let trailing = try XCTUnwrap(editor.snapshotModel().body.last)
+        XCTAssertEqual(trailing.align, "center")
+        XCTAssertEqual(trailing.tabStops, [TabStopModel(pos: 144, type: "right")])
+        XCTAssertEqual(trailing.indent, IndentModel(left: 18, right: 9, firstLine: 3))
+        XCTAssertEqual(trailing.lineSpacing, 1.25)
+        XCTAssertEqual(trailing.spaceAfter, 7)
+    }
 }
 
 final class MiniZipTests: XCTestCase {

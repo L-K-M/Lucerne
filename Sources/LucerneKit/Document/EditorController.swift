@@ -755,6 +755,16 @@ public final class EditorController: NSObject {
                     ps.tabStops = tabs
                     storage.addAttribute(.paragraphStyle, value: ps, range: sub)
                 }
+                let terminator = storage.length - 1
+                if let value = storage.attribute(.lucerneTrailingParagraphStyle,
+                                                 at: terminator,
+                                                 effectiveRange: nil) as? NSParagraphStyle {
+                    let ps = value.mutableCopy() as? NSMutableParagraphStyle
+                        ?? NSMutableParagraphStyle()
+                    ps.tabStops = tabs
+                    storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps,
+                                         range: NSRange(location: terminator, length: 1))
+                }
                 storage.endEditing()
             }
         }
@@ -781,9 +791,18 @@ public final class EditorController: NSObject {
         // the typing paragraph style so the next typed character adopts it.
         let caret = tv.selectedRange()
         if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
-            let ps = (tv.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
-            transform(ps)
-            tv.typingAttributes[.paragraphStyle] = ps
+            let stored = storage.attribute(.lucerneTrailingParagraphStyle,
+                                           at: storage.length - 1,
+                                           effectiveRange: nil) as? NSParagraphStyle
+            let base = stored ?? (tv.typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+            let ps = base?.mutableCopy() as? NSMutableParagraphStyle
+                ?? NSMutableParagraphStyle()
+            withUndo(name) {
+                transform(ps)
+                tv.typingAttributes[.paragraphStyle] = ps
+                storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps,
+                                     range: NSRange(location: storage.length - 1, length: 1))
+            }
             return
         }
 
@@ -867,18 +886,44 @@ public final class EditorController: NSObject {
         // from the stale trailing role and the restyle is silently lost.
         let caret = tv.selectedRange()
         if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
-            let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
-            let list = ListItemCodec.decode(tv.typingAttributes[.lucerneList])
+            let term = NSRange(location: storage.length - 1, length: 1)
+            let oldRole = (storage.attribute(.lucerneTrailingStyleRole,
+                                             at: term.location,
+                                             effectiveRange: nil) as? String)
+                ?? (tv.typingAttributes[.lucerneStyleRole] as? String)
+                ?? LucerneDocumentModel.defaultStyleRole
+            let id = (storage.attribute(.lucerneTrailingParagraphID,
+                                        at: term.location,
+                                        effectiveRange: nil) as? String)
+                ?? (tv.typingAttributes[.lucerneParagraphID] as? String)
+                ?? IDGenerator.next("p")
+            let encodedList = storage.attribute(.lucerneTrailingList,
+                                                at: term.location,
+                                                effectiveRange: nil)
+            let list = ListItemCodec.decode(encodedList)
             withUndo("Apply Style") {
-                let oldRole = (tv.typingAttributes[.lucerneStyleRole] as? String)
-                    ?? LucerneDocumentModel.defaultStyleRole
                 var current = AttributedStringBuilder.typingAttributes(
                     role: oldRole, in: model, paragraphID: id, list: list)
                 for (key, value) in tv.typingAttributes { current[key] = value }
+                current[.lucerneStyleRole] = oldRole
+                current[.lucerneParagraphID] = id
+                if let ps = storage.attribute(.lucerneTrailingParagraphStyle,
+                                              at: term.location,
+                                              effectiveRange: nil) as? NSParagraphStyle {
+                    current[.paragraphStyle] = ps
+                }
+                if let encodedList {
+                    current[.lucerneList] = encodedList
+                } else {
+                    current.removeValue(forKey: .lucerneList)
+                }
                 tv.typingAttributes = Self.restyledTypingAttributes(current, role: role, in: model)
-                let term = NSRange(location: storage.length - 1, length: 1)
                 storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
                 storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
+                if let ps = tv.typingAttributes[.paragraphStyle] as? NSParagraphStyle {
+                    storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps,
+                                         range: term)
+                }
                 if let list, let encoded = ListItemCodec.encode(list) {
                     storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
                 } else {
@@ -933,7 +978,8 @@ public final class EditorController: NSObject {
         let oldBlocks = (source.attribute(.paragraphStyle, at: probe,
                                           effectiveRange: nil) as? NSParagraphStyle)?.textBlocks ?? []
         let trailingKeys: [NSAttributedString.Key] = [
-            .lucerneTrailingParagraphID, .lucerneTrailingStyleRole, .lucerneTrailingList,
+            .lucerneTrailingParagraphID, .lucerneTrailingStyleRole,
+            .lucerneTrailingParagraphStyle, .lucerneTrailingList,
         ]
         var trailingValues: [NSAttributedString.Key: Any] = [:]
         for key in trailingKeys {
@@ -1117,6 +1163,10 @@ public final class EditorController: NSObject {
                 storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
                 storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
                 storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
+                if let ps = attrs[.paragraphStyle] as? NSParagraphStyle {
+                    storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps,
+                                         range: term)
+                }
             }
             storage.endEditing()
             tv.typingAttributes = attrs
@@ -1244,15 +1294,46 @@ public final class EditorController: NSObject {
 
         let caret = tv.selectedRange()
         if caret.length == 0, ns.paragraphRange(for: caret).length == 0 {
-            let role = (tv.typingAttributes[.lucerneStyleRole] as? String) ?? LucerneDocumentModel.defaultStyleRole
-            let id = (tv.typingAttributes[.lucerneParagraphID] as? String) ?? IDGenerator.next("p")
-            let updated = transform(ListItemCodec.decode(tv.typingAttributes[.lucerneList]))
+            let term = NSRange(location: storage.length - 1, length: 1)
+            let role = (storage.attribute(.lucerneTrailingStyleRole,
+                                          at: term.location,
+                                          effectiveRange: nil) as? String)
+                ?? (tv.typingAttributes[.lucerneStyleRole] as? String)
+                ?? LucerneDocumentModel.defaultStyleRole
+            let id = (storage.attribute(.lucerneTrailingParagraphID,
+                                        at: term.location,
+                                        effectiveRange: nil) as? String)
+                ?? (tv.typingAttributes[.lucerneParagraphID] as? String)
+                ?? IDGenerator.next("p")
+            let current = ListItemCodec.decode(storage.attribute(
+                .lucerneTrailingList, at: term.location, effectiveRange: nil))
+            let updated = transform(current)
             withUndo(name) {
-                tv.typingAttributes = AttributedStringBuilder.typingAttributes(
+                var attrs = AttributedStringBuilder.typingAttributes(
                     role: role, in: model, paragraphID: id, list: updated)
-                let term = NSRange(location: storage.length - 1, length: 1)
+                if let value = storage.attribute(.lucerneTrailingParagraphStyle,
+                                                 at: term.location,
+                                                 effectiveRange: nil) as? NSParagraphStyle,
+                   let ps = value.mutableCopy() as? NSMutableParagraphStyle {
+                    if let updated {
+                        AttributedStringBuilder.applyListIndent(to: ps,
+                                                               level: updated.level)
+                    } else {
+                        let style = model.resolvedStyle(for: role)
+                        let left = CGFloat(style.leftIndent ?? 0)
+                        ps.headIndent = left
+                        ps.firstLineHeadIndent = left
+                            + CGFloat(style.firstLineIndent ?? 0)
+                    }
+                    attrs[.paragraphStyle] = ps
+                }
+                tv.typingAttributes = attrs
                 storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
                 storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: term)
+                if let ps = attrs[.paragraphStyle] as? NSParagraphStyle {
+                    storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps,
+                                         range: term)
+                }
                 if let updated, let encoded = ListItemCodec.encode(updated) {
                     storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
                 } else {
@@ -1388,6 +1469,11 @@ public final class EditorController: NSObject {
                 ?? LucerneDocumentModel.defaultStyleRole
             storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
             storage.addAttribute(.lucerneTrailingParagraphID, value: IDGenerator.next("p"), range: term)
+            if let ps = storage.attribute(.paragraphStyle, at: ns.length - 1,
+                                          effectiveRange: nil) as? NSParagraphStyle {
+                storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps,
+                                     range: term)
+            }
             if let encoded = storage.attribute(.lucerneList, at: ns.length - 1, effectiveRange: nil) as? String {
                 storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
             }
@@ -1493,6 +1579,10 @@ public final class EditorController: NSObject {
                                  range: NSRange(location: caret - 1, length: 1))
             storage.addAttribute(.lucerneTrailingParagraphID, value: newID,
                                  range: NSRange(location: caret - 1, length: 1))
+            if let ps = attrs[.paragraphStyle] as? NSParagraphStyle {
+                storage.addAttribute(.lucerneTrailingParagraphStyle, value: ps,
+                                     range: NSRange(location: caret - 1, length: 1))
+            }
         }
         storage.endEditing()
         tv.typingAttributes = attrs
@@ -2375,12 +2465,43 @@ public final class EditorController: NSObject {
 
     func textViewBecameActive(_ textView: PageTextView) {
         activeTextView = textView
+        syncTrailingTypingAttributes(in: textView)
         deselectAllImages()
     }
 
     func activeSelectionChanged(in textView: PageTextView) {
         activeTextView = textView
+        syncTrailingTypingAttributes(in: textView)
         selectionObserver?(self)
+    }
+
+    /// TextKit derives typing attributes at the end of a newline-terminated storage
+    /// from that newline, but it belongs to the preceding paragraph. Restore the
+    /// trailing empty paragraph's inert metadata whenever its caret becomes active.
+    private func syncTrailingTypingAttributes(in textView: PageTextView) {
+        guard let storage = textView.textStorage, storage.length > 0 else { return }
+        let selection = textView.selectedRange()
+        guard selection.length == 0,
+              (storage.string as NSString).paragraphRange(for: selection).length == 0 else { return }
+
+        let terminator = storage.length - 1
+        guard let role = storage.attribute(.lucerneTrailingStyleRole,
+                                           at: terminator,
+                                           effectiveRange: nil) as? String else { return }
+        let id = (storage.attribute(.lucerneTrailingParagraphID,
+                                    at: terminator,
+                                    effectiveRange: nil) as? String) ?? IDGenerator.next("p")
+        let list = ListItemCodec.decode(storage.attribute(.lucerneTrailingList,
+                                                          at: terminator,
+                                                          effectiveRange: nil))
+        var attrs = AttributedStringBuilder.typingAttributes(
+            role: role, in: model, paragraphID: id, list: list)
+        if let ps = storage.attribute(.lucerneTrailingParagraphStyle,
+                                      at: terminator,
+                                      effectiveRange: nil) as? NSParagraphStyle {
+            attrs[.paragraphStyle] = ps
+        }
+        textView.typingAttributes = attrs
     }
 
     /// Called when the selection or active formatting changes (for toolbar/ruler sync).
