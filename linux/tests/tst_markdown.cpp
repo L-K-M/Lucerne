@@ -7,6 +7,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 using namespace lucerne;
 
 namespace {
@@ -139,6 +141,49 @@ private slots:
         model.body.append(item("l3", "Second", true, "upper-roman", 0));
         QCOMPARE(MarkdownExporter::exportModel(model),
                  QStringLiteral("1. First\n    - Nested\n2. Second\n"));
+    }
+
+    void tableCellsKeepAllParagraphs() {
+        DocumentModel model = base();
+        for (const QString &text : {QStringLiteral("first|part"), QString(),
+                                   QStringLiteral("last")}) {
+            Paragraph p = para(QStringLiteral("p%1").arg(model.body.size()), "body", text);
+            TableCellModel cell;
+            cell.table = "t";
+            p.cell = cell;
+            model.body.append(p);
+        }
+
+        QCOMPARE(MarkdownExporter::exportModel(model),
+                 QStringLiteral("| first\\|part<br><br>last |\n| --- |\n"));
+    }
+
+    void unsafeTableGridsKeepTheText() {
+        DocumentModel model = base();
+        Paragraph first = para("p1", "body", "first");
+        TableCellModel cell;
+        cell.table = "t";
+        first.cell = cell;
+        Paragraph last = para("p2", "body", "last");
+        cell.row = 999;
+        cell.column = 999;
+        last.cell = cell;
+        model.body = {first, last};
+
+        const QString fallback = QStringLiteral("first\n\nlast\n");
+        QVERIFY(MarkdownExporter::exportModel(model) == fallback);
+
+        model.body[1].cell->row = -1;
+        model.body[1].cell->column = 0;
+        QVERIFY(MarkdownExporter::exportModel(model) == fallback);
+
+        model.body[1].cell->row = 0;
+        model.body[1].cell->rowSpan = 0;
+        QVERIFY(MarkdownExporter::exportModel(model) == fallback);
+
+        model.body[1].cell->row = std::numeric_limits<int>::max();
+        model.body[1].cell->rowSpan = std::numeric_limits<int>::max();
+        QVERIFY(MarkdownExporter::exportModel(model) == fallback);
     }
 
     void tableBecomesGFMPipeTable() {
