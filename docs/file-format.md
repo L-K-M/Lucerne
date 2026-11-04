@@ -118,6 +118,12 @@ top-left, y increasing downward**.
 - **Defaults on read.** `type` ("image"), `anchor` ("page"), `wrap`
   ("rectangular"), `standoff` (12), and `z` (0) are filled in if absent, so
   hand-edited or older files still load.
+- **Hostile geometry is rejected at decode.** Page size and margins, object
+  frames and standoffs, and table-cell coordinates must lie inside bounded
+  ranges (page `<= 100000` pt; `|frame.x|`, `|frame.y|`, `frame.width`,
+  `frame.height`, `standoff` `<= 100000` pt; cell `row + rowSpan` and
+  `column + columnSpan` `<= 1000`). A file violating them fails to open rather
+  than being repaired. Exact rules: spec §4.2, §6.7, §7.2.
 - **Optional `header` / `footer`.** Two top-level objects with three string zones
   (`left`/`center`/`right`) drawn in the page margins; each zone may contain the
   tokens `{page}`, `{pages}`, `{date}`, `{title}`. Additive and presentational —

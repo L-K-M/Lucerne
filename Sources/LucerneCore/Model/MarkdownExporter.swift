@@ -112,19 +112,25 @@ public enum MarkdownExporter {
     /// Cells are placed row-major by their `(row, column)`; the grid dimensions are
     /// *derived* from the cells (spec §6.7 — the table stores no explicit counts).
     private static func tableBlock(for cells: [Paragraph], model: LucerneDocumentModel) -> String {
+        // Overflow-safe extents: decode-time validation already bounds sane
+        // files, but export must never trap or allocate an absurd grid even
+        // if a hostile model reaches it by another path.
         var columnCount = 0
         var rowCount = 0
         for paragraph in cells {
             guard let cell = paragraph.cell else { continue }
-            columnCount = max(columnCount, cell.column + max(cell.columnSpan, 1))
-            rowCount = max(rowCount, cell.row + max(cell.rowSpan, 1))
+            let columnEnd = cell.column.addingReportingOverflow(max(cell.columnSpan, 1))
+            let rowEnd = cell.row.addingReportingOverflow(max(cell.rowSpan, 1))
+            guard !columnEnd.overflow, !rowEnd.overflow else { return plainBlocks(cells, model: model) }
+            columnCount = max(columnCount, columnEnd.partialValue)
+            rowCount = max(rowCount, rowEnd.partialValue)
+        }
+        guard columnCount <= TableGeometry.maximumExtent, rowCount <= TableGeometry.maximumExtent else {
+            return plainBlocks(cells, model: model)
         }
         // Degenerate (no positive extent) — fall back to plain paragraph blocks.
         guard columnCount > 0, rowCount > 0 else {
-            return cells.map {
-                block(inline: inlineMarkdown(for: $0),
-                      markdownRole: model.resolvedStyle(for: $0.style).markdown)
-            }.joined(separator: "\n\n")
+            return plainBlocks(cells, model: model)
         }
 
         // Row-major grid; a spanning cell's text lands in its origin position and
@@ -151,6 +157,14 @@ public enum MarkdownExporter {
 
     private static func rowLine(_ cellsText: [String]) -> String {
         "| " + cellsText.joined(separator: " | ") + " |"
+    }
+
+    /// Fallback when no sane GFM grid can be derived: the cells as plain blocks.
+    private static func plainBlocks(_ cells: [Paragraph], model: LucerneDocumentModel) -> String {
+        cells.map {
+            block(inline: inlineMarkdown(for: $0),
+                  markdownRole: model.resolvedStyle(for: $0.style).markdown)
+        }.joined(separator: "\n\n")
     }
 
     /// A cell's inline text (emphasis only — cells are an inline context, so block

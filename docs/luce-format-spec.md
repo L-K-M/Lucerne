@@ -158,6 +158,13 @@ token rather than render a partial string. This is presentational and additive.
 - The **text area** (text container) has size
   `(width − margins.left − margins.right) × (height − margins.top − margins.bottom)`
   and is identical on every page.
+- Validity bounds, enforced when `document.json` is decoded (before any
+  layout): `width` and `height` **MUST** be finite, `> 0`, and `<= 100000`
+  points; each margin **MUST** be finite and `>= 0`; `margins.left +
+  margins.right` **MUST** be `< width` and `margins.top + margins.bottom`
+  **MUST** be `< height`. A reader **MUST** reject a document whose `page`
+  violates these bounds — they keep the derived text area finite and
+  positive and cap the size of layout arithmetic.
 
 ## 5. `styles` — named paragraph-style roles (decision D3)
 
@@ -311,6 +318,14 @@ order. A reader that does not implement tables **MUST** still render each cell
 paragraph's text as an ordinary paragraph (losing only the grid layout), per the
 "ignore what you don't understand" rule (§3).
 
+Cell coordinates are bounded so a crafted file cannot overflow or exhaust
+memory during grid derivation; these are enforced when `document.json` is
+decoded (before any layout): `row` and `column` **MUST** be in `0`–`999`,
+`rowSpan` and `columnSpan` **MUST** be `>= 1`, and `row + rowSpan` and
+`column + columnSpan` **MUST** each be `<= 1000`, evaluated without integer
+overflow. A reader **MUST** reject a document whose cells violate these
+bounds.
+
 ### 6.8 List items
 
 A paragraph **MAY** be a list item by carrying a `list` object. List membership is
@@ -374,12 +389,12 @@ type; readers **MUST** ignore objects whose `type` they do not understand.
 | `type` | string | optional | `"image"` | Object kind. |
 | `src` | string | optional | — | Archive-relative path of the payload, e.g. `"images/lake.png"`. REQUIRED for images. |
 | `anchor` | string | optional | `"page"` | `"page"` (free placement) or `"paragraph"` (moves with text). |
-| `page` | integer | conditional | — | Zero-based page index. **REQUIRED when `anchor == "page"`.** |
-| `frame` | object | conditional | — | `{ "x", "y", "width", "height" }` (points, page-relative). **REQUIRED when `anchor == "page"`.** |
+| `page` | integer | conditional | — | Zero-based page index. **REQUIRED when `anchor == "page"`.** MUST be in `0`–`1999` (§7.2). |
+| `frame` | object | conditional | — | `{ "x", "y", "width", "height" }` (points, page-relative). **REQUIRED when `anchor == "page"`.** Value bounds in §7.2. |
 | `anchorParagraph` | string | conditional | — | A paragraph `id`. **REQUIRED when `anchor == "paragraph"`.** |
 | `offset` | object | optional | `{0,0}` | `{ "x", "y" }` offset from the anchor paragraph, points. Used when `anchor == "paragraph"`. |
 | `wrap` | string | optional | `"rectangular"` | `"none"`, `"rectangular"`, or `"irregular"`. |
-| `standoff` | number | optional | `12` | Gutter between the object box and wrapped text, points. |
+| `standoff` | number | optional | `12` | Gutter between the object box and wrapped text, points. Value bounds in §7.2. |
 | `z` | integer | optional | `0` | Stacking order; higher draws in front. |
 
 ### 7.1 Image payloads
@@ -411,6 +426,16 @@ overlays the text without affecting layout.
 How a reader handles a side gap too narrow to hold text, or an object overhanging a
 page edge, is **implementation-defined** (the reference reader suppresses unusably
 narrow wrap columns and clips overhang to the page).
+
+Geometry bounds, enforced when `document.json` is decoded (before any layout)
+and applied to every object whatever its `anchor`: a `frame`, when present,
+**MUST** have finite `x` and `y` whose absolute values are at most `100000`
+points and finite `width` and `height` in `0`–`100000` points (a zero-size
+frame is valid); `standoff` **MUST** be finite and in `0`–`100000` points; and
+for `anchor == "page"`, a present `page` **MUST** be in `0`–`1999`. A reader
+**MUST** reject a document whose objects violate these bounds — the
+standoff-expanded exclusion rectangle and downstream layout arithmetic must
+stay finite and small.
 
 ## 8. `content.md` — derived Markdown (the escape hatch)
 
@@ -506,8 +531,9 @@ not change `formatVersion`.
 
 - A **conformant reader** MUST: open the ZIP container (§2), parse `document.json`
   (§3) including the inheritance/default/list rules (§5–§7), honor authoritative page
-  dimensions (§4.2), support STORED entries (§2.2), tolerate unknown
-  members/entries/object types, and never treat `content.md` as authoritative.
+  dimensions (§4.2), reject documents whose page/object/table-cell geometry exceeds
+  the decode-time bounds (§4.2, §6.7, §7.2), support STORED entries (§2.2), tolerate
+  unknown members/entries/object types, and never treat `content.md` as authoritative.
 - A **conformant writer** MUST: produce a valid ZIP containing a root
   `document.json` that satisfies the schema in Appendix A, include the image
   payloads it references, and set `format`/`formatVersion` correctly. It SHOULD
@@ -521,8 +547,10 @@ A JSON Schema (draft 2020-12) capturing §3–§7. Unknown members are permitted
 forward compatibility, so this validates structure, not the absence of extensions.
 The `if/then` rules below enforce the `page`/`frame` and `anchorParagraph`
 requirements only when `anchor` is stated explicitly; when `anchor` is omitted it
-defaults to `"page"` and §7's requirement of `page`+`frame` still applies (the
-prose in §7 is authoritative over the schema here).
+defaults to `"page"` and §7's requirements (including the `page` range) still
+apply (the prose in §7 is authoritative over the schema here). The cross-member
+bounds — the margin sums of §4.2 and the `row + rowSpan` / `column + columnSpan`
+limits of §6.7 — cannot be expressed in JSON Schema and remain prose-only.
 
 ```json
 {
@@ -559,8 +587,8 @@ prose in §7 is authoritative over the schema here).
       "required": ["size", "width", "height", "margins"],
       "properties": {
         "size": { "type": "string" },
-        "width": { "type": "number", "exclusiveMinimum": 0 },
-        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 100000 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 100000 },
         "margins": { "$ref": "#/$defs/edgeInsets" },
         "foldMarks": { "type": "boolean" }
       }
@@ -569,8 +597,8 @@ prose in §7 is authoritative over the schema here).
       "type": "object",
       "required": ["top", "left", "bottom", "right"],
       "properties": {
-        "top": { "type": "number" }, "left": { "type": "number" },
-        "bottom": { "type": "number" }, "right": { "type": "number" }
+        "top": { "type": "number", "minimum": 0 }, "left": { "type": "number", "minimum": 0 },
+        "bottom": { "type": "number", "minimum": 0 }, "right": { "type": "number", "minimum": 0 }
       }
     },
     "style": {
@@ -618,10 +646,10 @@ prose in §7 is authoritative over the schema here).
       "required": ["table", "row", "column"],
       "properties": {
         "table": { "type": "string", "minLength": 1 },
-        "row": { "type": "integer", "minimum": 0 },
-        "column": { "type": "integer", "minimum": 0 },
-        "rowSpan": { "type": "integer", "minimum": 1 },
-        "columnSpan": { "type": "integer", "minimum": 1 },
+        "row": { "type": "integer", "minimum": 0, "exclusiveMaximum": 1000 },
+        "column": { "type": "integer", "minimum": 0, "exclusiveMaximum": 1000 },
+        "rowSpan": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "columnSpan": { "type": "integer", "minimum": 1, "maximum": 1000 },
         "width": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
@@ -694,14 +722,15 @@ prose in §7 is authoritative over the schema here).
         "anchorParagraph": { "type": "string" },
         "offset": { "$ref": "#/$defs/point" },
         "wrap": { "enum": ["none", "rectangular", "irregular"] },
-        "standoff": { "type": "number", "minimum": 0 },
+        "standoff": { "type": "number", "minimum": 0, "maximum": 100000 },
         "z": { "type": "integer" }
       },
       "allOf": [
         {
           "if": { "properties": { "anchor": { "const": "page" } },
                   "required": ["anchor"] },
-          "then": { "required": ["page", "frame"] }
+          "then": { "required": ["page", "frame"],
+                    "properties": { "page": { "maximum": 1999 } } }
         },
         {
           "if": { "properties": { "anchor": { "const": "paragraph" } },
@@ -714,8 +743,10 @@ prose in §7 is authoritative over the schema here).
       "type": "object",
       "required": ["x", "y", "width", "height"],
       "properties": {
-        "x": { "type": "number" }, "y": { "type": "number" },
-        "width": { "type": "number" }, "height": { "type": "number" }
+        "x": { "type": "number", "minimum": -100000, "maximum": 100000 },
+        "y": { "type": "number", "minimum": -100000, "maximum": 100000 },
+        "width": { "type": "number", "minimum": 0, "maximum": 100000 },
+        "height": { "type": "number", "minimum": 0, "maximum": 100000 }
       }
     },
     "point": {
