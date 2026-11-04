@@ -9,8 +9,14 @@ import AppKit
 public extension NSAttributedString.Key {
     static let lucerneStyleRole = NSAttributedString.Key("ch.lkmc.lucerne.styleRole")
     static let lucerneParagraphID = NSAttributedString.Key("ch.lkmc.lucerne.paragraphID")
-    /// Marks the first character of a paragraph that must start on a new page.
+    /// Marks a paragraph that must start on a new page. Current storage stamps its
+    /// complete attributed range; older storage may mark only the first character.
     static let lucernePageBreakBefore = NSAttributedString.Key("ch.lkmc.lucerne.pageBreakBefore")
+    /// Backs up a forced break on the final paragraph. That paragraph has no
+    /// terminator of its own, so deleting all of its text would otherwise delete
+    /// the last carrier of `.lucernePageBreakBefore`.
+    static let lucerneTrailingPageBreakBefore = NSAttributedString.Key(
+        "ch.lkmc.lucerne.trailingPageBreakBefore")
     /// The *requested* font identity (family + bold/italic), stashed when the font
     /// system had to substitute (a missing family, or a trait it couldn't add).
     /// Encoded by `FontIntent`. Inert for display; the reader persists it in place

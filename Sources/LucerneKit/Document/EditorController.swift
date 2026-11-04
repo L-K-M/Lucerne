@@ -232,6 +232,18 @@ public final class EditorController: NSObject {
             guardCount += 1
             _ = layoutManager.glyphRange(for: pages[pages.count - 1].container)  // force layout
 
+            if breaks.contains(textStorage.length),
+               let trailing = breakPageAndLineTop(forCharAt: textStorage.length),
+               trailing.top > 0.5, trailing.page == pages.count - 1,
+               pages.count < maxPages {
+                // A final empty paragraph is represented by TextKit's extra line
+                // fragment, not a glyph. Give it somewhere to flow before the break
+                // band excludes the remainder of its current page. TextKit container
+                // coordinates increase downward here, so a positive y means the
+                // fragment is below the page top; a zero rect is not actionable.
+                addPage()
+                continue
+            }
             if overflowsLastContainer(), pages.count < maxPages {
                 addPage()
                 continue
@@ -259,16 +271,47 @@ public final class EditorController: NSObject {
 
     private func pageBreakCharIndices() -> [Int] {
         guard textStorage.length > 0 else { return [] }
+        let ns = textStorage.string as NSString
         var result: [Int] = []
-        textStorage.enumerateAttribute(.lucernePageBreakBefore,
-                                       in: NSRange(location: 0, length: textStorage.length),
-                                       options: []) { value, range, _ in
-            if (value as? Bool) == true { result.append(range.location) }
+        var location = 0
+        while location < ns.length {
+            var start = 0, end = 0, contentsEnd = 0
+            ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                 for: NSRange(location: location, length: 0))
+            var hasBreak = false
+            // The marker spans the paragraph so deleting or inserting at its start
+            // cannot erase it. Scan the full range to find a surviving carrier.
+            textStorage.enumerateAttribute(
+                .lucernePageBreakBefore,
+                in: NSRange(location: start, length: end - start), options: []
+            ) { value, _, stop in
+                if (value as? Bool) == true {
+                    hasBreak = true
+                    stop.pointee = true
+                }
+            }
+            if hasBreak { result.append(start) }
+            if end == location { break }
+            location = end
+        }
+        let finalCharacter = ns.character(at: ns.length - 1)
+        if (finalCharacter == 0x0A || finalCharacter == 0x0D),
+           (textStorage.attribute(.lucerneTrailingPageBreakBefore,
+                                  at: ns.length - 1,
+                                  effectiveRange: nil) as? Bool) == true {
+            result.append(ns.length)
         }
         return result
     }
 
     private func breakPageAndLineTop(forCharAt charIndex: Int) -> (page: Int, top: CGFloat)? {
+        if charIndex == textStorage.length {
+            guard let container = layoutManager.extraLineFragmentTextContainer,
+                  let page = pages.firstIndex(where: { $0.container === container }) else {
+                return nil
+            }
+            return (page, layoutManager.extraLineFragmentRect.minY)
+        }
         guard charIndex < textStorage.length else { return nil }
         let glyph = layoutManager.glyphIndexForCharacter(at: charIndex)
         guard let container = layoutManager.textContainer(forGlyphAt: glyph, effectiveRange: nil),
@@ -933,7 +976,8 @@ public final class EditorController: NSObject {
         let oldBlocks = (source.attribute(.paragraphStyle, at: probe,
                                           effectiveRange: nil) as? NSParagraphStyle)?.textBlocks ?? []
         let trailingKeys: [NSAttributedString.Key] = [
-            .lucerneTrailingParagraphID, .lucerneTrailingStyleRole, .lucerneTrailingList,
+            .lucerneTrailingParagraphID, .lucerneTrailingStyleRole,
+            .lucerneTrailingPageBreakBefore, .lucerneTrailingList,
         ]
         var trailingValues: [NSAttributedString.Key: Any] = [:]
         for key in trailingKeys {
@@ -1499,30 +1543,176 @@ public final class EditorController: NSObject {
         document?.editorDidChange()
     }
 
+    struct PageBreakSplitContext {
+        let moveToFollowingParagraph: Bool
+    }
+
+    /// Capture whether Return is about to split a forced-break paragraph. The
+    /// marker spans that paragraph for durability, so TextKit otherwise copies it
+    /// into both halves through the typing attributes.
+    func pageBreakSplitContext(in tv: PageTextView) -> PageBreakSplitContext? {
+        let selection = tv.selectedRange()
+        guard selection.length == 0,
+              let storage = tv.textStorage,
+              selection.location <= storage.length,
+              storage.length > 0 else { return nil }
+        let ns = storage.string as NSString
+        let location = min(selection.location, ns.length)
+        if location == ns.length,
+           Self.isParagraphSeparator(ns.character(at: ns.length - 1)),
+           (storage.attribute(.lucerneTrailingPageBreakBefore,
+                              at: ns.length - 1,
+                              effectiveRange: nil) as? Bool) == true {
+            return PageBreakSplitContext(moveToFollowingParagraph: false)
+        }
+        let probe = min(location, ns.length - 1)
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: probe, length: 0))
+        var hasBreak = false
+        storage.enumerateAttribute(
+            .lucernePageBreakBefore,
+            in: NSRange(location: start, length: end - start), options: []
+        ) { value, _, stop in
+            if (value as? Bool) == true {
+                hasBreak = true
+                stop.pointee = true
+            }
+        }
+        guard hasBreak else { return nil }
+        return PageBreakSplitContext(
+            moveToFollowingParagraph: location == start && contentsEnd > start)
+    }
+
+    /// Keep a forced break on one logical paragraph after Return: at a paragraph
+    /// start it follows the existing content; otherwise it stays with the first
+    /// half. Remove the marker from typing attributes so subsequent text cannot
+    /// create another forced page accidentally.
+    func reconcilePageBreakAfterNewline(in tv: PageTextView,
+                                        context: PageBreakSplitContext) {
+        guard let storage = tv.textStorage, storage.length > 0 else { return }
+        let ns = storage.string as NSString
+        let caret = min(tv.selectedRange().location, ns.length)
+        let firstProbe = max(0, min(caret - 1, ns.length - 1))
+        var firstStart = 0, firstEnd = 0
+        ns.getParagraphStart(&firstStart, end: &firstEnd, contentsEnd: nil,
+                             for: NSRange(location: firstProbe, length: 0))
+        let firstRange = NSRange(location: firstStart, length: firstEnd - firstStart)
+
+        var followingRange: NSRange?
+        if caret < ns.length {
+            var start = 0, end = 0
+            ns.getParagraphStart(&start, end: &end, contentsEnd: nil,
+                                 for: NSRange(location: caret, length: 0))
+            followingRange = NSRange(location: start, length: end - start)
+        }
+        let target = context.moveToFollowingParagraph ? (followingRange ?? firstRange) : firstRange
+        let cleanupStart = max(0, firstRange.location - 1)
+        let cleanupEnd = max(NSMaxRange(firstRange), followingRange.map(NSMaxRange) ?? 0)
+
+        storage.beginEditing()
+        storage.removeAttribute(
+            .lucernePageBreakBefore,
+            range: NSRange(location: firstRange.location, length: cleanupEnd - firstRange.location))
+        storage.removeAttribute(
+            .lucerneTrailingPageBreakBefore,
+            range: NSRange(location: cleanupStart, length: cleanupEnd - cleanupStart))
+        storage.addAttribute(.lucernePageBreakBefore, value: true, range: target)
+
+        var targetStart = 0, targetContentsEnd = 0
+        ns.getParagraphStart(&targetStart, end: nil, contentsEnd: &targetContentsEnd,
+                             for: NSRange(location: target.location, length: 0))
+        if targetContentsEnd == ns.length, targetStart > 0 {
+            storage.addAttribute(.lucerneTrailingPageBreakBefore, value: true,
+                                 range: NSRange(location: targetStart - 1, length: 1))
+        }
+        storage.endEditing()
+
+        var typing = tv.typingAttributes
+        typing[.lucernePageBreakBefore] = nil
+        typing[.lucerneTrailingPageBreakBefore] = nil
+        tv.typingAttributes = typing
+    }
+
     /// Inserts a forced page break at the caret: the text from here on starts on a
     /// new page. Implemented by flagging the paragraph that begins at the caret
     /// (splitting the current paragraph first if the caret is mid-paragraph).
     public func insertPageBreak() {
         guard let tv = formattingTextView(), let storage = tv.textStorage else { return }
         withUndo("Insert Page Break") {
-            let ns = storage.string as NSString
-            let loc = min(tv.selectedRange().location, ns.length)
-            let atParagraphStart = loc == 0 || ns.character(at: loc - 1) == 0x0A || ns.character(at: loc - 1) == 0x0D
-            var markLoc = loc
-            if !atParagraphStart {
-                storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: loc)
-                markLoc = loc + 1
+            let text = storage.string as NSString
+            let location = min(tv.selectedRange().location, text.length)
+            let isInsideCRLF = location > 0 && location < text.length
+                && text.character(at: location - 1) == 0x0D
+                && text.character(at: location) == 0x0A
+            let startsParagraph = location == 0
+                || (!isInsideCRLF
+                    && Self.isParagraphSeparator(text.character(at: location - 1)))
+            var markLocation = location
+            var marksTrailingEmptyParagraph = false
+
+            if location == text.length {
+                // At a trailing empty paragraph, the existing final separator is its
+                // durable carrier. At the end of non-empty text, append exactly one
+                // separator to create that trailing paragraph.
+                if !startsParagraph {
+                    storage.insert(NSAttributedString(
+                        string: "\n", attributes: tv.typingAttributes), at: location)
+                } else if storage.length == 0 {
+                    storage.insert(NSAttributedString(
+                        string: "\n", attributes: tv.typingAttributes), at: 0)
+                }
+                markLocation = storage.length
+                marksTrailingEmptyParagraph = true
+            } else if startsParagraph {
+                // This includes an empty middle paragraph whose only character is
+                // its terminator. Mark that paragraph rather than skipping it.
+                markLocation = location
+            } else if Self.isParagraphSeparator(text.character(at: location)) {
+                // A caret at the visible end of a paragraph sits before its
+                // separator. The requested break belongs to the following paragraph;
+                // no split or extra blank paragraph is needed.
+                markLocation = Self.locationAfterSeparator(at: location, in: text)
+                marksTrailingEmptyParagraph = markLocation == text.length
+            } else {
+                storage.insert(NSAttributedString(
+                    string: "\n", attributes: tv.typingAttributes), at: location)
+                markLocation = location + 1
             }
-            if markLoc >= storage.length {
-                // Page break at the very end: add an empty paragraph to carry it.
-                storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: storage.length)
-            }
-            if markLoc < storage.length {
+
+            if marksTrailingEmptyParagraph {
+                storage.addAttribute(.lucerneTrailingPageBreakBefore, value: true,
+                                     range: NSRange(location: storage.length - 1, length: 1))
+            } else if markLocation < storage.length {
+                let updated = storage.string as NSString
+                var start = 0, end = 0, contentsEnd = 0
+                updated.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                          for: NSRange(location: markLocation, length: 0))
                 storage.addAttribute(.lucernePageBreakBefore, value: true,
-                                     range: NSRange(location: markLoc, length: 1))
+                                     range: NSRange(location: start, length: end - start))
+                if contentsEnd == updated.length, start > 0 {
+                    // This backup exists even while the final paragraph has text: if
+                    // its last character is deleted, the preceding separator keeps
+                    // the break attached to the resulting trailing empty paragraph.
+                    storage.addAttribute(.lucerneTrailingPageBreakBefore, value: true,
+                                         range: NSRange(location: start - 1, length: 1))
+                }
             }
-            tv.setSelectedRange(NSRange(location: min(markLoc, (storage.string as NSString).length), length: 0))
+            tv.setSelectedRange(NSRange(location: min(markLocation, storage.length), length: 0))
         }
+    }
+
+    private static func isParagraphSeparator(_ character: unichar) -> Bool {
+        character == 0x0A || character == 0x0D
+    }
+
+    private static func locationAfterSeparator(at location: Int, in text: NSString) -> Int {
+        guard text.character(at: location) == 0x0D,
+              location + 1 < text.length,
+              text.character(at: location + 1) == 0x0A else {
+            return location + 1
+        }
+        return location + 2
     }
 
     // MARK: - Tables

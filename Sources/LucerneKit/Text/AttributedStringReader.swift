@@ -26,8 +26,10 @@ public enum AttributedStringReader {
             ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                                  for: NSRange(location: location, length: 0))
             let contentRange = NSRange(location: start, length: contentsEnd - start)
+            let paragraphRange = NSRange(location: start, length: end - start)
             paragraphs.append(buildParagraph(from: attr, contentRange: contentRange,
-                                             styles: model, tableIDs: &tableIDs))
+                                             paragraphRange: paragraphRange, styles: model,
+                                             tableIDs: &tableIDs))
             if end == location { break }              // guard against non-advancing ranges
             location = end
         }
@@ -37,20 +39,20 @@ public enum AttributedStringReader {
         // role so "press return at the end" persists.
         let last = ns.character(at: length - 1)
         if last == 0x0A || last == 0x0D {
+            var trailing: Paragraph
             if let trailingRole = attr.attribute(.lucerneTrailingStyleRole,
                                                  at: length - 1, effectiveRange: nil) as? String {
                 // The builder stamped the trailing empty paragraph's own identity on
                 // the terminator. Take role + id from it and paragraph fields from the
                 // role's definition — the newline's paragraph style belongs to the
                 // *preceding* paragraph, so we must not read overrides off it (1.8).
-                var trailing = emptyParagraph(role: trailingRole)
+                trailing = emptyParagraph(role: trailingRole)
                 if let id = attr.attribute(.lucerneTrailingParagraphID,
                                            at: length - 1, effectiveRange: nil) as? String {
                     trailing.id = id
                 }
                 trailing.list = ListItemCodec.decode(attr.attribute(.lucerneTrailingList,
                                                                      at: length - 1, effectiveRange: nil))
-                paragraphs.append(trailing)
             } else {
                 // Fallback (storage without the trailing keys): inherit the final
                 // newline's role and formatting, minting a fresh id. It deliberately
@@ -61,8 +63,14 @@ public enum AttributedStringReader {
                 let role = (attr.attribute(.lucerneStyleRole, at: length - 1, effectiveRange: nil) as? String)
                     ?? defaultRole(in: styles)
                 let ps = attr.attribute(.paragraphStyle, at: length - 1, effectiveRange: nil) as? NSParagraphStyle
-                paragraphs.append(emptyParagraph(role: role, paragraphStyle: ps, styleDef: model.resolved(role)))
+                trailing = emptyParagraph(role: role, paragraphStyle: ps,
+                                          styleDef: model.resolved(role))
             }
+            if (attr.attribute(.lucerneTrailingPageBreakBefore,
+                               at: length - 1, effectiveRange: nil) as? Bool) == true {
+                trailing.pageBreakBefore = true
+            }
+            paragraphs.append(trailing)
         }
         return paragraphs
     }
@@ -71,6 +79,7 @@ public enum AttributedStringReader {
 
     private static func buildParagraph(from attr: NSAttributedString,
                                        contentRange: NSRange,
+                                       paragraphRange: NSRange,
                                        styles: StyleLookup,
                                        tableIDs: inout [ObjectIdentifier: String]) -> Paragraph {
         let length = (attr.string as NSString).length
@@ -90,8 +99,7 @@ public enum AttributedStringReader {
         paragraph.list = ListItemCodec.decode(attr.attribute(.lucerneList, at: probe, effectiveRange: nil))
         stripDerivedListIndent(&paragraph)
 
-        if length > 0,
-           (attr.attribute(.lucernePageBreakBefore, at: probe, effectiveRange: nil) as? Bool) == true {
+        if hasPageBreak(in: attr, range: paragraphRange) {
             paragraph.pageBreakBefore = true
         }
 
@@ -99,6 +107,19 @@ public enum AttributedStringReader {
             paragraph.runs = runs(from: attr, in: contentRange, styleDef: styleDef)
         }
         return paragraph
+    }
+
+    private static func hasPageBreak(in attr: NSAttributedString, range: NSRange) -> Bool {
+        guard range.length > 0 else { return false }
+        var found = false
+        attr.enumerateAttribute(.lucernePageBreakBefore, in: range, options: []) {
+            value, _, stop in
+            if (value as? Bool) == true {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
     }
 
     /// Reconstructs a paragraph's table-cell membership from its `NSTextTableBlock`,

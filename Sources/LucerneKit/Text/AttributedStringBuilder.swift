@@ -11,7 +11,8 @@ public enum AttributedStringBuilder {
 
     public static func attributedString(for model: LucerneDocumentModel) -> NSAttributedString {
         let out = NSMutableAttributedString()
-        var pageBreakStarts: [Int] = []
+        var pageBreakRanges: [NSRange] = []
+        var trailingPageBreakLocation: Int?
         let tables = buildTables(for: model)
         for (index, paragraph) in model.body.enumerated() {
             let style = model.resolvedStyle(for: paragraph.style)
@@ -26,12 +27,29 @@ public enum AttributedStringBuilder {
                                         list: paragraph.list)
                 out.append(NSAttributedString(string: "\n", attributes: sep))
             }
-            if paragraph.pageBreakBefore == true, start < out.length { pageBreakStarts.append(start) }
+            if paragraph.pageBreakBefore == true {
+                if start < out.length {
+                    pageBreakRanges.append(NSRange(location: start,
+                                                   length: out.length - start))
+                }
+                // Deliberately back up a non-empty final paragraph too. If all of
+                // its text is later deleted, this preceding separator is the only
+                // carrier left for the now-trailing empty paragraph.
+                if index == model.body.count - 1, start > 0,
+                   (out.string as NSString).character(at: start - 1) == 0x0A {
+                    trailingPageBreakLocation = start - 1
+                }
+            }
         }
-        // Flag the first character of each page-break paragraph (a one-char run
-        // split that AttributedStringReader.mergeAdjacent re-coalesces on read).
-        for location in pageBreakStarts where location < out.length {
+        // Stamp the complete paragraph, including its own terminator. Editing or
+        // deleting the first character then leaves another durable carrier behind.
+        // The first character remains marked for compatibility with older readers.
+        for range in pageBreakRanges where range.length > 0 {
             out.addAttribute(.lucernePageBreakBefore, value: true,
+                             range: range)
+        }
+        if let location = trailingPageBreakLocation {
+            out.addAttribute(.lucerneTrailingPageBreakBefore, value: true,
                              range: NSRange(location: location, length: 1))
         }
         // A trailing empty paragraph contributes no characters, so its identity would
