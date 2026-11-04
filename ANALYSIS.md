@@ -1315,14 +1315,16 @@ exporter does so above 100000 cells (`linux/src/core/Markdown.cpp:184`). A
 decode-valid 400 x 300 table therefore exports as a grid on macOS and as prose on
 Linux. Use one rule in both. Effort S.
 
-### Keep the page-break carrier out of PDF text and Find
+### Check that the page-break carrier stays out of PDF text and Find
 
 bugs — nice-to-have
 
 An empty paragraph that ends the document with a forced page break is carried by
 an invisible U+200B character. It is stripped from the model, copy, RTF/DOCX,
-Markdown and AppleScript text, but still reaches the PDF text layer and in-app
-Find. Strip it there too. Effort S.
+Markdown and AppleScript text. PDF export draws the live page views
+(`EditorController.swift:3104`) and Find searches the live storage, so the
+character may reach the PDF text layer and Find; reviewers disagreed and nobody
+inspected an exported PDF. Check both and strip it if it appears. Effort S.
 
 ### Give the missing-image placeholder a document point size
 
