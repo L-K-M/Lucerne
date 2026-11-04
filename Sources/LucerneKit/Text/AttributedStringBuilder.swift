@@ -9,9 +9,13 @@ import AppKit
 //   • .lucerneStyleRole / .lucerneParagraphID — so structure survives round-trips
 public enum AttributedStringBuilder {
 
+    /// A zero-width layout carrier for a final empty page-break paragraph. Without
+    /// one, TextKit has no glyph to push onto the requested new page.
+    static let pageBreakSentinel = "\u{200B}"
+
     public static func attributedString(for model: LucerneDocumentModel) -> NSAttributedString {
         let out = NSMutableAttributedString()
-        var pageBreakStarts: [Int] = []
+        var pageBreakRanges: [NSRange] = []
         let tables = buildTables(for: model)
         for (index, paragraph) in model.body.enumerated() {
             let style = model.resolvedStyle(for: paragraph.style)
@@ -26,13 +30,30 @@ public enum AttributedStringBuilder {
                                         list: paragraph.list)
                 out.append(NSAttributedString(string: "\n", attributes: sep))
             }
-            if paragraph.pageBreakBefore == true, start < out.length { pageBreakStarts.append(start) }
+            if paragraph.pageBreakBefore == true, start == out.length,
+               index == model.body.count - 1, paragraph.plainText.isEmpty {
+                var attributes = runAttributes(
+                    Run(text: Self.pageBreakSentinel), style: style,
+                    paragraphStyle: paragraphStyle, role: paragraph.style,
+                    paragraphID: paragraph.id, list: paragraph.list)
+                attributes[.lucernePageBreakSentinel] = true
+                out.append(NSAttributedString(string: Self.pageBreakSentinel,
+                                              attributes: attributes))
+            }
+            if paragraph.pageBreakBefore == true, start < out.length {
+                pageBreakRanges.append(NSRange(location: start, length: out.length - start))
+            }
         }
-        // Flag the first character of each page-break paragraph (a one-char run
-        // split that AttributedStringReader.mergeAdjacent re-coalesces on read).
-        for location in pageBreakStarts where location < out.length {
-            out.addAttribute(.lucernePageBreakBefore, value: true,
-                             range: NSRange(location: location, length: 1))
+        // Structural metadata must not live on one editable character. Stamp the
+        // entire paragraph, including its terminator, so deleting or replacing its
+        // leading text leaves a carrier for the reader.
+        for range in pageBreakRanges where range.length > 0 {
+            // One token spans the paragraph. If Return splits that range, the
+            // reader recognizes the inherited token and assigns the break only
+            // to its first paragraph instead of creating two forced breaks.
+            out.addAttribute(.lucernePageBreakBefore, value: true, range: range)
+            out.addAttribute(.lucernePageBreakMarker,
+                             value: IDGenerator.next("page-break"), range: range)
         }
         // A trailing empty paragraph contributes no characters, so its identity and
         // formatting have nowhere to live: the terminating "\n" belongs to the

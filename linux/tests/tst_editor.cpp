@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QInputMethodEvent>
+#include <QSet>
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QtTest>
@@ -442,6 +443,35 @@ private slots:
         QCOMPARE(editor.objects().size(), 0);
         editor.undoStack()->undo();
         QCOMPARE(editor.document()->toPlainText(), QString());
+    }
+
+    void insertedImageNamesRemainSaveable() {
+        QTemporaryDir dir;
+        Editor editor;
+        const QByteArray payload = DefaultDocuments::sampleLetterImages().first();
+        for (const QString &name : {QStringLiteral("a\\b.png"),
+                                   QStringLiteral("a-b.png"),
+                                   QStringLiteral("a.png\\backup"),
+                                   QStringLiteral("a\0b.png"),
+                                   QStringLiteral("a.png\0backup")}) {
+            const QString id = editor.insertImage(payload, name, 0, QPointF(200, 200));
+            QVERIFY(!id.isEmpty());
+        }
+
+        QString error;
+        const QString path = dir.filePath(QStringLiteral("images.luce"));
+        QVERIFY2(editor.saveFile(path, &error), qPrintable(error));
+        Editor reader;
+        QVERIFY2(reader.loadFile(path, &error), qPrintable(error));
+        QCOMPARE(reader.objects().size(), 5);
+        QSet<QString> sources;
+        for (const PlacedObject &object : reader.objects()) {
+            QVERIFY(object.src);
+            QVERIFY(!object.src->contains(QLatin1Char('\\')));
+            QVERIFY(!reader.imageForObject(object).isNull());
+            sources.insert(*object.src);
+        }
+        QCOMPARE(sources.size(), 5);
     }
 
     void deleteObjectDropsItsExclusion() {

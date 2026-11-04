@@ -46,6 +46,16 @@ std::optional<LuceArchive::Contents> tryRead(const QByteArray &data) {
     const QByteArray var = fixture(QStringLiteral(name));                       \
     QVERIFY2(!var.isEmpty(), name " missing - check LUCERNE_FIXTURES_DIR")
 
+/// A page-anchored image object with `src` for the archive-name tests.
+PlacedObject placedImage(const QString &id, const QString &src) {
+    PlacedObject object;
+    object.id = id;
+    object.page = 0;
+    object.frame = RectModel{10, 10, 20, 20};
+    object.src = src;
+    return object;
+}
+
 const QStringList validFixtures = {
     QStringLiteral("minimal.luce"),      QStringLiteral("kitchen-sink.luce"),
     QStringLiteral("lists.luce"),        QStringLiteral("tables.luce"),
@@ -125,6 +135,167 @@ private slots:
                 QCOMPARE(reread.history[i].markdown, contents.history[i].markdown);
             }
         }
+    }
+
+    void legacyImageNamesKeepTheirPayloadsOnRead() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        for (const QString &name : {QStringLiteral("images/a\\b.png"),
+                                   QStringLiteral("images/."), QStringLiteral("images/..")}) {
+            auto entries = MiniZip::entries(data);
+            entries.append({name, QByteArrayLiteral("legacy image")});
+            const auto parsed = tryRead(MiniZip::archive(entries));
+            QVERIFY(parsed);
+            QCOMPARE(parsed->images.value(name), QByteArrayLiteral("legacy image"));
+        }
+    }
+
+    // Ported from Swift's ZipEntryNameSafetyTests (LucerneCore): a `src` that
+    // isn't a flat "images/<file>" name is normalized to images/<basename> on
+    // save rather than refused — such documents open fine and must stay
+    // savable (the Mac app does the same).
+    void writerNormalizesNonFlatImageSource() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("image"),
+                                     QStringLiteral("pictures/lake.png"))};
+        const QMap<QString, QByteArray> images{
+            {QStringLiteral("pictures/lake.png"), QByteArrayLiteral("\x89PNG")}};
+
+        const auto rewritten = tryRead(LuceArchive::write(model, images));
+        QVERIFY(rewritten);
+        QCOMPARE(rewritten->model.objects.first().src,
+                 std::optional<QString>(QStringLiteral("images/lake.png")));
+        QCOMPARE(rewritten->images.value(QStringLiteral("images/lake.png")),
+                 QByteArrayLiteral("\x89PNG"));
+    }
+
+    void writerRenamedPayloadReplacesAStaleUnreferencedImage() {
+        // "aaa/" sorts before "images/" in QMap order, which used to let the
+        // stale unreferenced payload overwrite the renamed one.
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("image"), QStringLiteral("aaa/a.png"))};
+        const QMap<QString, QByteArray> images{
+            {QStringLiteral("images/a.png"), QByteArrayLiteral("stale")},
+            {QStringLiteral("aaa/a.png"), QByteArrayLiteral("fresh")}};
+
+        const auto rewritten = tryRead(LuceArchive::write(model, images));
+        QVERIFY(rewritten);
+        QCOMPARE(rewritten->model.objects.first().src,
+                 std::optional<QString>(QStringLiteral("images/a.png")));
+        QCOMPARE(rewritten->images.value(QStringLiteral("images/a.png")),
+                 QByteArrayLiteral("fresh"));
+    }
+
+    void writerRenamesASharedNonFlatSourceOnce() {
+        // Two placements of one picture must not make the document unsavable.
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("a"),
+                                     QStringLiteral("pictures/lake.png")),
+                         placedImage(QStringLiteral("b"),
+                                     QStringLiteral("pictures/lake.png"))};
+        const QMap<QString, QByteArray> images{
+            {QStringLiteral("pictures/lake.png"), QByteArrayLiteral("\x89PNG")}};
+
+        const QByteArray rewritten = LuceArchive::write(model, images);
+        const auto reread = tryRead(rewritten);
+        QVERIFY(reread);
+        QCOMPARE(reread->model.objects.size(), 2);
+        QCOMPARE(reread->model.objects.at(0).src,
+                 std::optional<QString>(QStringLiteral("images/lake.png")));
+        QCOMPARE(reread->model.objects.at(1).src,
+                 std::optional<QString>(QStringLiteral("images/lake.png")));
+        QCOMPARE(reread->images.value(QStringLiteral("images/lake.png")),
+                 QByteArrayLiteral("\x89PNG"));
+        int imageEntries = 0;
+        for (const MiniZip::Entry &entry : MiniZip::entries(rewritten))
+            if (entry.name.startsWith(LuceArchive::imagesPrefix())) ++imageEntries;
+        QCOMPARE(imageEntries, 1);
+    }
+
+    void writerReplacesBackslashAndNulInImageNames() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("image"),
+                                     QStringLiteral("images/a\\b\0c.png"))};
+        const QMap<QString, QByteArray> images{
+            {QStringLiteral("images/a\\b\0c.png"), QByteArrayLiteral("\x89PNG")}};
+
+        const auto rewritten = tryRead(LuceArchive::write(model, images));
+        QVERIFY(rewritten);
+        QCOMPARE(rewritten->model.objects.first().src,
+                 std::optional<QString>(QStringLiteral("images/a_b_c.png")));
+        QCOMPARE(rewritten->images.value(QStringLiteral("images/a_b_c.png")),
+                 QByteArrayLiteral("\x89PNG"));
+    }
+
+    void writerRefusesRenameCollidingWithAKeptName() {
+        // A rename must not collide with an existing flat images/ key either,
+        // not just with other renamed sources.
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("a"),
+                                     QStringLiteral("images/lake.png")),
+                         placedImage(QStringLiteral("b"),
+                                     QStringLiteral("pictures/lake.png"))};
+        const QMap<QString, QByteArray> images{
+            {QStringLiteral("images/lake.png"), QByteArrayLiteral("\x89PNG")},
+            {QStringLiteral("pictures/lake.png"), QByteArrayLiteral("\x89PNG")}};
+        EXPECT_THROW(LuceArchive::write(model, images), std::runtime_error);
+    }
+
+    void referencedSourceOutsideImagesReadsThenSaves() {
+        // The spec only requires `src` to name an archive entry — "images/" is
+        // conventional — so a referenced payload outside images/ is collected
+        // by exact name; the file then saves (the save normalizes the name).
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("image"),
+                                     QStringLiteral("pictures/a.png"))};
+        const QByteArray archive = MiniZip::archive({
+            {QStringLiteral("document.json"), Coding::encode(model)},
+            {QStringLiteral("pictures/a.png"), QByteArrayLiteral("\x89PNG")},
+        });
+        const auto opened = tryRead(archive);
+        QVERIFY(opened);
+        QCOMPARE(opened->images.value(QStringLiteral("pictures/a.png")),
+                 QByteArrayLiteral("\x89PNG"));
+
+        const auto saved = tryRead(LuceArchive::write(opened->model, opened->images));
+        QVERIFY(saved);
+        QCOMPARE(saved->model.objects.first().src,
+                 std::optional<QString>(QStringLiteral("images/a.png")));
+        QCOMPARE(saved->images.value(QStringLiteral("images/a.png")),
+                 QByteArrayLiteral("\x89PNG"));
+    }
+
+    void flatImageSourcesRoundTripUnchanged() {
+        REQUIRE_FIXTURE(data, "minimal.luce");
+        const auto parsed = tryRead(data);
+        QVERIFY(parsed);
+        DocumentModel model = parsed->model;
+        model.objects = {placedImage(QStringLiteral("image"),
+                                     QStringLiteral("images/été.png"))};
+        const QMap<QString, QByteArray> images{
+            {QStringLiteral("images/été.png"), QByteArrayLiteral("image bytes")}};
+        const auto roundTrip = tryRead(LuceArchive::write(model, images));
+        QVERIFY(roundTrip);
+        QCOMPARE(roundTrip->model.objects.first().src,
+                 std::optional<QString>(QStringLiteral("images/été.png")));
+        QCOMPARE(roundTrip->images, images);
     }
 
     void kitchenSinkDecodesEveryModelledFeature() {
