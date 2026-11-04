@@ -35,8 +35,11 @@ public enum LuceArchive {
 
     // MARK: - Write
 
+    /// `precomputedMarkdown` lets a caller that already derived `content.md` (e.g.
+    /// for the history trail) pass it in, so the export doesn't run twice per save.
     public static func write(model: LucerneDocumentModel, images: [String: Data],
-                              history: [HistorySnapshot] = []) throws -> Data {
+                              history: [HistorySnapshot] = [],
+                              precomputedMarkdown: String? = nil) throws -> Data {
         var entries: [MiniZip.Entry] = []
 
         // Entry names go into the ZIP verbatim, so a model `src` that isn't a flat
@@ -102,7 +105,7 @@ public enum LuceArchive {
             entries.append(MiniZip.Entry(name: src, data: data))
         }
 
-        let markdown = MarkdownExporter.export(model)
+        let markdown = precomputedMarkdown ?? MarkdownExporter.export(model)
         entries.append(MiniZip.Entry(name: markdownEntryName, data: Data(markdown.utf8)))
 
         // Dated Markdown backups (oldest→newest), tiny plain-text recovery trail.
