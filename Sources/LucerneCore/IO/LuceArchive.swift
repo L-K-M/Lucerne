@@ -40,6 +40,8 @@ public enum LuceArchive {
 
     /// `precomputedMarkdown` lets a caller that already derived `content.md` (e.g.
     /// for the history trail) pass it in, so the export doesn't run twice per save.
+    /// It is ignored when any image source is renamed, because the precomputed
+    /// text would still name the old sources.
     public static func write(model: LucerneDocumentModel, images: [String: Data],
                               history: [HistorySnapshot] = [],
                               precomputedMarkdown: String? = nil) throws -> Data {
