@@ -82,10 +82,12 @@ public final class PageTextView: NSTextView {
     // after, since only then does it exist.
     public override func insertNewline(_ sender: Any?) {
         if editor?.handleEmptyListItemNewline(in: self) == true { return }
-        let continueList = editor?.caretWillContinueList(in: self) ?? false
-        let demote = !continueList && (editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false)
+        let continuedList = editor?.listItemContinuedByReturn(in: self)
+        let demote = continuedList == nil
+            && (editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false)
         super.insertNewline(sender)
-        if continueList { editor?.didInsertListContinuationNewline(in: self) }
+        editor?.didInsertParagraphBreak(in: self, continuedList: continuedList)
+        if continuedList != nil { editor?.didInsertListContinuationNewline(in: self) }
         else if demote { editor?.startBodyParagraphAfterHeadingNewline(in: self) }
     }
 
@@ -192,6 +194,38 @@ public final class PageTextView: NSTextView {
         editor?.insertImage(data: data, suggestedName: name,
                             onPage: pageView?.pageIndex ?? 0,
                             centeredAt: imagePasteCenter(inPage: pageView))
+    }
+
+    /// Rich text from other applications can carry attributes Lucerne cannot save.
+    /// Normalize it before insertion so the visible result is already canonical;
+    /// plain text remains on AppKit's normal Paste and Match Style path.
+    public override func readSelection(from pasteboard: NSPasteboard,
+                                       type: NSPasteboard.PasteboardType) -> Bool {
+        guard PasteNormalizer.supports(type),
+              let source = PasteNormalizer.read(from: pasteboard, type: type),
+              let editor else {
+            return super.readSelection(from: pasteboard, type: type)
+        }
+        let selection = selectedRange()
+        let destination: [NSAttributedString.Key: Any]
+        if selection.length > 0, let storage = textStorage,
+           selection.location < storage.length {
+            destination = storage.attributes(at: selection.location, effectiveRange: nil)
+        } else {
+            destination = typingAttributes
+        }
+        let normalized = PasteNormalizer.normalize(
+            source, destination: destination, model: editor.model)
+        guard normalized.length > 0 else { return false }
+        guard let storage = textStorage else { return false }
+        let replacement = PasteNormalizer.replacement(
+            normalized, for: selection, in: storage)
+        guard shouldChangeText(in: replacement.range,
+                               replacementString: replacement.content.string) else { return false }
+        storage.replaceCharacters(in: replacement.range, with: replacement.content)
+        setSelectedRange(NSRange(location: replacement.caretLocation, length: 0))
+        didChangeText()
+        return true
     }
 
     /// A page-relative point to centre a pasted image on: the caret's line rect when

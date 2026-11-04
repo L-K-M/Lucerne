@@ -14,7 +14,7 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
     var onSample: (() -> Void)?
     var onOpenRecent: ((URL) -> Void)?
 
-    private let tableView = NSTableView()
+    private let tableView = KeyboardActivatingTableView(frame: .zero)
     private var recents: [URL] = []
     private let emptyRecentsLabel = ClassicText.engravedLabel("No recent letters yet", size: 11, gray: 0.55)
 
@@ -101,6 +101,10 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
         tableView.delegate = self
         tableView.target = self
         tableView.doubleAction = #selector(openSelectedRecent)
+        tableView.onActivateSelection = { [weak self] row in
+            self?.openRecent(at: row)
+        }
+        tableView.setAccessibilityLabel("Recent documents")
         tableView.backgroundColor = .white
         let recentScroll = NSScrollView()
         recentScroll.documentView = tableView
@@ -183,8 +187,12 @@ final class WelcomeWindowController: NSWindowController, NSTableViewDataSource, 
     @objc private func newSample() { onSample?() }
 
     @objc private func openSelectedRecent() {
-        guard recents.indices.contains(tableView.clickedRow) else { return }
-        onOpenRecent?(recents[tableView.clickedRow])
+        openRecent(at: tableView.rowForAction)
+    }
+
+    private func openRecent(at row: Int) {
+        guard recents.indices.contains(row) else { return }
+        onOpenRecent?(recents[row])
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { recents.count }

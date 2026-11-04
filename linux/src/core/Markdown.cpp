@@ -2,6 +2,7 @@
 #include "core/Lists.h"
 
 #include <QFileInfo>
+#include <QSet>
 #include <QStringList>
 
 namespace lucerne {
@@ -161,28 +162,41 @@ QString tableCellText(const Paragraph &paragraph) {
 }
 
 QString tableBlock(const QVector<Paragraph> &cells, const DocumentModel &model) {
-    int columnCount = 0, rowCount = 0;
-    for (const Paragraph &p : cells) {
-        if (!p.cell) continue;
-        columnCount = std::max(columnCount, p.cell->column + std::max(p.cell->columnSpan, 1));
-        rowCount = std::max(rowCount, p.cell->row + std::max(p.cell->rowSpan, 1));
-    }
-    if (columnCount <= 0 || rowCount <= 0) {
-        // Degenerate — fall back to plain paragraph blocks.
+    const auto plainParagraphs = [&] {
         QStringList blocks;
         for (const Paragraph &p : cells)
             blocks.append(block(inlineMarkdown(p), model.resolvedStyle(p.style).markdown));
         return blocks.join(QStringLiteral("\n\n"));
+    };
+
+    qint64 columnCount = 0, rowCount = 0;
+    for (const Paragraph &p : cells) {
+        if (!p.cell) return plainParagraphs();
+        const TableCellModel &cell = *p.cell;
+        if (cell.row < 0 || cell.column < 0 || cell.rowSpan < 1 || cell.columnSpan < 1)
+            return plainParagraphs();
+
+        columnCount = std::max(columnCount, qint64(cell.column) + cell.columnSpan);
+        rowCount = std::max(rowCount, qint64(cell.row) + cell.rowSpan);
     }
 
-    QVector<QStringList> grid(rowCount, QStringList());
+    // Bound recovery work; unsafe table geometry must not discard the prose.
+    constexpr qint64 maximumGridCells = 100000;
+    if (columnCount <= 0 || rowCount <= 0 || rowCount > maximumGridCells / columnCount)
+        return plainParagraphs();
+
+    QVector<QStringList> grid(qsizetype(rowCount), QStringList{});
     for (auto &row : grid)
         for (int c = 0; c < columnCount; ++c) row.append(QString());
+
+    QSet<qint64> populated;
     for (const Paragraph &p : cells) {
-        if (!p.cell) continue;
         const int r = p.cell->row, c = p.cell->column;
-        if (r < 0 || r >= rowCount || c < 0 || c >= columnCount) continue;
-        grid[r][c] = tableCellText(p);
+        const qint64 key = qint64(r) * columnCount + c;
+        // Same-cell paragraphs need separators even when the first is empty.
+        if (populated.contains(key)) grid[r][c] += QStringLiteral("<br>");
+        grid[r][c] += tableCellText(p);
+        populated.insert(key);
     }
 
     // GFM needs a header + delimiter row; row 0 is the header by convention.
