@@ -18,6 +18,7 @@
 #include "core/PageMetrics.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QImage>
 #include <QVector>
 
 namespace lucerne {
@@ -79,6 +80,7 @@ private:
     /// Container-local → canvas.
     QPointF canvasPoint(int page, double x, double y) const;
 
+    QImage m_documentDevice;
     PageConfig m_page = PageConfig::a4();
     QVector<PlacedObject> m_objects;
     int m_pageCount = 1;
