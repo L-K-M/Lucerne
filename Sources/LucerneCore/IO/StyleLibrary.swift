@@ -15,6 +15,11 @@ public final class StyleLibrary {
     /// Library window, the styles palette) can refresh.
     public static let didChange = Notification.Name("ch.lkmc.lucerne.styleLibraryDidChange")
 
+    /// Posted when a save was refused or the write failed, with the underlying
+    /// error (or refusal reason) under `error` in the userInfo. Saving must never
+    /// report success when nothing was persisted.
+    public static let didFailToSave = Notification.Name("ch.lkmc.lucerne.styleLibraryDidFailToSave")
+
     public static let canonicalFormat = "lucerne-styles"
     public static let currentFormatVersion = 1
 
@@ -68,7 +73,17 @@ public final class StyleLibrary {
         case undecodable
     }
 
-    public private(set) var loadFailure: LoadFailure = .none
+    /// All mutable state below is guarded by `stateLock`: the styles palette
+    /// calls `load()` per caret move while the Style Library window mutates, and
+    /// the read-modify-write mutators must be atomic so two windows can't lose
+    /// an update.
+    private let stateLock = NSLock()
+    private var _loadFailure: LoadFailure = .none
+
+    public private(set) var loadFailure: LoadFailure {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _loadFailure }
+        set { stateLock.lock(); defer { stateLock.unlock() }; _loadFailure = newValue }
+    }
 
     /// In-memory cache keyed by the file's modification date (3.4): with the
     /// styles palette open, `load()` is called on the selection-change path (per
@@ -86,9 +101,15 @@ public final class StyleLibrary {
     /// also reported as empty so the UI degrades gracefully, but it flips
     /// `loadFailure` so writes refuse rather than clobber it (1.11).
     public func load() -> [String: ParagraphStyleDef] {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return loadLocked()
+    }
+
+    private func loadLocked() -> [String: ParagraphStyleDef] {
         guard let modDate = fileModificationDate() else {
             // No file yet: a legitimately empty library, not a failure.
-            loadFailure = .none
+            _loadFailure = .none
             cache = [:]
             cacheModDate = nil
             return [:]
@@ -102,7 +123,7 @@ public final class StyleLibrary {
             let styles = try StyleLibrary.decode(data)
             cache = styles
             cacheModDate = modDate
-            loadFailure = .none
+            _loadFailure = .none
             return styles
         } catch {
             return recordLoadFailure(.undecodable,
@@ -114,24 +135,41 @@ public final class StyleLibrary {
     /// a corrupt file isn't re-read every caret move, and logs the reason once
     /// (only on the transition into a failure, not on every subsequent load).
     private func recordLoadFailure(_ failure: LoadFailure, _ reason: String,
-                                   modDate: Date) -> [String: ParagraphStyleDef] {
-        if loadFailure != failure {
+                                    modDate: Date) -> [String: ParagraphStyleDef] {
+        if _loadFailure != failure {
             NSLog("Lucerne: \(reason); refusing to overwrite it until it loads cleanly")
         }
-        loadFailure = failure
+        _loadFailure = failure
         cache = [:]
         cacheModDate = modDate
         return [:]
     }
 
-    /// Rewrites the library file (atomically) and posts `didChange`. Refuses
-    /// while `load()` last failed on an existing file, so a corrupt or
-    /// future-versioned library is never overwritten wholesale (1.11).
-    public func save(_ styles: [String: ParagraphStyleDef]) {
-        guard loadFailure == .none else {
-            NSLog("Lucerne: refusing to overwrite the style library while it is "
-                + "in a load-failure state (\(loadFailure)); leaving it untouched")
-            return
+    /// Rewrites the library file (atomically) and posts `didChange`. Returns
+    /// false — and posts `didFailToSave` — when the write was refused (load
+    /// failure on an existing file, so a corrupt or future-versioned library is
+    /// never overwritten wholesale, 1.11) or failed, so callers never mistake a
+    /// skipped save for a successful one. Notifications are posted *after* the
+    /// lock is released: NSLock is not recursive, so posting under it would
+    /// deadlock any observer that calls back into the library.
+    @discardableResult
+    public func save(_ styles: [String: ParagraphStyleDef]) -> Bool {
+        var notification: (Notification.Name, [AnyHashable: Any])?
+        stateLock.lock()
+        let result = saveLocked(styles, notification: &notification)
+        stateLock.unlock()
+        postDeferred(notification)
+        return result
+    }
+
+    private func saveLocked(_ styles: [String: ParagraphStyleDef],
+                            notification: inout (Notification.Name, [AnyHashable: Any])?) -> Bool {
+        guard _loadFailure == .none else {
+            let reason = "refusing to overwrite the style library while it is "
+                + "in a load-failure state (\(_loadFailure)); leaving it untouched"
+            NSLog("Lucerne: \(reason)")
+            notification = (StyleLibrary.didFailToSave, ["error": reason])
+            return false
         }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),
@@ -141,19 +179,25 @@ public final class StyleLibrary {
             // next selection-change sync serves memory, not disk (3.4).
             cache = styles
             cacheModDate = fileModificationDate()
-            NotificationCenter.default.post(name: StyleLibrary.didChange, object: self)
+            notification = (StyleLibrary.didChange, [:])
+            return true
         } catch {
             // A preferences-grade file: failing to persist must never take the
-            // app down. The next save retries.
+            // app down, but it must not pass silently either. The next save retries.
             NSLog("Lucerne: could not write style library: \(error)")
+            notification = (StyleLibrary.didFailToSave, ["error": error])
+            return false
         }
     }
 
     /// Adds or updates one style. The library's existing `order` for the key is
     /// kept (pushing a definition shouldn't reshuffle the library); a brand-new
-    /// entry goes to the end.
-    public func saveStyle(_ def: ParagraphStyleDef, forKey key: String) {
-        var library = load()
+    /// entry goes to the end. Returns false when the change was not persisted.
+    @discardableResult
+    public func saveStyle(_ def: ParagraphStyleDef, forKey key: String) -> Bool {
+        var notification: (Notification.Name, [AnyHashable: Any])?
+        stateLock.lock()
+        var library = loadLocked()
         var merged = def
         if let existingOrder = library[key]?.order {
             merged.order = existingOrder
@@ -162,13 +206,32 @@ public final class StyleLibrary {
                 ?? Double(library.count - 1)) + 1
         }
         library[key] = merged
-        save(library)
+        let result = saveLocked(library, notification: &notification)
+        stateLock.unlock()
+        postDeferred(notification)
+        return result
     }
 
-    public func removeStyle(forKey key: String) {
-        var library = load()
-        guard library.removeValue(forKey: key) != nil else { return }
-        save(library)
+    @discardableResult
+    public func removeStyle(forKey key: String) -> Bool {
+        var notification: (Notification.Name, [AnyHashable: Any])?
+        stateLock.lock()
+        var library = loadLocked()
+        guard library.removeValue(forKey: key) != nil else {
+            stateLock.unlock()
+            return true
+        }
+        let result = saveLocked(library, notification: &notification)
+        stateLock.unlock()
+        postDeferred(notification)
+        return result
+    }
+
+    /// Posts a notification produced under the lock, after the lock is released.
+    private func postDeferred(_ notification: (Notification.Name, [AnyHashable: Any])?) {
+        guard let notification else { return }
+        NotificationCenter.default.post(name: notification.0, object: self,
+                                        userInfo: notification.1)
     }
 
     // MARK: - First run (S6): a starter collection instead of an empty shelf
@@ -181,7 +244,8 @@ public final class StyleLibrary {
     /// before any document is created.
     public func seedStarterLibraryIfNeeded() {
         guard !FileManager.default.fileExists(atPath: fileURL.path) else { return }
-        save(DefaultDocuments.starterLibraryStyles())
+        // First-run seeding; if it fails (read-only disk), the next launch retries.
+        _ = save(DefaultDocuments.starterLibraryStyles())
     }
 
     // MARK: - Seeding new documents (S6)
