@@ -407,7 +407,7 @@ public final class DocumentWindowController: NSWindowController, NSWindowDelegat
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                try data.write(to: url)
+                try StationeryArchiveWriter.write(data, to: url)
             } catch {
                 NSAlert(error: error).beginSheetModal(for: window, completionHandler: nil)
             }
