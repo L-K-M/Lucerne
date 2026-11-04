@@ -7,7 +7,7 @@ page's main subject) and **Lucerne for Linux**, a native Qt 6 port under
 ## Linux (Qt port)
 
 ```sh
-sudo apt install qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev \
+sudo apt install qt6-base-dev qt6-base-dev-tools libqt6svg6-dev libgl1-mesa-dev zlib1g-dev \
                  cmake ninja-build
 cmake -S linux -B linux/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build linux/build
