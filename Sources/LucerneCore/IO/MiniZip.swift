@@ -161,8 +161,14 @@ public enum MiniZip {
     /// names the entries whose own corruption (bad payload or CRC mismatch) merely
     /// drops them from the result instead — for best-effort content (e.g. the
     /// .luce recovery snapshots) that shouldn't block opening an intact document.
+    /// Upper bound on the sum of uncompressed sizes of the non-droppable entries.
+    /// Per-entry caps alone don't stop a decompression bomb spread across many
+    /// entries (65 535 × 512 MiB), so the aggregate is bounded too.
+    public static let maxTotalUncompressedSize = 2 * 1024 * 1024 * 1024
+
     public static func entries(from data: Data,
-                               droppingCorruptEntriesWhere isDroppable: (String) -> Bool = { _ in false })
+                                droppingCorruptEntriesWhere isDroppable: (String) -> Bool = { _ in false },
+                                maxTotalUncompressedSize: Int = MiniZip.maxTotalUncompressedSize)
         throws -> [Entry] {
         let bytes = [UInt8](data)
         guard let eocd = findEndOfCentralDirectory(in: bytes) else { throw ZipError.notAZip }
@@ -179,6 +185,7 @@ public enum MiniZip {
         var cursor = Int(cdOffset)
 
         var result: [Entry] = []
+        var totalUncompressed = 0
         for _ in 0 ..< total {
             guard cursor + 46 <= bytes.count, readLE32(bytes, cursor) == centralHeaderSig else {
                 throw ZipError.corrupt("bad central directory header")
@@ -199,6 +206,17 @@ public enum MiniZip {
             }
             let name = String(decoding: bytes[cursor + 46 ..< cursor + 46 + nameLen], as: UTF8.self)
             cursor = recordEnd
+            // Aggregate budget over ALL entries: the droppable prefix is a
+            // name-based predicate on attacker-controlled names, so exempting
+            // droppable entries would let a bomb route around the budget by
+            // naming everything history/*. Droppable only relaxes payload
+            // corruption, not size.
+            let sum = totalUncompressed.addingReportingOverflow(uncompressedSize)
+            guard !sum.overflow, sum.partialValue <= maxTotalUncompressedSize else {
+                throw ZipError.corrupt("aggregate uncompressed size exceeds the "
+                    + "\(maxTotalUncompressedSize)-byte budget")
+            }
+            totalUncompressed = sum.partialValue
 
             do {
                 let payload = try readLocalEntry(bytes, localOffset: localOffset,
