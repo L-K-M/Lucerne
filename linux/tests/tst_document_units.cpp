@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QTextBlock>
+#include <QtMath>
 #include <QtTest>
 
 #include <cmath>
