@@ -6,6 +6,7 @@ lands. Legend: `[x]` done · `[~]` partial / in progress · `[ ]` not started.
 > **Lucerne for Linux** — the Qt port under [`linux/`](linux/README.md) — has
 > its own parity list in that directory's README. Both apps share the `.luce`
 > format, kept compatible by the conformance corpus in `Tests/Fixtures`.
+> Linux build instructions include the required Qt SVG development package.
 
 > **Verification:** authored on Linux (no Swift toolchain). Compilation is checked
 > by the macOS CI workflow, not locally. **The macOS CI build + unit tests are
