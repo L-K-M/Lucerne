@@ -1,5 +1,6 @@
 #include "app/Editor.h"
 #include "app/DocumentBridge.h"
+#include "app/DocumentUnits.h"
 #include "core/DefaultDocuments.h"
 #include "core/Furniture.h"
 #include "core/Markdown.h"
@@ -154,6 +155,8 @@ bool Editor::saveFile(const QString &path, QString *error) {
         m_history = updatedHistory;
         m_model = model;   // body now canonical again
         m_filePath = path;
+        // End native typing coalescence so later text cannot mutate a clean command.
+        m_doc->setModified(false);
         m_undo->setClean();
         return true;
     } catch (const std::exception &e) {
@@ -570,8 +573,9 @@ void Editor::renderPage(QPainter *painter, int pageIndex) const {
     if (hasHeader || hasFooter) {
         const ParagraphStyle body = m_model.resolvedStyle(DocumentModel::defaultStyleRole());
         const double size = std::max(8.0, body.size.value_or(12.0) * 0.8);
-        painter->setFont(DocumentBridge::displayFont(
-            body.font.value_or(QStringLiteral("Helvetica")), size, false, false));
+        const QFont font = DocumentBridge::displayFont(
+            body.font.value_or(QStringLiteral("Helvetica")), size, false, false);
+        painter->setFont(DocumentUnits::fontForDevice(font, *painter->device()));
         painter->setPen(QColor(0, 0, 0, 150));
         const QRectF textArea = m_layout->textAreaRect(pageIndex);
         auto drawBand = [&](const PageFurniture &furniture, const QRectF &band) {
@@ -613,6 +617,7 @@ void Editor::renderPage(QPainter *painter, int pageIndex) const {
         if (image.isNull()) {
             painter->fillRect(rect, QColor(237, 237, 237));
             painter->setPen(QColor(0, 0, 0, 110));
+            painter->setFont(DocumentUnits::fontForDevice(QFont(), *painter->device()));
             painter->drawText(rect, Qt::AlignCenter, tr("Image"));
         } else {
             painter->drawImage(rect, image);

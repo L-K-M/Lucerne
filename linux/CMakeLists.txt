@@ -106,6 +106,11 @@ if(Qt6Test_FOUND)
             src/app/PageCanvas.cpp)
         target_link_libraries(tst_editor PRIVATE Qt6::Widgets)
     endif()
+    add_executable(tst_document_units tests/tst_document_units.cpp
+        src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp)
+    target_link_libraries(tst_document_units PRIVATE lucerne-core Qt6::Test Qt6::Widgets)
+    add_test(NAME document_units COMMAND tst_document_units)
+    set_tests_properties(document_units PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 # --------------------------------------------------------------- install / deb
