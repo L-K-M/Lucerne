@@ -98,6 +98,153 @@ final class FormatSafetyTests: XCTestCase {
         XCTAssertEqual(decoded.body[0].list?.level, 8)
     }
 
+    // MARK: - Geometry and table-cell validation
+
+    func testOverflowingTableCellIsRefused() throws {
+        var model = makeModel()
+        model.body[0].cell = TableCellModel(table: "t", row: Int.max, column: 0)
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidTableCell = error else {
+                return XCTFail("expected invalidTableCell, got \(error)")
+            }
+        }
+    }
+
+    func testNegativeTableCellCoordinateIsRefused() throws {
+        var model = makeModel()
+        model.body[0].cell = TableCellModel(table: "t", row: 0, column: -1)
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidTableCell = error else {
+                return XCTFail("expected invalidTableCell, got \(error)")
+            }
+        }
+    }
+
+    func testZeroTableSpanIsRefused() throws {
+        var model = makeModel()
+        model.body[0].cell = TableCellModel(table: "t", row: 0, column: 0,
+                                            rowSpan: 0, columnSpan: 1)
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidTableCell = error else {
+                return XCTFail("expected invalidTableCell, got \(error)")
+            }
+        }
+    }
+
+    func testMaximumExtentTableCellDecodes() throws {
+        var model = makeModel()
+        model.body[0].cell = TableCellModel(table: "t", row: 999, column: 999,
+                                            rowSpan: 1, columnSpan: 1)
+        XCTAssertNoThrow(try DocumentCoding.decode(try DocumentCoding.encode(model)))
+    }
+
+    func testTableCellExtentBeyondMaximumIsRefused() throws {
+        var model = makeModel()
+        model.body[0].cell = TableCellModel(table: "t", row: 999, column: 0,
+                                            rowSpan: 2, columnSpan: 1)
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidTableCell = error else {
+                return XCTFail("expected invalidTableCell, got \(error)")
+            }
+        }
+    }
+
+    func testNegativeObjectFrameIsRefused() throws {
+        var model = makeModel()
+        model.objects = [PlacedObject(id: "bad-frame", page: 0,
+                                      frame: RectModel(x: 0, y: 0, width: -10, height: 10))]
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidObjectFrame = error else {
+                return XCTFail("expected invalidObjectFrame, got \(error)")
+            }
+        }
+    }
+
+    func testNegativePageWidthIsRefused() throws {
+        var json = String(data: try DocumentCoding.encode(makeModel()), encoding: .utf8)!
+        json = json.replacingOccurrences(of: "\"width\" : 595.28", with: "\"width\" : -595.28")
+        XCTAssertTrue(json.contains("-595.28"))
+
+        XCTAssertThrowsError(try DocumentCoding.decode(Data(json.utf8))) { error in
+            guard case DocumentCoding.DocumentError.invalidPageGeometry = error else {
+                return XCTFail("expected invalidPageGeometry, got \(error)")
+            }
+        }
+    }
+
+    func testMaximumPageSizeDecodes() throws {
+        var model = makeModel()
+        model.page.width = 100_000
+        model.page.height = 100_000
+        XCTAssertNoThrow(try DocumentCoding.decode(try DocumentCoding.encode(model)))
+    }
+
+    func testPageSizeBeyondMaximumIsRefused() throws {
+        var model = makeModel()
+        model.page.width = 100_001
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidPageGeometry = error else {
+                return XCTFail("expected invalidPageGeometry, got \(error)")
+            }
+        }
+    }
+
+    func testAbsurdPageWidthIsRefused() throws {
+        // Finite but far beyond any paper size: the text container would be
+        // absurd, and non-finite values (if a decoder ever produced one) are
+        // rejected by the same guard.
+        var json = String(data: try DocumentCoding.encode(makeModel()), encoding: .utf8)!
+        json = json.replacingOccurrences(of: "\"width\" : 595.28", with: "\"width\" : 1e300")
+        XCTAssertTrue(json.contains("1e300"))
+
+        XCTAssertThrowsError(try DocumentCoding.decode(Data(json.utf8))) { error in
+            guard case DocumentCoding.DocumentError.invalidPageGeometry = error else {
+                return XCTFail("expected invalidPageGeometry, got \(error)")
+            }
+        }
+    }
+
+    func testHugeObjectFrameOriginIsRefused() throws {
+        for x in [1e300, -1e300] {
+            var model = makeModel()
+            model.objects = [PlacedObject(id: "far-origin", page: 0,
+                                          frame: RectModel(x: x, y: 0, width: 10, height: 10))]
+
+            XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+                guard case DocumentCoding.DocumentError.invalidObjectFrame = error else {
+                    return XCTFail("expected invalidObjectFrame, got \(error)")
+                }
+            }
+        }
+    }
+
+    func testHugeStandoffIsRefused() throws {
+        var model = makeModel()
+        var object = PlacedObject(id: "huge-standoff", page: 0,
+                                  frame: RectModel(x: 0, y: 0, width: 10, height: 10))
+        object.standoff = 1e300
+        model.objects = [object]
+
+        XCTAssertThrowsError(try DocumentCoding.decode(try DocumentCoding.encode(model))) { error in
+            guard case DocumentCoding.DocumentError.invalidObjectFrame = error else {
+                return XCTFail("expected invalidObjectFrame, got \(error)")
+            }
+        }
+    }
+
+    func testExportSurvivesHostileCellGeometry() throws {
+        // Defense in depth: even if a model with hostile cell geometry reaches
+        // the exporter (bypassing decode), export must not trap or OOM.
+        var model = makeModel()
+        model.body[0].cell = TableCellModel(table: "t", row: Int.max, column: 0)
+        let exported = MarkdownExporter.export(model)
+        XCTAssertFalse(exported.isEmpty)
+    }
+
     // MARK: - Archive image-name validation
 
     func testTraversalImageNamesAreIgnoredOnRead() throws {

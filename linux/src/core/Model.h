@@ -143,6 +143,36 @@ struct TableCellModel {
     friend bool operator!=(const TableCellModel &a, const TableCellModel &b) { return !(a == b); }
 };
 
+/// Bounds for geometry that must stay finite and small enough that derived
+/// arithmetic (grid dimensions, exclusion rects) can neither overflow nor
+/// allocate absurd amounts of memory. Files outside these bounds are refused
+/// at decode time (see validateSemantics in Coding.cpp). Mirror of Swift's
+/// TableGeometry in DocumentModel.swift.
+namespace TableGeometry {
+/// Largest sane table extent (rows/columns); grid dimensions derive from
+/// cell coordinates, so this also caps the allocated GFM grid.
+constexpr int maximumExtentValue = 1000;
+/// Largest sane page/object dimension in points (far beyond any paper size).
+/// Keeps 2,000 pages at 4x zoom within signed scrollbar coordinates, with
+/// headroom.
+constexpr double maximumPageDimensionValue = 100000;
+
+inline int maximumExtent() { return maximumExtentValue; }
+inline double maximumPageDimension() { return maximumPageDimensionValue; }
+
+/// True when the cell's coordinates and spans are in range and their sums
+/// cannot overflow: row, column >= 0, spans >= 1, extents within bounds.
+inline bool isValidCell(const TableCellModel &cell) {
+    if (cell.row < 0 || cell.column < 0 || cell.rowSpan < 1 || cell.columnSpan < 1)
+        return false;
+    // Widening to 64 bits first means even INT_MAX + span cannot overflow.
+    const qint64 rowSum = qint64(cell.row) + cell.rowSpan;
+    const qint64 columnSum = qint64(cell.column) + cell.columnSpan;
+    return cell.row < maximumExtentValue && cell.column < maximumExtentValue
+        && rowSum <= maximumExtentValue && columnSum <= maximumExtentValue;
+}
+} // namespace TableGeometry
+
 /// Marks a paragraph as an item of a list (spec §6.8). The visible marker is
 /// derived from the run of items — never stored.
 struct ListItemModel {

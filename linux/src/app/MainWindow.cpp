@@ -2,6 +2,7 @@
 #include "app/Dialogs.h"
 #include "app/DocumentBridge.h"
 #include "app/PageCanvas.h"
+#include "app/PdfExport.h"
 #include "app/Ruler.h"
 #include "app/WelcomeDialog.h"
 #include "core/DefaultDocuments.h"
@@ -27,7 +28,6 @@
 #include <QMessageBox>
 #include <QPageSize>
 #include <QPainter>
-#include <QPdfWriter>
 #include <QPrintDialog>
 #include <QPrinter>
 #include <QSaveFile>
@@ -699,29 +699,9 @@ void MainWindow::exportPdf() {
     if (path.isEmpty()) return;
     if (!path.endsWith(QLatin1String(".pdf"))) path += QLatin1String(".pdf");
 
-    const PageConfig &page = m_editor->model().page;
-    QPdfWriter writer(path);
-    writer.setPageSize(QPageSize(QSizeF(page.width, page.height), QPageSize::Point,
-                                 QString(), QPageSize::ExactMatch));
-    writer.setPageMargins(QMarginsF(0, 0, 0, 0));
-    writer.setResolution(72);
-    writer.setTitle(m_editor->displayName());
-
-    QPainter painter;
-    if (!painter.begin(&writer)) {
-        QMessageBox::warning(this, tr("Couldn’t export"),
-                             tr("The PDF file couldn’t be created at %1.").arg(path));
-        return;
-    }
-    const int pages = m_editor->layout()->pageCount();
-    for (int i = 0; i < pages; ++i) {
-        if (i > 0) writer.newPage();
-        m_editor->renderPage(&painter, i);
-    }
-    painter.end();
-    if (!QFileInfo::exists(path) || QFileInfo(path).size() == 0) {
-        QMessageBox::warning(this, tr("Couldn’t export"),
-                             tr("The PDF file couldn’t be written at %1.").arg(path));
+    QString error;
+    if (!PdfExport::write(*m_editor, path, &error)) {
+        QMessageBox::warning(this, tr("Couldn’t export"), tr("%1\n%2").arg(path, error));
         return;
     }
     statusBar()->showMessage(tr("Exported %1").arg(path), 4000);

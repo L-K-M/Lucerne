@@ -319,3 +319,178 @@ final class MiniZipAggregateBudgetTests: XCTestCase {
         XCTAssertEqual(try MiniZip.entries(from: data).count, 2)
     }
 }
+
+/// Entry-name safety for the .luce writer/reader: duplicate names are refused on
+/// both paths, and image `src` values are normalized to flat `images/<file>` names
+/// on write while spec-legal sources outside `images/` still load on read.
+final class ZipEntryNameSafetyTests: XCTestCase {
+
+    private let imagePayload = Data([0x89, 0x50, 0x4e, 0x47])
+
+    private func modelWithImage(src: String) -> LucerneDocumentModel {
+        var model = DefaultDocuments.empty()
+        model.objects = [PlacedObject(id: "img", type: "image", src: src, page: 0,
+                                      frame: RectModel(x: 10, y: 10, width: 50, height: 50))]
+        return model
+    }
+
+    func testWriterRejectsDuplicateEntryNames() {
+        let entries = [MiniZip.Entry(name: "a.txt", data: Data("one".utf8)),
+                       MiniZip.Entry(name: "a.txt", data: Data("two".utf8))]
+        XCTAssertThrowsError(try MiniZip.archive(entries, maxEntrySize: MiniZip.maxEntrySize)) { error in
+            guard case MiniZip.ZipError.duplicateEntry("a.txt") = error else {
+                return XCTFail("expected duplicateEntry, got \(error)")
+            }
+        }
+    }
+
+    func testReaderRejectsDuplicateEntryNames() throws {
+        // The writer now refuses duplicates, so craft one by renaming the second
+        // of two same-length entries ("b.txt" -> "a.txt") in both headers.
+        var data = MiniZip.archive([
+            MiniZip.Entry(name: "a.txt", data: Data("one".utf8)),
+            MiniZip.Entry(name: "b.txt", data: Data("two".utf8))
+        ])
+        let old = Data("b.txt".utf8), new = Data("a.txt".utf8)
+        var cursor = 0
+        while let range = data.range(of: old, in: cursor..<data.count) {
+            data.replaceSubrange(range, with: new)
+            cursor = range.lowerBound + new.count
+        }
+        XCTAssertThrowsError(try MiniZip.entries(from: data)) { error in
+            guard case MiniZip.ZipError.duplicateEntry("a.txt") = error else {
+                return XCTFail("expected duplicateEntry, got \(error)")
+            }
+        }
+    }
+
+    func testWriteNormalizesNonImagesSourceToFlatName() throws {
+        let model = modelWithImage(src: "pictures/lake.png")
+        let data = try LuceArchive.write(model: model,
+                                         images: ["pictures/lake.png": imagePayload])
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model.objects.first?.src, "images/lake.png")
+        XCTAssertEqual(contents.images["images/lake.png"], imagePayload)
+    }
+
+    func testWriteRefusesUnusableImageSource() {
+        let model = modelWithImage(src: "/")
+        XCTAssertThrowsError(try LuceArchive.write(model: model,
+                                                   images: ["/": imagePayload])) { error in
+            guard case LuceArchive.ArchiveError.invalidImageSource = error else {
+                return XCTFail("expected invalidImageSource, got \(error)")
+            }
+        }
+    }
+
+    func testWriteRefusesDotDotImageSource() {
+        let model = modelWithImage(src: "..")
+        XCTAssertThrowsError(try LuceArchive.write(model: model, images: ["..": imagePayload])) { error in
+            guard case LuceArchive.ArchiveError.invalidImageSource = error else {
+                return XCTFail("expected invalidImageSource, got \(error)")
+            }
+        }
+    }
+
+    func testReadCollectsReferencedSourceOutsideImagesPrefix() throws {
+        // Spec: `src` MUST name an archive entry; "images/" is only conventional.
+        let model = modelWithImage(src: "pictures/a.png")
+        let archive = MiniZip.archive([
+            MiniZip.Entry(name: LuceArchive.documentEntryName,
+                          data: try DocumentCoding.encode(model)),
+            MiniZip.Entry(name: "pictures/a.png", data: imagePayload)
+        ])
+        let contents = try LuceArchive.read(archive)
+        XCTAssertEqual(contents.images["pictures/a.png"], imagePayload,
+                       "a referenced payload outside images/ must be collected so the file stays savable")
+    }
+
+    func testRoundTripPreservesFlatImageSource() throws {
+        let model = modelWithImage(src: "images/lake.png")
+        let data = try LuceArchive.write(model: model, images: ["images/lake.png": imagePayload])
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model, model)
+        XCTAssertEqual(contents.images["images/lake.png"], imagePayload)
+    }
+}
+
+extension ZipEntryNameSafetyTests {
+    func testWriteRefusesRenameCollisionWithKeptFlatName() {
+        // Review feedback on #59: a rename must not collide with an existing
+        // flat images/ key either, not just with other renamed sources.
+        var model = DefaultDocuments.empty()
+        model.objects = [
+            PlacedObject(id: "a", type: "image", src: "images/lake.png", page: 0,
+                        frame: RectModel(x: 0, y: 0, width: 10, height: 10)),
+            PlacedObject(id: "b", type: "image", src: "pictures/lake.png", page: 0,
+                        frame: RectModel(x: 20, y: 0, width: 10, height: 10))
+        ]
+        XCTAssertThrowsError(try LuceArchive.write(
+            model: model,
+            images: ["images/lake.png": imagePayload, "pictures/lake.png": imagePayload])) { error in
+            guard case LuceArchive.ArchiveError.invalidImageSource = error else {
+                return XCTFail("expected invalidImageSource, got \(error)")
+            }
+        }
+    }
+
+    func testWriteRenamesASharedNonFlatSourceOnce() throws {
+        // Two placements of one picture must not make the document unsavable.
+        var model = DefaultDocuments.empty()
+        model.objects = [
+            PlacedObject(id: "a", type: "image", src: "pictures/lake.png", page: 0,
+                         frame: RectModel(x: 0, y: 0, width: 10, height: 10)),
+            PlacedObject(id: "b", type: "image", src: "pictures/lake.png", page: 0,
+                         frame: RectModel(x: 20, y: 0, width: 10, height: 10))
+        ]
+
+        let data = try LuceArchive.write(model: model,
+                                         images: ["pictures/lake.png": imagePayload])
+
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model.objects.map(\.src), ["images/lake.png", "images/lake.png"])
+        XCTAssertEqual(contents.images["images/lake.png"], imagePayload)
+        XCTAssertEqual(try MiniZip.entries(from: data).filter { $0.name.hasPrefix("images/") }.count, 1)
+    }
+
+    func testWriteReplacesBackslashAndNulInImageNames() throws {
+        let model = modelWithImage(src: "images/a\\b\0c.png")
+        XCTAssertFalse(LuceArchive.isFlatImageName("images/a\\b.png"))
+        XCTAssertFalse(LuceArchive.isFlatImageName("images/a\0b.png"))
+
+        let data = try LuceArchive.write(model: model,
+                                         images: ["images/a\\b\0c.png": imagePayload])
+
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model.objects.first?.src, "images/a_b_c.png")
+        XCTAssertEqual(contents.images["images/a_b_c.png"], imagePayload)
+    }
+
+    func testPrecomputedMarkdownIsReplacedWhenSourcesAreRenamed() throws {
+        let model = modelWithImage(src: "pictures/lake.png")
+        let stale = MarkdownExporter.export(model)
+
+        let data = try LuceArchive.write(model: model,
+                                         images: ["pictures/lake.png": imagePayload],
+                                         precomputedMarkdown: stale)
+
+        let markdown = try XCTUnwrap(try MiniZip.entries(from: data)
+            .first { $0.name == "content.md" }.map { String(decoding: $0.data, as: UTF8.self) })
+        XCTAssertFalse(markdown.contains("pictures/lake.png"))
+        XCTAssertTrue(markdown.contains("images/lake.png"))
+    }
+
+    func testRenamedPayloadReplacesAStaleUnreferencedImage() throws {
+        // An unreferenced payload already stored under the rename target must
+        // not shadow the picture the object actually shows.
+        let stale = Data([0x01]), fresh = Data([0x02])
+        let model = modelWithImage(src: "aaa/a.png")
+        for _ in 0..<20 {   // Dictionary order varies between runs; repeat.
+            let data = try LuceArchive.write(model: model,
+                                             images: ["images/a.png": stale, "aaa/a.png": fresh])
+            let contents = try LuceArchive.read(data)
+            XCTAssertEqual(contents.model.objects.first?.src, "images/a.png")
+            XCTAssertEqual(contents.images["images/a.png"], fresh)
+        }
+    }
+}

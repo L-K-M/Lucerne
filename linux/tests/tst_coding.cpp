@@ -7,6 +7,9 @@
 #include "testutil.h"
 
 #include <QtTest>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <limits>
 
@@ -128,6 +131,223 @@ private slots:
         } catch (const CodingError &error) {
             QCOMPARE(int(error.kind()), int(CodingError::Kind::InvalidListLevel));
         }
+    }
+
+    void unsafePageGeometryIsRejected_data() {
+        QTest::addColumn<QString>("field");
+        QTest::addColumn<double>("value");
+        QTest::newRow("zero width") << QStringLiteral("width") << 0.0;
+        QTest::newRow("negative width") << QStringLiteral("width") << -1.0;
+        QTest::newRow("huge width") << QStringLiteral("width") << 1e100;
+        QTest::newRow("width over cap") << QStringLiteral("width") << 100001.0;
+        QTest::newRow("zero height") << QStringLiteral("height") << 0.0;
+        QTest::newRow("huge height") << QStringLiteral("height") << 1e100;
+        QTest::newRow("height over cap") << QStringLiteral("height") << 100001.0;
+        QTest::newRow("negative margin") << QStringLiteral("left") << -1.0;
+        QTest::newRow("horizontal margins") << QStringLiteral("left") << 600.0;
+        QTest::newRow("vertical margins") << QStringLiteral("top") << 900.0;
+        // left + right must be strictly less than width (same for top +
+        // bottom vs height): sums equal to the dimension leave no text area.
+        QTest::newRow("margin sum equals width") << QStringLiteral("width") << 144.0;
+        QTest::newRow("margin sum equals height") << QStringLiteral("height") << 144.0;
+    }
+
+    void unsafePageGeometryIsRejected() {
+        QFETCH(QString, field);
+        QFETCH(double, value);
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto page = root.value(QStringLiteral("page")).toObject();
+        if (field == QLatin1String("width") || field == QLatin1String("height")) {
+            page.insert(field, value);
+        } else {
+            auto margins = page.value(QStringLiteral("margins")).toObject();
+            margins.insert(field, value);
+            page.insert(QStringLiteral("margins"), margins);
+        }
+        root.insert(QStringLiteral("page"), page);
+        EXPECT_THROW(Coding::decode(QJsonDocument(root).toJson()), CodingError);
+    }
+
+    void unsafeObjectGeometryIsRejected_data() {
+        QTest::addColumn<QString>("field");
+        QTest::addColumn<double>("value");
+        QTest::newRow("negative width") << QStringLiteral("width") << -1.0;
+        QTest::newRow("negative height") << QStringLiteral("height") << -1.0;
+        QTest::newRow("huge width") << QStringLiteral("width") << 1e100;
+        QTest::newRow("huge x") << QStringLiteral("x") << 1e100;
+        QTest::newRow("negative standoff") << QStringLiteral("standoff") << -1.0;
+        QTest::newRow("huge standoff") << QStringLiteral("standoff") << 1e100;
+    }
+
+    void unsafeObjectGeometryIsRejected() {
+        QFETCH(QString, field);
+        QFETCH(double, value);
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto objects = root.value(QStringLiteral("objects")).toArray();
+        auto object = objects[0].toObject();
+        if (field == QLatin1String("standoff")) {
+            object.insert(field, value);
+        } else {
+            auto frame = object.value(QStringLiteral("frame")).toObject();
+            frame.insert(field, value);
+            object.insert(QStringLiteral("frame"), frame);
+        }
+        objects[0] = object;
+        root.insert(QStringLiteral("objects"), objects);
+        EXPECT_THROW(Coding::decode(QJsonDocument(root).toJson()), CodingError);
+    }
+
+    void paragraphAnchoredObjectGeometryIsRejected() {
+        // Validation is anchor-agnostic: a paragraph-anchored object reaches
+        // the same layout machinery, so its frame and standoff face the same
+        // bounds as a page-anchored one.
+        const auto jsonWith = [](const QString &field, double value) {
+            auto root = QJsonDocument::fromJson(minimalDocument()).object();
+            auto objects = root.value(QStringLiteral("objects")).toArray();
+            auto object = objects[0].toObject();
+            object.insert(QStringLiteral("anchor"), QStringLiteral("paragraph"));
+            object.insert(QStringLiteral("anchorParagraph"), QStringLiteral("p1"));
+            if (field == QLatin1String("standoff")) {
+                object.insert(field, value);
+            } else {
+                auto frame = object.value(QStringLiteral("frame")).toObject();
+                frame.insert(field, value);
+                object.insert(QStringLiteral("frame"), frame);
+            }
+            objects[0] = object;
+            root.insert(QStringLiteral("objects"), objects);
+            return QJsonDocument(root).toJson();
+        };
+        EXPECT_THROW(Coding::decode(jsonWith(QStringLiteral("width"), -1.0)),
+                     CodingError);
+        EXPECT_THROW(Coding::decode(jsonWith(QStringLiteral("width"), 1e100)),
+                     CodingError);
+        EXPECT_THROW(Coding::decode(jsonWith(QStringLiteral("x"), 1e100)),
+                     CodingError);
+        EXPECT_THROW(Coding::decode(jsonWith(QStringLiteral("standoff"), -1.0)),
+                     CodingError);
+    }
+
+    void zeroSizedObjectFramesDecode() {
+        // An empty extent is valid: only negative (or non-finite / over-cap)
+        // geometry is unsafe, matching the reference decoder.
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto objects = root.value(QStringLiteral("objects")).toArray();
+        auto object = objects[0].toObject();
+        auto frame = object.value(QStringLiteral("frame")).toObject();
+        for (const QSizeF size : {QSizeF(0, 0), QSizeF(0, 140), QSizeF(200, 0)}) {
+            frame.insert(QStringLiteral("width"), size.width());
+            frame.insert(QStringLiteral("height"), size.height());
+            object.insert(QStringLiteral("frame"), frame);
+            objects[0] = object;
+            root.insert(QStringLiteral("objects"), objects);
+            const auto model = Coding::decode(QJsonDocument(root).toJson());
+            QCOMPARE(model.objects[0].frame->width, size.width());
+            QCOMPARE(model.objects[0].frame->height, size.height());
+        }
+    }
+
+    void marginsJustUnderThePageDecode() {
+        // The bound is a strict less-than on the margin sums, not "more than
+        // one point of text area": 72+72 = 144 < 144.5 is a valid page.
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto page = root.value(QStringLiteral("page")).toObject();
+        page.insert(QStringLiteral("width"), 144.5);
+        page.insert(QStringLiteral("height"), 144.5);
+        root.insert(QStringLiteral("page"), page);
+        const auto model = Coding::decode(QJsonDocument(root).toJson());
+        QCOMPARE(model.page.width, 144.5);
+    }
+
+    void unsafeTableCellGeometryIsRejected_data() {
+        QTest::addColumn<int>("row");
+        QTest::addColumn<int>("column");
+        QTest::addColumn<int>("rowSpan");
+        QTest::addColumn<int>("columnSpan");
+        QTest::newRow("negative row") << -1 << 0 << 1 << 1;
+        QTest::newRow("negative column") << 0 << -1 << 1 << 1;
+        QTest::newRow("zero rowSpan") << 0 << 0 << 0 << 1;
+        QTest::newRow("zero columnSpan") << 0 << 0 << 1 << 0;
+        QTest::newRow("row at extent") << 1000 << 0 << 1 << 1;
+        QTest::newRow("column at extent") << 0 << 1000 << 1 << 1;
+        QTest::newRow("row extent over") << 999 << 0 << 2 << 1;
+        QTest::newRow("column extent over") << 0 << 999 << 1 << 2;
+        // int-sized inputs, but the sums are computed in a wider type:
+        // INT_MAX + span must reject, never wrap.
+        QTest::newRow("overflowing row") << std::numeric_limits<int>::max() << 0 << 1 << 1;
+        QTest::newRow("overflowing column") << 0 << std::numeric_limits<int>::max() << 1 << 1;
+    }
+
+    void unsafeTableCellGeometryIsRejected() {
+        QFETCH(int, row);
+        QFETCH(int, column);
+        QFETCH(int, rowSpan);
+        QFETCH(int, columnSpan);
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto body = root.value(QStringLiteral("body")).toArray();
+        auto paragraph = body[0].toObject();
+        QJsonObject cell;
+        cell.insert(QStringLiteral("table"), QStringLiteral("t"));
+        cell.insert(QStringLiteral("row"), row);
+        cell.insert(QStringLiteral("column"), column);
+        cell.insert(QStringLiteral("rowSpan"), rowSpan);
+        cell.insert(QStringLiteral("columnSpan"), columnSpan);
+        paragraph.insert(QStringLiteral("cell"), cell);
+        body[0] = paragraph;
+        root.insert(QStringLiteral("body"), body);
+        try {
+            Coding::decode(QJsonDocument(root).toJson());
+            QFAIL("expected CodingError");
+        } catch (const CodingError &error) {
+            QCOMPARE(int(error.kind()), int(CodingError::Kind::InvalidTableCell));
+            QVERIFY2(error.message().contains(QLatin1String("p1")),
+                     qPrintable(error.message()));
+            QVERIFY2(error.message().contains(QLatin1String("1000")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void tableCellAtTheGridBoundaryDecodes() {
+        // row + rowSpan == 1000 and column + columnSpan == 1000 sit exactly at
+        // the grid bound and are valid; only sums above it (or a coordinate
+        // reaching it) fail.
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto body = root.value(QStringLiteral("body")).toArray();
+        auto paragraph = body[0].toObject();
+        QJsonObject cell;
+        cell.insert(QStringLiteral("table"), QStringLiteral("t"));
+        cell.insert(QStringLiteral("row"), 999);
+        cell.insert(QStringLiteral("column"), 999);
+        cell.insert(QStringLiteral("rowSpan"), 1);
+        cell.insert(QStringLiteral("columnSpan"), 1);
+        paragraph.insert(QStringLiteral("cell"), cell);
+        body[0] = paragraph;
+        root.insert(QStringLiteral("body"), body);
+        const auto model = Coding::decode(QJsonDocument(root).toJson());
+        QVERIFY(model.body[0].cell.has_value());
+        QCOMPARE(model.body[0].cell->row, 999);
+    }
+
+    void largePagesAndImageOverhangRemainSupported() {
+        auto root = QJsonDocument::fromJson(minimalDocument()).object();
+        auto page = root.value(QStringLiteral("page")).toObject();
+        page.insert(QStringLiteral("width"), 100000);
+        page.insert(QStringLiteral("height"), 100000);
+        root.insert(QStringLiteral("page"), page);
+
+        auto objects = root.value(QStringLiteral("objects")).toArray();
+        auto object = objects[0].toObject();
+        auto frame = object.value(QStringLiteral("frame")).toObject();
+        frame.insert(QStringLiteral("x"), -20);
+        frame.insert(QStringLiteral("y"), -10);
+        object.insert(QStringLiteral("frame"), frame);
+        objects[0] = object;
+        root.insert(QStringLiteral("objects"), objects);
+
+        const auto model = Coding::decode(QJsonDocument(root).toJson());
+        QCOMPARE(model.page.width, 100000.0);
+        QCOMPARE(model.objects[0].frame->x, -20.0);
+        QCOMPARE(Coding::decode(Coding::encode(model)), model);
     }
 
     void missingRequiredMemberIsMalformed() {
