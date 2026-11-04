@@ -8,7 +8,7 @@ public final class NavigatorView: NSView, NSTableViewDataSource, NSTableViewDele
 
     public var onSelect: ((Int) -> Void)?   // character index of the chosen heading
 
-    private let tableView = NSTableView()
+    private let tableView = KeyboardActivatingTableView(frame: .zero)
     private let scrollView = NSScrollView()
     private let titleLabel = NSTextField(labelWithString: "Contents")
     private var items: [EditorController.HeadingItem] = []
@@ -35,6 +35,10 @@ public final class NavigatorView: NSView, NSTableViewDataSource, NSTableViewDele
         tableView.delegate = self
         tableView.target = self
         tableView.action = #selector(rowClicked)
+        tableView.onActivateSelection = { [weak self] row in
+            self?.activate(row: row)
+        }
+        tableView.setAccessibilityLabel("Document headings")
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -62,7 +66,10 @@ public final class NavigatorView: NSView, NSTableViewDataSource, NSTableViewDele
     }
 
     @objc private func rowClicked() {
-        let row = tableView.clickedRow
+        activate(row: tableView.rowForAction)
+    }
+
+    private func activate(row: Int) {
         guard items.indices.contains(row) else { return }
         onSelect?(items[row].characterIndex)
     }
