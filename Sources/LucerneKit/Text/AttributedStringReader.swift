@@ -43,18 +43,23 @@ public enum AttributedStringReader {
         // Distinct NSTextTable instances → stable ids, so cells of one table group.
         var tableIDs: [ObjectIdentifier: String] = [:]
         // A page-break token can span two paragraphs after Return inherits the
-        // original attributes. Only its first occurrence is the structural break.
-        var seenPageBreakMarkers: Set<String> = []
+        // original attributes. Only a repeat in the *immediately preceding*
+        // paragraph is the same break; the same token reappearing later belongs
+        // to a copied paragraph that keeps its own forced break.
+        var previousMarkers: Set<String> = []
         while location < length {
             var start = 0, end = 0, contentsEnd = 0
             ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                                  for: NSRange(location: location, length: 0))
             let contentRange = NSRange(location: start, length: contentsEnd - start)
             let paragraphRange = NSRange(location: start, length: end - start)
+            var markers: Set<String> = []
             paragraphs.append(buildParagraph(from: attr, contentRange: contentRange,
                                              paragraphRange: paragraphRange,
                                              styles: model, tableIDs: &tableIDs,
-                                             seenPageBreakMarkers: &seenPageBreakMarkers))
+                                             previousMarkers: previousMarkers,
+                                             markers: &markers))
+            previousMarkers = markers
             if end == location { break }              // guard against non-advancing ranges
             location = end
         }
@@ -105,7 +110,8 @@ public enum AttributedStringReader {
                                        paragraphRange: NSRange,
                                        styles: StyleLookup,
                                        tableIDs: inout [ObjectIdentifier: String],
-                                       seenPageBreakMarkers: inout Set<String>) -> Paragraph {
+                                       previousMarkers: Set<String>,
+                                       markers: inout Set<String>) -> Paragraph {
         let length = (attr.string as NSString).length
         let probe = contentRange.length > 0 ? contentRange.location
                                             : min(contentRange.location, max(0, length - 1))
@@ -129,14 +135,14 @@ public enum AttributedStringReader {
             hasPageBreakFlag = true
             stop.pointee = true
         }
-        var markers: Set<String> = []
+        markers = []
         attr.enumerateAttribute(.lucernePageBreakMarker, in: paragraphRange, options: []) { value, _, _ in
             if let marker = value as? String { markers.insert(marker) }
         }
         // The token is the durable structural carrier. Keep accepting the older
         // Boolean-only representation for attributed strings already in memory.
         var hasPageBreak = hasPageBreakFlag && markers.isEmpty
-        for marker in markers where seenPageBreakMarkers.insert(marker).inserted {
+        for marker in markers where !previousMarkers.contains(marker) {
             hasPageBreak = true
         }
         if hasPageBreak {

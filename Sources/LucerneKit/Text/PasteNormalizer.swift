@@ -102,12 +102,43 @@ enum PasteNormalizer {
         return result
     }
 
+    /// The range carrying `.lucernePageBreakSentinel` that a selection touches —
+    /// by intersection, or by a caret sitting on either side of the carrier.
+    static func pageBreakSentinelRange(touching selection: NSRange,
+                                       in storage: NSAttributedString) -> NSRange? {
+        var found: NSRange?
+        storage.enumerateAttribute(.lucernePageBreakSentinel,
+                                   in: NSRange(location: 0, length: storage.length),
+                                   options: []) { value, range, stop in
+            guard (value as? Bool) == true else { return }
+            let touches = selection.length > 0
+                ? NSIntersectionRange(selection, range).length > 0
+                : selection.location >= range.location
+                    && selection.location <= NSMaxRange(range)
+            if touches {
+                found = range
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
     /// Include the untouched end of a joined paragraph in the replacement. That
     /// keeps its paragraph identity and style consistent with the last pasted
     /// paragraph, and makes undo restore both text and structural attributes.
     static func replacement(_ normalized: NSAttributedString,
                             for selection: NSRange,
                             in storage: NSAttributedString) -> Replacement {
+        var selection = selection
+        var carrier: [NSAttributedString.Key: Any]?
+        // Pasting into the trailing empty page-break paragraph replaces its
+        // invisible sentinel carrier: widen the range over it and hand the pasted
+        // first paragraph the carrier's structural attributes, the same transfer
+        // typing through PageTextView.replacePageBreakSentinel performs.
+        if let carrierRange = pageBreakSentinelRange(touching: selection, in: storage) {
+            carrier = storage.attributes(at: carrierRange.location, effectiveRange: nil)
+            selection = NSUnionRange(selection, carrierRange)
+        }
         let caretLocation = selection.location + normalized.length
         let selectionEnd = NSMaxRange(selection)
         let hasFollowingContent = selectionEnd < storage.length
@@ -134,6 +165,7 @@ enum PasteNormalizer {
         guard selectionContainsBreak || pasteContainsBreak,
               !(normalizedEndsInNewline && followingStartsParagraph),
               let continuationRange = continuationRange(after: selection, in: storage) else {
+            if let carrier { applyPageBreakCarrier(carrier, to: content) }
             return Replacement(range: selection, content: content,
                                caretLocation: caretLocation)
         }
@@ -151,11 +183,34 @@ enum PasteNormalizer {
 
         content.append(continuation)
 
+        if let carrier { applyPageBreakCarrier(carrier, to: content) }
         return Replacement(
             range: NSRange(location: selection.location,
                            length: selection.length + continuationRange.length),
             content: content,
             caretLocation: caretLocation)
+    }
+
+    /// Hand the pasted first paragraph the structural identity of the sentinel it
+    /// replaces — break flag and marker, style role, id, list membership — while
+    /// keeping the paste's own normalized formatting.
+    private static func applyPageBreakCarrier(_ carrier: [NSAttributedString.Key: Any],
+                                              to content: NSMutableAttributedString) {
+        guard content.length > 0 else { return }
+        let whole = NSRange(location: 0, length: content.length)
+        content.removeAttribute(.lucernePageBreakSentinel, range: whole)
+        var end = 0
+        (content.string as NSString).getParagraphStart(nil, end: &end, contentsEnd: nil,
+                                                       for: NSRange(location: 0, length: 0))
+        let first = NSRange(location: 0, length: end)
+        for key in [NSAttributedString.Key.lucernePageBreakBefore, .lucernePageBreakMarker,
+                    .lucerneStyleRole, .lucerneParagraphID, .lucerneList] {
+            if let value = carrier[key] {
+                content.addAttribute(key, value: value, range: first)
+            } else {
+                content.removeAttribute(key, range: first)
+            }
+        }
     }
 
     private static func representableAttributes(

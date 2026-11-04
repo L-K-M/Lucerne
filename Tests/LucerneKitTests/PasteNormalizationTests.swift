@@ -432,6 +432,52 @@ final class PasteNormalizationTests: XCTestCase {
         XCTAssertNil(snapshot.body[1].pageBreakBefore)
     }
 
+    /// Pasting into the trailing empty break paragraph goes through the
+    /// readSelection path rather than insertText: the pasted first paragraph must
+    /// inherit the sentinel's break, role, id, and list, and the carrier must go.
+    private func trailingBreakEditor() throws -> (EditorController, PageTextView) {
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "before", style: "body", runs: [Run(text: "Before")]),
+                Paragraph(id: "break", style: "body", pageBreakBefore: true,
+                          runs: [Run(text: "")])
+            ], objects: [])
+        let editor = EditorController(model: model)
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.last?.textView as? PageTextView)
+        textView.setSelectedRange(NSRange(location: editor.textStorage.length, length: 0))
+        editor.textViewBecameActive(textView)
+        return (editor, textView)
+    }
+
+    func testPasteIntoTrailingBreakParagraphTransfersBreakAndIdentity() throws {
+        let (editor, textView) = try trailingBreakEditor()
+
+        XCTAssertTrue(textView.readSelection(
+            from: try richPasteboard(containing: "Pasted"), type: .rtf))
+
+        XCTAssertEqual(editor.textStorage.string, "Before\nPasted")
+        let snapshot = editor.snapshotModel()
+        XCTAssertEqual(snapshot.body.map(\.plainText), ["Before", "Pasted"])
+        XCTAssertEqual(snapshot.body.last?.id, "break")
+        XCTAssertEqual(snapshot.body.last?.pageBreakBefore, true)
+    }
+
+    func testMultiParagraphPasteIntoTrailingBreakParagraphKeepsBreakOnFirst() throws {
+        let (editor, textView) = try trailingBreakEditor()
+
+        XCTAssertTrue(textView.readSelection(
+            from: try richPasteboard(containing: "One\nTwo"), type: .rtf))
+
+        XCTAssertEqual(editor.textStorage.string, "Before\nOne\nTwo")
+        let snapshot = editor.snapshotModel()
+        XCTAssertEqual(snapshot.body.map(\.plainText), ["Before", "One", "Two"])
+        XCTAssertEqual(snapshot.body[1].id, "break")
+        XCTAssertEqual(snapshot.body[1].pageBreakBefore, true)
+        XCTAssertNil(snapshot.body[2].pageBreakBefore)
+    }
+
     private func richPasteboard(containing string: String) throws -> NSPasteboard {
         let source = NSAttributedString(
             string: string, attributes: [.font: NSFont.systemFont(ofSize: 12)])
