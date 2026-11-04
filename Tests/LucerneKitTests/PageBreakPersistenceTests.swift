@@ -583,6 +583,135 @@ final class PageBreakPersistenceTests: XCTestCase {
         XCTAssertNil(paragraphs.last?.pageBreakBefore)
     }
 
+    /// Deleting the final paragraph's text through a command other than
+    /// Backspace — Edit ▸ Delete here — keeps the break the same way.
+    func testDeleteCommandOnFinalParagraphKeepsBreak() throws {
+        let editor = EditorController(model: model(breakText: "X", trailing: true))
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.last?.textView as? PageTextView)
+        let start = (editor.textStorage.string as NSString).range(of: "X").location
+        textView.setSelectedRange(NSRange(location: start, length: 1))
+
+        textView.delete(nil)
+
+        let last = editor.snapshotModel().body.last
+        XCTAssertEqual(last?.plainText, "")
+        XCTAssertEqual(last?.pageBreakBefore, true)
+    }
+
+    /// Cut routes through the same deletion path as Edit ▸ Delete.
+    func testCuttingOnlyCharacterOfFinalParagraphKeepsBreak() throws {
+        let editor = EditorController(model: model(breakText: "X", trailing: true))
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.last?.textView as? PageTextView)
+        let start = (editor.textStorage.string as NSString).range(of: "X").location
+        textView.setSelectedRange(NSRange(location: start, length: 1))
+
+        textView.cut(nil)
+
+        let last = editor.snapshotModel().body.last
+        XCTAssertEqual(last?.plainText, "")
+        XCTAssertEqual(last?.pageBreakBefore, true)
+    }
+
+    /// Word deletes bypassed the old per-key overrides too; they take the same
+    /// shouldChangeText path now.
+    func testDeleteWordBackwardOnFinalParagraphKeepsBreak() throws {
+        let editor = EditorController(model: model(breakText: "X", trailing: true))
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.last?.textView as? PageTextView)
+        textView.setSelectedRange(NSRange(location: editor.textStorage.length, length: 0))
+
+        textView.deleteWordBackward(nil)
+
+        let last = editor.snapshotModel().body.last
+        XCTAssertEqual(last?.plainText, "")
+        XCTAssertEqual(last?.pageBreakBefore, true)
+    }
+
+    /// The deletion and the carrier it leaves behind are one undoable change:
+    /// a single Undo restores the typed text, still marked.
+    func testBackspaceOverFinalBreakTextIsOneUndoStep() throws {
+        let (editor, textView, window) = try trailingBreakInWindow()
+        defer { withExtendedLifetime(window) {} }
+        let undoManager = try XCTUnwrap(textView.undoManager)
+        textView.insertText("X", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "X|true"])
+        // An event boundary between typing and deleting, as in real use: the
+        // undo manager groups registrations per event.
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+
+        textView.deleteBackward(nil)
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|true"])
+        XCTAssertTrue(containsSentinel(editor))
+
+        undoManager.undo()
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "X|true"])
+
+        undoManager.redo()
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|true"])
+        XCTAssertTrue(containsSentinel(editor))
+    }
+
+    // MARK: - Joined break attributes cannot resurrect
+
+    /// "Hello world" with a forced break before "world", joined back into one
+    /// paragraph by Backspace at "world"'s start. The break is gone from the
+    /// model — the joined marker mid-paragraph must be dead, not dormant.
+    private func joinedBreakEditor() throws -> (EditorController, PageTextView) {
+        let editor = EditorController(model: singleParagraphDocument("Hello world"))
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        editor.textViewBecameActive(textView)
+        let world = (editor.textStorage.string as NSString).range(of: "world").location
+        textView.setSelectedRange(NSRange(location: world, length: 0))
+        editor.insertPageBreak()
+        XCTAssertEqual(editor.pageCount, 2)
+
+        let start = (editor.textStorage.string as NSString).range(of: "world").location
+        textView.setSelectedRange(NSRange(location: start, length: 0))
+        textView.deleteBackward(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+        XCTAssertEqual(breakSummary(editor), ["Hello world|false"])
+        XCTAssertEqual(editor.pageCount, 1)
+        return (editor, textView)
+    }
+
+    private func assertNoBreakAfterSave(
+        _ editor: EditorController, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let data = try DocumentCoding.encode(editor.snapshotModel())
+        let reloaded = try DocumentCoding.decode(data)
+        XCTAssertNil(reloaded.body.first?.pageBreakBefore, file: file, line: line)
+    }
+
+    /// Deleting the text in front of the joined marker must not resurrect it.
+    func testJoinedBreakTextCannotResurrectBySelectionDelete() throws {
+        let (editor, textView) = try joinedBreakEditor()
+        textView.setSelectedRange(
+            NSRange(location: 0, length: "Hello ".utf16.count))
+
+        textView.delete(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+
+        XCTAssertEqual(breakSummary(editor), ["world|false"])
+        XCTAssertEqual(editor.pageCount, 1)
+        try assertNoBreakAfterSave(editor)
+    }
+
+    /// The same via repeated forward deletes instead of a selection delete.
+    func testJoinedBreakTextCannotResurrectByForwardDelete() throws {
+        let (editor, textView) = try joinedBreakEditor()
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+
+        for _ in 0..<"Hello ".utf16.count { textView.deleteForward(nil) }
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+
+        XCTAssertEqual(breakSummary(editor), ["world|false"])
+        XCTAssertEqual(editor.pageCount, 1)
+        try assertNoBreakAfterSave(editor)
+    }
+
     // MARK: - Typing after a trailing break
 
     /// Insert Page Break at the end of a one-paragraph document, then insert

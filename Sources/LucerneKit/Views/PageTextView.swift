@@ -229,25 +229,42 @@ public final class PageTextView: NSTextView {
         return true
     }
 
-    // Deleting the remaining text of a forced-break final paragraph must not lose
-    // the break: the paragraph still exists, it is only empty. Capture its
-    // structural attributes before the edit and restore the invisible sentinel
-    // carrier afterwards, so the trailing empty paragraph stays marked.
-    public override func deleteBackward(_ sender: Any?) {
-        let carrier = captureFinalBreakCarrier(deletingForward: false)
-        super.deleteBackward(sender)
-        restoreFinalBreakCarrier(carrier)
-    }
-
-    public override func deleteForward(_ sender: Any?) {
-        let carrier = captureFinalBreakCarrier(deletingForward: true)
-        super.deleteForward(sender)
-        restoreFinalBreakCarrier(carrier)
+    // Every deletion command — Backspace, forward delete, Cut, Edit ▸ Delete,
+    // word and line deletes — funnels through here, so the forced-break guard
+    // lives in one place instead of on each key. When a deletion removes the
+    // remaining text of a break-marked final paragraph, swap the doomed range
+    // for the invisible sentinel carrier in the same replacement: the paragraph
+    // still exists, it is only empty, so it keeps its break — and the swap is a
+    // single undoable change instead of a deletion plus a second insertion.
+    public override func shouldChangeText(in affectedCharRange: NSRange,
+                                          replacementString: String?) -> Bool {
+        guard replacementString == "",
+              let storage = textStorage,
+              let carrier = finalBreakCarrierAttributes(deleting: affectedCharRange) else {
+            return super.shouldChangeText(in: affectedCharRange,
+                                          replacementString: replacementString)
+        }
+        guard super.shouldChangeText(
+            in: affectedCharRange,
+            replacementString: AttributedStringBuilder.pageBreakSentinel) else {
+            return false
+        }
+        storage.replaceCharacters(
+            in: affectedCharRange,
+            with: NSAttributedString(string: AttributedStringBuilder.pageBreakSentinel,
+                                     attributes: carrier))
+        // The caret goes after the carrier, where Insert Page Break leaves it,
+        // so the next Backspace removes the break and the one after that removes
+        // the empty paragraph.
+        setSelectedRange(NSRange(location: affectedCharRange.location + 1, length: 0))
+        didChangeText()
+        return false
     }
 
     public override func didChangeText() {
         super.didChangeText()
         removeStrandedPageBreakSentinels()
+        removeOrphanedPageBreakAttributes()
     }
 
     private var isNormalizingPageBreakSentinels = false
@@ -308,6 +325,80 @@ public final class PageTextView: NSTextView {
         }
     }
 
+    /// A join or paste can leave a paragraph's break attributes attached to text
+    /// that no longer starts the paragraph. The model reads a break only from a
+    /// paragraph's first character, so such a marker is dormant — until an edit
+    /// deletes the text in front of it and a dead break resurrects on the next
+    /// save. Strip break attributes from every run that does not carry the same
+    /// marker as its paragraph's first character. Runs are enumerated, not
+    /// characters, so this stays cheap on every keystroke.
+    private func removeOrphanedPageBreakAttributes() {
+        guard !isNormalizingPageBreakSentinels,
+              let storage = textStorage, storage.length > 0 else { return }
+        let ns = storage.string as NSString
+        let whole = NSRange(location: 0, length: ns.length)
+        var stripBoth: [NSRange] = []
+        var stripFlag: [NSRange] = []
+
+        // A marker token that is not the paragraph's own (the run does not begin
+        // at the paragraph's first character, which always carries the token for
+        // a genuine mark) is dead weight: lose the token and the flag with it.
+        storage.enumerateAttribute(.lucernePageBreakMarker, in: whole,
+                                   options: []) { value, range, _ in
+            guard let marker = value as? String else { return }
+            let paragraph = paragraphRange(containing: range.location, in: ns)
+            let first = storage.attribute(.lucernePageBreakMarker, at: paragraph.location,
+                                          effectiveRange: nil) as? String
+            guard marker != first else { return }
+            stripBoth.append(NSIntersectionRange(range, paragraph))
+        }
+        // The bare Boolean flag has no token to compare: it is the paragraph's
+        // own stamp only where the first character is flagged too and the run
+        // sits under the same marker (or under none, for a flag-only mark).
+        storage.enumerateAttribute(.lucernePageBreakBefore, in: whole,
+                                   options: []) { value, range, _ in
+            guard (value as? Bool) == true else { return }
+            let paragraph = paragraphRange(containing: range.location, in: ns)
+            let firstFlag = (storage.attribute(.lucernePageBreakBefore,
+                                               at: paragraph.location,
+                                               effectiveRange: nil) as? Bool) == true
+            let firstMarker = storage.attribute(.lucernePageBreakMarker,
+                                                at: paragraph.location,
+                                                effectiveRange: nil) as? String
+            storage.enumerateAttribute(.lucernePageBreakMarker,
+                                       in: NSIntersectionRange(range, paragraph),
+                                       options: []) { segment, segmentRange, _ in
+                let marker = segment as? String
+                let orphan = marker == firstMarker ? !firstFlag : marker == nil
+                guard orphan else { return }
+                stripFlag.append(segmentRange)
+            }
+        }
+        guard !stripBoth.isEmpty || !stripFlag.isEmpty else { return }
+
+        isNormalizingPageBreakSentinels = true
+        defer { isNormalizingPageBreakSentinels = false }
+        // A nil replacement string brackets an attributes-only change for undo.
+        for range in stripBoth where range.length > 0 {
+            guard shouldChangeText(in: range, replacementString: nil) else { continue }
+            storage.removeAttribute(.lucernePageBreakBefore, range: range)
+            storage.removeAttribute(.lucernePageBreakMarker, range: range)
+            didChangeText()
+        }
+        for range in stripFlag where range.length > 0 {
+            guard shouldChangeText(in: range, replacementString: nil) else { continue }
+            storage.removeAttribute(.lucernePageBreakBefore, range: range)
+            didChangeText()
+        }
+    }
+
+    private func paragraphRange(containing location: Int, in text: NSString) -> NSRange {
+        var start = 0, end = 0
+        text.getParagraphStart(&start, end: &end, contentsEnd: nil,
+                               for: NSRange(location: location, length: 0))
+        return NSRange(location: start, length: end - start)
+    }
+
     private static func isPageBreakSentinel(at index: Int, in storage: NSTextStorage) -> Bool {
         guard index >= 0, index < storage.length,
               (storage.string as NSString).character(at: index) == 0x200B else { return false }
@@ -319,31 +410,30 @@ public final class PageTextView: NSTextView {
         character == 0x0A || character == 0x0D
     }
 
-    /// The final paragraph's attributes when the pending deletion reaches the end
-    /// of a break-marked final paragraph — nil in every other case.
-    private func captureFinalBreakCarrier(
-        deletingForward forward: Bool
+    /// The carrier attributes when `range` — a deletion about to happen — removes
+    /// exactly the remaining text of a break-marked final paragraph; nil in every
+    /// other case. Deleting the invisible carrier itself is deliberately excluded:
+    /// that removes the break, the way Backspace right after a page break removes
+    /// it in other word processors. A deletion covering only part of the final
+    /// paragraph needs no carrier — marked text survives — and one spanning a
+    /// paragraph boundary deletes the paragraph outright, not just its text.
+    private func finalBreakCarrierAttributes(
+        deleting range: NSRange
     ) -> [NSAttributedString.Key: Any]? {
-        guard let storage = textStorage, storage.length > 0 else { return nil }
+        guard let storage = textStorage, storage.length > 0, range.length > 0,
+              NSMaxRange(range) >= storage.length, range.location < storage.length
+        else { return nil }
         let ns = storage.string as NSString
-        var range = selectedRange()
-        if range.length == 0 {
-            let location = forward ? range.location : range.location - 1
-            guard location >= 0, location < ns.length else { return nil }
-            range = NSRange(location: location, length: 1)
-        }
-        guard NSMaxRange(range) >= ns.length else { return nil }
-        // Deleting the invisible carrier itself removes the break, the way
-        // Backspace right after a page break removes it in other word processors;
-        // only deleting the paragraph's own text keeps the (now empty) break.
-        for index in range.location..<NSMaxRange(range) where Self.isPageBreakSentinel(at: index, in: storage) {
-            return nil
-        }
         let last = ns.character(at: ns.length - 1)
         guard last != 0x0A, last != 0x0D else { return nil }
         var start = 0
         ns.getParagraphStart(&start, end: nil, contentsEnd: nil,
                              for: NSRange(location: ns.length - 1, length: 0))
+        guard range.location == start else { return nil }
+        for index in range.location..<ns.length
+        where Self.isPageBreakSentinel(at: index, in: storage) {
+            return nil
+        }
         var marked = false
         let paragraph = NSRange(location: start, length: ns.length - start)
         storage.enumerateAttribute(.lucernePageBreakMarker, in: paragraph,
@@ -356,18 +446,8 @@ public final class PageTextView: NSTextView {
                 if (value as? Bool) == true { marked = true; stop.pointee = true }
             }
         }
-        return marked ? storage.attributes(at: start, effectiveRange: nil) : nil
-    }
-
-    /// Re-add the sentinel carrier when the deletion emptied a marked final
-    /// paragraph. The caret goes after the carrier, where Insert Page Break leaves
-    /// it, so the next Backspace removes the break and the one after that removes
-    /// the empty paragraph.
-    private func restoreFinalBreakCarrier(_ attributes: [NSAttributedString.Key: Any]?) {
-        guard let attributes, let storage = textStorage, storage.length > 0 else { return }
-        let last = (storage.string as NSString).character(at: storage.length - 1)
-        guard last == 0x0A || last == 0x0D else { return }
-        var carrier = attributes
+        guard marked else { return nil }
+        var carrier = storage.attributes(at: start, effectiveRange: nil)
         carrier[.lucernePageBreakSentinel] = true
         carrier[.lucernePageBreakBefore] = true
         for key in [NSAttributedString.Key.lucerneTrailingParagraphID,
@@ -375,14 +455,7 @@ public final class PageTextView: NSTextView {
                     .lucerneTrailingList] {
             carrier.removeValue(forKey: key)
         }
-        let insertion = NSRange(location: storage.length, length: 0)
-        guard shouldChangeText(in: insertion,
-                               replacementString: AttributedStringBuilder.pageBreakSentinel) else { return }
-        storage.insert(NSAttributedString(string: AttributedStringBuilder.pageBreakSentinel,
-                                          attributes: carrier),
-                       at: storage.length)
-        setSelectedRange(NSRange(location: storage.length, length: 0))
-        didChangeText()
+        return carrier
     }
 
     // Return behaviour, in priority order:
