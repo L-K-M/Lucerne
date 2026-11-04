@@ -34,6 +34,11 @@ public extension NSAttributedString.Key {
     /// fresh id every save (review 1.8).
     static let lucerneTrailingParagraphID = NSAttributedString.Key("ch.lkmc.lucerne.trailingParagraphID")
     static let lucerneTrailingStyleRole = NSAttributedString.Key("ch.lkmc.lucerne.trailingStyleRole")
+    /// The paragraph style of a trailing empty paragraph. Its preceding newline
+    /// belongs to the prior paragraph, so this inert copy is the only place its
+    /// alignment, spacing, tabs, indents, and table block can live before typing.
+    static let lucerneTrailingParagraphStyle = NSAttributedString.Key(
+        "ch.lkmc.lucerne.trailingParagraphStyle")
     /// A list item's membership (its `ListItemModel`, JSON-encoded by `ListItemCodec`),
     /// stamped on every character of the paragraph — including its terminating newline
     /// — so the reader reconstructs the list and the layout manager knows where to draw

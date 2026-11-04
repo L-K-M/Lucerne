@@ -95,6 +95,20 @@ final class ParagraphIdentityTests: XCTestCase {
         assertUniqueIDs(editor)
     }
 
+    func testReturnAtEndKeepsTrailingParagraphFormatting() throws {
+        let (editor, textView) = try editor(for: Paragraph(
+            id: "centered", style: "body", align: "center", runs: [Run(text: "Title")]))
+        textView.setSelectedRange(NSRange(location: 5, length: 0))
+
+        textView.insertNewline(nil)
+
+        let paragraphs = editor.snapshotModel().body
+        XCTAssertEqual(paragraphs.map(\.plainText), ["Title", ""])
+        XCTAssertEqual(paragraphs.map(\.align), ["center", "center"],
+                       "the empty paragraph Return creates must keep its alignment on save")
+        assertUniqueIDs(editor)
+    }
+
     func testReturnInEmptyMiddleParagraphMintsIdentity() throws {
         let model = LucerneDocumentModel(
             page: .a4,
