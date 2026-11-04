@@ -1372,22 +1372,23 @@ public final class EditorController: NSObject {
         return true
     }
 
-    /// Whether Return in the caret's (non-empty) list item should continue the list —
-    /// checked by PageTextView before it inserts the newline.
-    func caretWillContinueList(in tv: PageTextView) -> Bool {
-        guard let storage = tv.textStorage, tv.selectedRange().length == 0 else { return false }
+    /// The non-empty list item Return should continue, captured before NSTextView
+    /// inserts the newline and drops custom list metadata from typing attributes.
+    func listItemContinuedByReturn(in tv: PageTextView) -> ListItemModel? {
+        guard let storage = tv.textStorage, tv.selectedRange().length == 0 else { return nil }
         let ns = storage.string as NSString
         let caret = min(tv.selectedRange().location, ns.length)
         var start = 0, end = 0, contentsEnd = 0
         ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                              for: NSRange(location: caret, length: 0))
-        guard contentsEnd > start else { return false }
-        return currentListItem() != nil
+        guard contentsEnd > start else { return nil }
+        return ListItemCodec.decode(
+            storage.attribute(.lucerneList, at: start, effectiveRange: nil))
     }
 
     /// NSTextView copies structural attributes when it splits a paragraph. Give the
     /// new paragraph its own identity while preserving its inherited style and list.
-    func didInsertParagraphBreak(in tv: PageTextView) {
+    func didInsertParagraphBreak(in tv: PageTextView, continuedList: ListItemModel?) {
         guard let storage = tv.textStorage else { return }
         let ns = storage.string as NSString
         let caret = min(tv.selectedRange().location, ns.length)
@@ -1395,7 +1396,9 @@ public final class EditorController: NSObject {
 
         var typing = tv.typingAttributes
         typing[.lucerneParagraphID] = newID
-        tv.typingAttributes = typing
+        if let continuedList, let encoded = ListItemCodec.encode(continuedList) {
+            typing[.lucerneList] = encoded
+        }
 
         var start = 0, end = 0, contentsEnd = 0
         ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
@@ -1405,10 +1408,23 @@ public final class EditorController: NSObject {
             storage.addAttribute(.lucerneParagraphID, value: newID,
                                  range: NSRange(location: start, length: end - start))
         } else if caret > 0 {
+            // Cocoa drops Lucerne's custom structural keys from typingAttributes
+            // when Return creates a trailing empty paragraph. Restore the role from
+            // the separator and the list captured before insertion, then stamp them
+            // before the paragraph receives its first typed character.
+            let terminator = caret - 1
+            if let role = storage.attribute(.lucerneStyleRole, at: terminator,
+                                            effectiveRange: nil) as? String {
+                typing[.lucerneStyleRole] = role
+            }
+            if continuedList == nil {
+                typing.removeValue(forKey: .lucerneList)
+            }
             stampTrailingParagraph(from: typing, id: newID, terminator: caret - 1,
                                    in: storage)
         }
         storage.endEditing()
+        tv.typingAttributes = typing
     }
 
     private func stampTrailingParagraph(from attributes: [NSAttributedString.Key: Any],

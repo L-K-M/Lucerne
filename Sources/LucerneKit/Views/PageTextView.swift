@@ -82,11 +82,12 @@ public final class PageTextView: NSTextView {
     // after, since only then does it exist.
     public override func insertNewline(_ sender: Any?) {
         if editor?.handleEmptyListItemNewline(in: self) == true { return }
-        let continueList = editor?.caretWillContinueList(in: self) ?? false
-        let demote = !continueList && (editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false)
+        let continuedList = editor?.listItemContinuedByReturn(in: self)
+        let demote = continuedList == nil
+            && (editor?.caretIsAtHeadingParagraphEnd(in: self) ?? false)
         super.insertNewline(sender)
-        editor?.didInsertParagraphBreak(in: self)
-        if continueList { editor?.didInsertListContinuationNewline(in: self) }
+        editor?.didInsertParagraphBreak(in: self, continuedList: continuedList)
+        if continuedList != nil { editor?.didInsertListContinuationNewline(in: self) }
         else if demote { editor?.startBodyParagraphAfterHeadingNewline(in: self) }
     }
 

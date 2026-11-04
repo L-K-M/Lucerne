@@ -46,6 +46,9 @@ final class ParagraphIdentityTests: XCTestCase {
         listView.setSelectedRange(NSRange(location: 4, length: 0))
         listView.insertNewline(nil)
 
+        let listParagraphs = listEditor.snapshotModel().body
+        XCTAssertEqual(listParagraphs.map(\.list), [list, list])
+        XCTAssertEqual(listParagraphs.first?.id, "list-item")
         assertUniqueIDs(listEditor)
 
         let (headingEditor, headingView) = try editor(for: Paragraph(
@@ -65,7 +68,79 @@ final class ParagraphIdentityTests: XCTestCase {
         editor.insertPageBreak()
 
         let paragraphs = editor.snapshotModel().body
+        XCTAssertEqual(paragraphs.first?.id, "original")
         XCTAssertEqual(paragraphs.last?.pageBreakBefore, true)
+        assertUniqueIDs(editor)
+    }
+
+    func testReturnAtEndPreservesTrailingListMetadata() throws {
+        let list = ListItemModel(list: "list-1", ordered: true, marker: "decimal", level: 1)
+        let (editor, textView) = try editor(for: Paragraph(
+            id: "list-item", style: "body", list: list, runs: [Run(text: "Item")]))
+        textView.setSelectedRange(NSRange(location: 4, length: 0))
+
+        textView.insertNewline(nil)
+
+        let paragraphs = editor.snapshotModel().body
+        XCTAssertEqual(paragraphs.map(\.plainText), ["Item", ""])
+        XCTAssertEqual(paragraphs.map(\.list), [list, list])
+        XCTAssertEqual(ListItemCodec.decode(textView.typingAttributes[.lucerneList]), list)
+        assertUniqueIDs(editor)
+
+        textView.insertText("Next", replacementRange: textView.selectedRange())
+
+        let typedParagraphs = editor.snapshotModel().body
+        XCTAssertEqual(typedParagraphs.map(\.plainText), ["Item", "Next"])
+        XCTAssertEqual(typedParagraphs.map(\.list), [list, list])
+        assertUniqueIDs(editor)
+    }
+
+    func testReturnInEmptyMiddleParagraphMintsIdentity() throws {
+        let model = LucerneDocumentModel(
+            page: .a4,
+            styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "first", style: "body", runs: [Run(text: "One")]),
+                Paragraph(id: "empty", style: "body", runs: [Run(text: "")]),
+                Paragraph(id: "last", style: "body", runs: [Run(text: "Three")]),
+            ],
+            objects: [])
+        let editor = EditorController(model: model)
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        editor.textViewBecameActive(textView)
+        textView.setSelectedRange(NSRange(location: 4, length: 0))
+
+        textView.insertNewline(nil)
+
+        let paragraphs = AttributedStringReader.paragraphs(
+            from: editor.textStorage, styles: editor.model.styles)
+        XCTAssertEqual(paragraphs.map(\.plainText), ["One", "", "", "Three"])
+        XCTAssertTrue(Set(["first", "empty", "last"]).isSubset(of: Set(paragraphs.map(\.id))))
+        assertUniqueIDs(editor)
+    }
+
+    func testDeletingParagraphBoundaryLeavesOneIdentity() throws {
+        let model = LucerneDocumentModel(
+            page: .a4,
+            styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "first", style: "body", runs: [Run(text: "One")]),
+                Paragraph(id: "second", style: "body", runs: [Run(text: "Two")]),
+            ],
+            objects: [])
+        let editor = EditorController(model: model)
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        editor.textViewBecameActive(textView)
+        textView.setSelectedRange(NSRange(location: 4, length: 0))
+
+        textView.deleteBackward(nil)
+
+        let paragraphs = AttributedStringReader.paragraphs(
+            from: editor.textStorage, styles: editor.model.styles)
+        XCTAssertEqual(paragraphs.map(\.plainText), ["OneTwo"])
+        XCTAssertEqual(paragraphs.first?.id, "first")
         assertUniqueIDs(editor)
     }
 
