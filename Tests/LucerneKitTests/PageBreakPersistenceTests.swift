@@ -52,28 +52,43 @@ final class PageBreakPersistenceTests: XCTestCase {
         assertBreakSurvives(attributed)
     }
 
-    func testInsertingBeforeFirstCharacterKeepsPageBreak() {
-        let attributed = NSMutableAttributedString(
-            attributedString: AttributedStringBuilder.attributedString(for: model()))
-        let range = breakRange(in: attributed)
-        let attributes = unmarkedAttributes(attributed, at: range.location)
+    // A break belongs to the paragraph whose first character carries it. Real
+    // insertions at a paragraph start adopt the attributes of the character at the
+    // caret, so they keep the break; these drive the text view, not raw storage.
 
-        attributed.insert(NSAttributedString(string: "X", attributes: attributes),
-                          at: range.location)
+    func testTypingBeforeFirstCharacterKeepsPageBreak() throws {
+        let (editor, textView, start) = try markedEditor()
+        textView.setSelectedRange(NSRange(location: start, length: 0))
 
-        assertBreakSurvives(attributed)
+        textView.insertText("X", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        let paragraphs = editor.snapshotModel().body
+        XCTAssertEqual(paragraphs.first { $0.plainText == "XBreak me" }?.pageBreakBefore, true)
+        XCTAssertEqual(paragraphs.filter { $0.pageBreakBefore == true }.count, 1)
     }
 
-    func testReplacingParagraphTextKeepsPageBreak() {
-        let attributed = NSMutableAttributedString(
-            attributedString: AttributedStringBuilder.attributedString(for: model()))
-        let range = breakRange(in: attributed)
-        let attributes = unmarkedAttributes(attributed, at: range.location)
+    func testReplacingParagraphTextKeepsPageBreak() throws {
+        let (editor, textView, start) = try markedEditor()
+        textView.setSelectedRange(NSRange(location: start, length: ("Break me" as NSString).length))
 
-        attributed.replaceCharacters(in: range,
-                                     with: NSAttributedString(string: "New", attributes: attributes))
+        textView.insertText("New", replacementRange: NSRange(location: NSNotFound, length: 0))
 
-        assertBreakSurvives(attributed)
+        let paragraphs = editor.snapshotModel().body
+        XCTAssertEqual(paragraphs.first { $0.plainText == "New" }?.pageBreakBefore, true)
+    }
+
+    func testPastingPlainTextAtParagraphStartKeepsPageBreak() throws {
+        let (editor, textView, start) = try markedEditor()
+        textView.setSelectedRange(NSRange(location: start, length: 0))
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("lucerne-test-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        pasteboard.setString("Pasted ", forType: .string)
+
+        XCTAssertTrue(textView.readSelection(from: pasteboard, type: .string))
+
+        let paragraphs = editor.snapshotModel().body
+        XCTAssertEqual(paragraphs.first { $0.plainText == "Pasted Break me" }?.pageBreakBefore, true)
     }
 
     func testSplittingMarkedParagraphDoesNotDuplicatePageBreak() {
@@ -302,7 +317,7 @@ final class PageBreakPersistenceTests: XCTestCase {
     /// A marker pasted mid-paragraph still forces the break at the paragraph's
     /// start: the whole paragraph moves to the new page, not just the line that
     /// happens to carry the marker.
-    func testMidParagraphBreakMarkerStartsPageAtParagraphStart() throws {
+    func testMidParagraphBreakMarkerDoesNotBreakThePage() throws {
         let wrapping = String(repeating: "lorem ipsum dolor sit amet ", count: 12)
         let source = LucerneDocumentModel(
             page: .a4, styles: DefaultDocuments.defaultStyles(),
@@ -322,8 +337,12 @@ final class PageBreakPersistenceTests: XCTestCase {
                                         range: marked)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
 
-        XCTAssertEqual(editor.pageNumber(forCharacterAt: paragraphStart), 2)
-        XCTAssertEqual(editor.pageNumber(forCharacterAt: mid), 2)
+        // A break belongs to the paragraph whose first character carries it, so a
+        // marker run that starts mid-paragraph (joined or pasted text) neither
+        // breaks inside the paragraph nor moves the whole paragraph.
+        XCTAssertEqual(editor.pageNumber(forCharacterAt: paragraphStart), 1)
+        XCTAssertEqual(editor.pageNumber(forCharacterAt: mid), 1)
+        XCTAssertNil(editor.snapshotModel().body.first { $0.id == "long" }?.pageBreakBefore)
     }
 
     // MARK: - Insert Page Break targeting
@@ -548,7 +567,7 @@ final class PageBreakPersistenceTests: XCTestCase {
     /// Backspacing over the invisible carrier likewise keeps the trailing break:
     /// the carrier is restored and the caret lands before it, so the next
     /// Backspace removes the paragraph's separator instead.
-    func testBackspaceOverTrailingBreakSentinelKeepsBreak() throws {
+    func testBackspaceOverTrailingBreakSentinelRemovesBreak() throws {
         let editor = EditorController(model: model(breakText: "", trailing: true))
         let textView = try XCTUnwrap(
             editor.layoutManager.textContainers.last?.textView as? PageTextView)
@@ -556,12 +575,12 @@ final class PageBreakPersistenceTests: XCTestCase {
 
         textView.deleteBackward(nil)
 
-        XCTAssertTrue(editor.textStorage.string
+        XCTAssertFalse(editor.textStorage.string
             .contains(AttributedStringBuilder.pageBreakSentinel))
-        XCTAssertEqual(textView.selectedRange().location, editor.textStorage.length - 1)
         let paragraphs = editor.snapshotModel().body
-        XCTAssertEqual(paragraphs.last?.plainText, "")
-        XCTAssertEqual(paragraphs.last?.pageBreakBefore, true)
+        XCTAssertEqual(paragraphs.last?.plainText, "",
+                       "Backspace removes the break, not yet the empty paragraph")
+        XCTAssertNil(paragraphs.last?.pageBreakBefore)
     }
 
     // MARK: - Typing after a trailing break
@@ -627,5 +646,105 @@ final class PageBreakPersistenceTests: XCTestCase {
         let editor = EditorController(model: adjacent)
 
         XCTAssertEqual(editor.layoutManager.textContainers.count, 3)
+    }
+
+    // MARK: - Removing a trailing break
+
+    /// Insert Page Break at the end of "Only" with the editor hosted in a window,
+    /// so text-view edits register undo. The caret ends after the break carrier.
+    private func trailingBreakInWindow() throws -> (EditorController, PageTextView, NSWindow) {
+        let editor = EditorController(model: singleParagraphDocument("Only"))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = editor.canvasView
+        let first = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        first.setSelectedRange(NSRange(location: editor.textStorage.length, length: 0))
+        editor.textViewBecameActive(first)
+        editor.insertPageBreak()
+        // Every page view shares one storage and selection; editing through the
+        // first view keeps it the window's first responder, which owns undo.
+        XCTAssertTrue(window.makeFirstResponder(first))
+        first.setSelectedRange(NSRange(location: editor.textStorage.length, length: 0))
+        return (editor, first, window)
+    }
+
+    private func breakSummary(_ editor: EditorController) -> [String] {
+        editor.snapshotModel().body.map { "\($0.plainText)|\($0.pageBreakBefore == true)" }
+    }
+
+    private func containsSentinel(_ editor: EditorController) -> Bool {
+        editor.textStorage.string.contains(AttributedStringBuilder.pageBreakSentinel)
+    }
+
+    func testBackspaceAfterTrailingBreakRemovesBreakThenParagraph() throws {
+        let (editor, textView, window) = try trailingBreakInWindow()
+        defer { withExtendedLifetime(window) {} }
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|true"])
+
+        textView.deleteBackward(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|false"])
+        XCTAssertFalse(containsSentinel(editor))
+        XCTAssertEqual(editor.layoutManager.textContainers.count, 1)
+
+        let undoManager = try XCTUnwrap(textView.undoManager)
+        undoManager.undo()
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|true"])
+        undoManager.redo()
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|false"])
+
+        textView.deleteBackward(nil)
+        XCTAssertEqual(breakSummary(editor), ["Only|false"])
+        XCTAssertEqual(editor.textStorage.string, "Only")
+    }
+
+    func testBackspaceJoiningBreakParagraphDropsTheBreak() throws {
+        let editor = EditorController(model: LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "only", style: "body", runs: [Run(text: "Only")]),
+                Paragraph(id: "next", style: "body", pageBreakBefore: true,
+                          runs: [Run(text: "Next")]),
+            ], objects: []))
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.last?.textView as? PageTextView)
+        textView.setSelectedRange(NSRange(location: 5, length: 0))
+
+        textView.deleteBackward(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+
+        XCTAssertEqual(breakSummary(editor), ["OnlyNext|false"],
+                       "joining must not move the previous paragraph to a new page")
+        XCTAssertEqual(editor.layoutManager.textContainers.count, 1)
+    }
+
+    func testForwardDeleteJoiningTrailingBreakParagraphDropsTheCarrier() throws {
+        let (editor, textView, _) = try trailingBreakInWindow()
+        textView.setSelectedRange(NSRange(location: 4, length: 0))
+
+        textView.deleteForward(nil)
+
+        XCTAssertEqual(breakSummary(editor), ["Only|false"])
+        XCTAssertFalse(containsSentinel(editor),
+                       "the invisible carrier must not end up inside \"Only\"")
+    }
+
+    func testBackspacingTypedTextKeepsBreakUntilTheCarrierIsDeleted() throws {
+        let (editor, textView, _) = try trailingBreakInWindow()
+        textView.insertText("X", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "X|true"])
+
+        textView.deleteBackward(nil)
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|true"])
+        XCTAssertEqual(editor.layoutManager.textContainers.count, 2)
+
+        textView.deleteBackward(nil)
+        XCTAssertEqual(breakSummary(editor), ["Only|false", "|false"])
+        XCTAssertFalse(containsSentinel(editor))
+
+        textView.deleteBackward(nil)
+        XCTAssertEqual(breakSummary(editor), ["Only|false"])
     }
 }

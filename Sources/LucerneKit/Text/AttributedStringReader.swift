@@ -129,15 +129,18 @@ public enum AttributedStringReader {
         paragraph.list = ListItemCodec.decode(attr.attribute(.lucerneList, at: probe, effectiveRange: nil))
         stripDerivedListIndent(&paragraph)
 
-        var hasPageBreakFlag = false
-        attr.enumerateAttribute(.lucernePageBreakBefore, in: paragraphRange, options: []) { value, _, stop in
-            guard (value as? Bool) == true else { return }
-            hasPageBreakFlag = true
-            stop.pointee = true
-        }
+        // A break belongs to the paragraph whose first character carries it. The
+        // builder stamps the whole paragraph, so editing its first character keeps
+        // the break, while text joined onto the end of another paragraph (Backspace
+        // at a break paragraph's start) does not drag that paragraph to a new page.
+        let first = paragraphRange.length > 0 ? paragraphRange.location : probe
+        let hasPageBreakFlag = first < length
+            && (attr.attribute(.lucernePageBreakBefore, at: first, effectiveRange: nil) as? Bool) == true
         markers = []
-        attr.enumerateAttribute(.lucernePageBreakMarker, in: paragraphRange, options: []) { value, _, _ in
-            if let marker = value as? String { markers.insert(marker) }
+        if first < length,
+           let marker = attr.attribute(.lucernePageBreakMarker, at: first,
+                                       effectiveRange: nil) as? String {
+            markers.insert(marker)
         }
         // The token is the durable structural carrier. Keep accepting the older
         // Boolean-only representation for attributed strings already in memory.

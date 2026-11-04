@@ -288,21 +288,16 @@ public final class EditorController: NSObject {
             var start = 0, end = 0
             ns.getParagraphStart(&start, end: &end, contentsEnd: nil,
                                  for: NSRange(location: location, length: 0))
-            let range = NSRange(location: start, length: end - start)
-            var hasFlag = false
-            textStorage.enumerateAttribute(.lucernePageBreakBefore,
-                                           in: range, options: []) { value, _, stop in
-                guard (value as? Bool) == true else { return }
-                hasFlag = true
-                stop.pointee = true
-            }
+            // Like AttributedStringReader, only the paragraph's first character
+            // decides: a marker run that begins mid-paragraph (joined or pasted
+            // text) never breaks the page inside or before that paragraph.
+            let hasFlag = (textStorage.attribute(.lucernePageBreakBefore, at: start,
+                                                 effectiveRange: nil) as? Bool) == true
             var markers: Set<String> = []
-            textStorage.enumerateAttribute(.lucernePageBreakMarker,
-                                           in: range, options: []) { value, _, _ in
-                if let marker = value as? String { markers.insert(marker) }
+            if let marker = textStorage.attribute(.lucernePageBreakMarker, at: start,
+                                                  effectiveRange: nil) as? String {
+                markers.insert(marker)
             }
-            // The break always starts at the paragraph start, even when a pasted
-            // marker run begins mid-paragraph.
             if markers.isEmpty ? hasFlag : !markers.isSubset(of: previousMarkers) {
                 result.append(start)
             }
