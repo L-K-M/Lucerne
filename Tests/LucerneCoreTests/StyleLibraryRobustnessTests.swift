@@ -97,15 +97,20 @@ final class StyleLibrarySaveFailureTests: XCTestCase {
         return StyleLibrary(fileURL: url)
     }
 
-    /// Expects `name` from `library` only. Observers are scoped to the sender and
-    /// removed when the test ends: an observer left on every sender would also
-    /// fire for later tests' libraries, and XCTest on macOS raises on the second
-    /// `fulfill()` of an already-fulfilled expectation.
+    /// Expects `name` from `library` only, and removes the observer when the test
+    /// ends: an observer left on every sender would also fire for later tests'
+    /// libraries, and XCTest on macOS raises on the second `fulfill()` of an
+    /// already-fulfilled expectation. The sender is matched in the block because
+    /// swift-corelibs-foundation boxes a plain Swift object differently on each
+    /// call, so `addObserver(object:)` never matches it on Linux.
     private func expectNotification(_ name: Notification.Name,
                                     from library: StyleLibrary) -> XCTestExpectation {
         let exp = expectation(description: "notification \(name.rawValue)")
         let token = NotificationCenter.default.addObserver(
-            forName: name, object: library, queue: nil) { _ in exp.fulfill() }
+            forName: name, object: nil, queue: nil) { note in
+            guard let sender = note.object as? StyleLibrary, sender === library else { return }
+            exp.fulfill()
+        }
         addTeardownBlock { NotificationCenter.default.removeObserver(token) }
         return exp
     }
