@@ -238,7 +238,9 @@ private slots:
         const QByteArray payload = DefaultDocuments::sampleLetterImages().first();
         for (const QString &name : {QStringLiteral("a\\b.png"),
                                    QStringLiteral("a-b.png"),
-                                   QStringLiteral("a.png\\backup")}) {
+                                   QStringLiteral("a.png\\backup"),
+                                   QStringLiteral("a\0b.png"),
+                                   QStringLiteral("a.png\0backup")}) {
             const QString id = editor.insertImage(payload, name, 0, QPointF(200, 200));
             QVERIFY(!id.isEmpty());
         }
@@ -248,7 +250,7 @@ private slots:
         QVERIFY2(editor.saveFile(path, &error), qPrintable(error));
         Editor reader;
         QVERIFY2(reader.loadFile(path, &error), qPrintable(error));
-        QCOMPARE(reader.objects().size(), 3);
+        QCOMPARE(reader.objects().size(), 5);
         QSet<QString> sources;
         for (const PlacedObject &object : reader.objects()) {
             QVERIFY(object.src);
@@ -256,7 +258,7 @@ private slots:
             QVERIFY(!reader.imageForObject(object).isNull());
             sources.insert(*object.src);
         }
-        QCOMPARE(sources.size(), 3);
+        QCOMPARE(sources.size(), 5);
     }
 
     void deleteObjectDropsItsExclusion() {
