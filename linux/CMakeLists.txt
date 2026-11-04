@@ -114,6 +114,11 @@ if(Qt6Test_FOUND)
             src/app/Dialogs.cpp src/app/WelcomeDialog.cpp src/app/PdfExport.cpp)
         target_link_libraries(tst_pdf PRIVATE Qt6::Widgets Qt6::PrintSupport)
     endif()
+    add_executable(tst_document_units tests/tst_document_units.cpp
+        src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp)
+    target_link_libraries(tst_document_units PRIVATE lucerne-core Qt6::Test Qt6::Widgets)
+    add_test(NAME document_units COMMAND tst_document_units)
+    set_tests_properties(document_units PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 # --------------------------------------------------------------- install / deb
