@@ -23,16 +23,80 @@ public enum LuceArchive {
 
     public enum ArchiveError: Error {
         case missingDocument
+        case invalidImageSource(String)
+    }
+
+    /// True for a safe, flat archive entry name under `images/` ("images/lake.png").
+    public static func isFlatImageName(_ name: String) -> Bool {
+        let filename = (name as NSString).lastPathComponent
+        // A backslash is a path separator to Windows extractors, and NUL ends the
+        // name early in C-based ZIP tools, so neither belongs in an entry name.
+        return !filename.isEmpty && filename != "." && filename != ".."
+            && !filename.contains("\\") && !filename.contains("\0")
+            && name == imagesPrefix + filename
     }
 
     // MARK: - Write
 
     /// `precomputedMarkdown` lets a caller that already derived `content.md` (e.g.
     /// for the history trail) pass it in, so the export doesn't run twice per save.
+    /// It is ignored when any image source is renamed, because the precomputed
+    /// text would still name the old sources.
     public static func write(model: LucerneDocumentModel, images: [String: Data],
                               history: [HistorySnapshot] = [],
                               precomputedMarkdown: String? = nil) throws -> Data {
         var entries: [MiniZip.Entry] = []
+
+        // Entry names go into the ZIP verbatim, so a model `src` that isn't a flat
+        // "images/<file>" name (traversal, absolute path, "document.json") must not
+        // be written as-is. Normalize such sources to "images/<basename>" — the
+        // payload is preserved, the archive stays safe — and refuse when that
+        // isn't possible (empty basename or a collision).
+        var model = model
+        var images = images
+        var renamed: [String: String] = [:]
+        // Every final entry name, including sources that were already flat — a
+        // rename must not collide with a kept images/ key either.
+        var takenNames: Set<String> = []
+        for object in model.objects where object.type == "image" {
+            if let src = object.src, isFlatImageName(src) {
+                takenNames.insert(src)
+            }
+        }
+        for object in model.objects {
+            guard object.type == "image", let src = object.src, !isFlatImageName(src) else { continue }
+            // Several objects may place the same picture; it is renamed once.
+            if renamed[src] != nil { continue }
+            let filename = (src as NSString).lastPathComponent
+                .replacingOccurrences(of: "\\", with: "_")
+                .replacingOccurrences(of: "\0", with: "_")
+            let newName = imagesPrefix + filename
+            guard isFlatImageName(newName) else {
+                throw ArchiveError.invalidImageSource(src)
+            }
+            guard takenNames.insert(newName).inserted else {
+                throw ArchiveError.invalidImageSource(
+                    "\(src) would collide with an existing entry \(newName)")
+            }
+            renamed[src] = newName
+        }
+        if !renamed.isEmpty {
+            for index in model.objects.indices {
+                if let src = model.objects[index].src, let newName = renamed[src] {
+                    model.objects[index].src = newName
+                }
+            }
+            // A renamed payload must win over a stale, unreferenced image already
+            // stored under its new name; dictionary order would otherwise decide.
+            var moved: [String: Data] = [:]
+            for (key, value) in images where renamed[key] == nil {
+                moved[key] = value
+            }
+            for (source, newName) in renamed {
+                if let data = images[source] { moved[newName] = data }
+            }
+            images = moved
+        }
 
         let documentJSON = try DocumentCoding.encode(model)
         entries.append(MiniZip.Entry(name: documentEntryName, data: documentJSON))
@@ -52,7 +116,11 @@ public enum LuceArchive {
             entries.append(MiniZip.Entry(name: src, data: data))
         }
 
-        let markdown = precomputedMarkdown ?? MarkdownExporter.export(model)
+        // A caller's precomputed export predates the renames above, so it would
+        // reference sources the archive no longer contains.
+        let markdown = renamed.isEmpty
+            ? precomputedMarkdown ?? MarkdownExporter.export(model)
+            : MarkdownExporter.export(model)
         entries.append(MiniZip.Entry(name: markdownEntryName, data: Data(markdown.utf8)))
 
         // Dated Markdown backups (oldest→newest), tiny plain-text recovery trail.
@@ -80,7 +148,7 @@ public enum LuceArchive {
         let model = try DocumentCoding.decode(documentEntry.data)
 
         var images: [String: Data] = [:]
-        for entry in entries where entry.name.hasPrefix(imagesPrefix) && !entry.name.hasSuffix("/") {
+        for entry in entries where !entry.name.hasSuffix("/") {
             // Accept only flat, well-formed names ("images/<file>"). Today these
             // names are just dictionary keys, but a hostile archive could carry
             // "images/../../x" — reject the zip-slip shape now so a future
@@ -88,6 +156,17 @@ public enum LuceArchive {
             let filename = (entry.name as NSString).lastPathComponent
             guard !filename.isEmpty, entry.name == imagesPrefix + filename else { continue }
             images[entry.name] = entry.data
+        }
+        // The spec only requires `src` to name an archive entry — "images/" is a
+        // convention — so also collect payloads for referenced sources outside
+        // images/ (exact name match; the names are dictionary keys, never paths
+        // we extract to). This keeps third-party files with e.g. src
+        // "pictures/a.png" loadable instead of unsavable.
+        let referenced = referencedImageSources(in: model)
+        for entry in entries where !entry.name.hasSuffix("/") {
+            if referenced.contains(entry.name) {
+                images[entry.name] = entry.data
+            }
         }
 
         var history: [HistorySnapshot] = []
@@ -103,5 +182,17 @@ public enum LuceArchive {
 
     private static func referencedImageSources(in model: LucerneDocumentModel) -> Set<String> {
         Set(model.objects.compactMap { $0.type == "image" ? $0.src : nil })
+    }
+}
+
+extension LuceArchive.ArchiveError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .missingDocument:
+            return "The archive does not contain a document.json."
+        case .invalidImageSource(let src):
+            return "A placed image names an unusable archive entry (\"\(src)\"). "
+                + "Images must be stored as flat files under images/."
+        }
     }
 }
