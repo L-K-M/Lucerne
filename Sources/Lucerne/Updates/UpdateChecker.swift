@@ -14,7 +14,7 @@ import LucerneKit
 /// skipped version, last-check date) in `UserDefaults` under namespaced keys, so reuse
 /// in another app is just `UpdateChecker(configuration: .init(owner:, repo:))`, a
 /// `start()` call, a toggle bound to `automaticChecksEnabled`, and a menu item calling
-/// `checkNow()`. Depends only on AppKit + Foundation.
+/// `checkNow()`. Depends on AppKit and LucerneKit (for `SemanticVersion`).
 final class UpdateChecker: ObservableObject {
 
     struct Configuration {
