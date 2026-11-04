@@ -1,5 +1,6 @@
 #include "app/PageLayout.h"
 #include "app/DocumentBridge.h"
+#include "app/DocumentUnits.h"
 #include "core/Lists.h"
 
 #include <QFontMetricsF>
@@ -29,7 +30,15 @@ double lineSpacingMultiple(const QTextBlockFormat &bf) {
 
 } // namespace
 
-PageLayout::PageLayout(QTextDocument *doc) : QAbstractTextDocumentLayout(doc) {}
+PageLayout::PageLayout(QTextDocument *doc)
+    : QAbstractTextDocumentLayout(doc),
+      m_documentDevice(1, 1, QImage::Format_ARGB32_Premultiplied) {
+    // Page geometry and font shaping share a stable 72-DPI coordinate space.
+    const int dotsPerMeter = qRound(DocumentUnits::pointsPerInch / DocumentUnits::metersPerInch);
+    m_documentDevice.setDotsPerMeterX(dotsPerMeter);
+    m_documentDevice.setDotsPerMeterY(dotsPerMeter);
+    setPaintDevice(&m_documentDevice);
+}
 
 void PageLayout::setPage(const PageConfig &page) {
     m_page = page;
@@ -181,7 +190,7 @@ void PageLayout::relayoutFromBlock(int startBlockNumber) {
             lineLeft = std::clamp(lineLeft, 0.0,
                                   std::max(0.0, blockRight - minSegmentWidth));
 
-            const QFontMetricsF fm(bcf.font());
+            const QFontMetricsF fm(bcf.font(), paintDevice());
             double estimate = std::max(4.0, fm.lineSpacing());
             bool placed = false;
 
@@ -371,10 +380,11 @@ void PageLayout::draw(QPainter *painter, const PaintContext &context) {
             && !context.clip.adjusted(-40, -40, 40, 40).contains(marker.baselineRight))
             continue;
         painter->save();
-        painter->setFont(bcf.font());
+        const QFont font = DocumentUnits::fontForDevice(bcf.font(), *painter->device());
+        painter->setFont(font);
         painter->setPen(bcf.foreground().style() == Qt::NoBrush
                             ? QColor(Qt::black) : bcf.foreground().color());
-        const QFontMetricsF fm(bcf.font());
+        const QFontMetricsF fm(font, painter->device());
         painter->drawText(QPointF(marker.baselineRight.x()
                                       - fm.horizontalAdvance(marker.text),
                                   marker.baselineRight.y()),
