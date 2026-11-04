@@ -1,4 +1,5 @@
 #include "app/DocumentBridge.h"
+#include "app/DocumentUnits.h"
 #include "app/Editor.h"
 #include "core/DefaultDocuments.h"
 
@@ -17,6 +18,21 @@ namespace {
 
 constexpr double pointsPerInch = 72.0;
 constexpr double metersPerInch = 0.0254;
+bool warningRaised = false;
+
+class ZeroDpiDevice final : public QPaintDevice {
+public:
+    QPaintEngine *paintEngine() const override { return nullptr; }
+
+protected:
+    int metric(PaintDeviceMetric metric) const override {
+        return metric == PdmDpiY ? 0 : 1;
+    }
+};
+
+void recordWarning(QtMsgType type, const QMessageLogContext &, const QString &) {
+    if (type == QtWarningMsg) warningRaised = true;
+}
 
 QImage imageAtDpi(const QSize &size, double dpi) {
     QImage image(size, QImage::Format_ARGB32_Premultiplied);
@@ -55,6 +71,21 @@ class tst_document_units : public QObject {
     Q_OBJECT
 
 private slots:
+    void zeroDpiFallsBackToDocumentPoints() {
+        ZeroDpiDevice device;
+        QFont font;
+        font.setPointSizeF(12.5);
+
+        warningRaised = false;
+        const QtMessageHandler previousHandler = qInstallMessageHandler(recordWarning);
+        const QFont adjusted = DocumentUnits::fontForDevice(font, device);
+        qInstallMessageHandler(previousHandler);
+
+        QVERIFY2(!warningRaised, "zero-DPI targets must not produce an invalid point size");
+        QVERIFY(std::isfinite(adjusted.pointSizeF()));
+        QCOMPARE(adjusted.pointSizeF(), 12.5);
+    }
+
     void textLayoutUsesDocumentPoints() {
         Editor editor;
         const DocumentModel model = letter();
