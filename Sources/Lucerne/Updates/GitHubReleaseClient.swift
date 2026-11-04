@@ -5,7 +5,7 @@ import LucerneKit
 /// unauthenticated requests are rate-limited to 60/hour per IP, ample for a
 /// once-a-day check).
 ///
-/// Reusable across apps — depends only on Foundation.
+/// Reusable across apps — depends on Foundation and LucerneKit's `SemanticVersion`.
 struct GitHubReleaseClient {
     let owner: String
     let repo: String
