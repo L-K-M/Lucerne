@@ -63,10 +63,5 @@ jobs:
         run: Scripts/make-app.sh
 
       - name: Verify the assembled bundle
-        run: |
-          APP="dist/Lucerne.app"
-          test -x "$APP/Contents/MacOS/Lucerne"               || { echo "::error::missing executable $APP/Contents/MacOS/Lucerne"; exit 1; }
-          test -f "$APP/Contents/Info.plist"                  || { echo "::error::missing $APP/Contents/Info.plist"; exit 1; }
-          test -f "$APP/Contents/Resources/Lucerne.sdef"      || { echo "::error::missing $APP/Contents/Resources/Lucerne.sdef"; exit 1; }
-          test -f "$APP/Contents/Resources/AppIcon.icns"      || { echo "::error::missing $APP/Contents/Resources/AppIcon.icns"; exit 1; }
-          test -f "$APP/Contents/Resources/DocumentIcon.icns" || { echo "::error::missing $APP/Contents/Resources/DocumentIcon.icns"; exit 1; }
+        # make-app.sh self-verifies after signing; this re-checks the final artifact.
+        run: Scripts/verify-mac-app.sh dist/Lucerne.app

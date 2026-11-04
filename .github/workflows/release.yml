@@ -75,16 +75,41 @@ jobs:
           [ -d "$APP" ] || { echo "::error::built $APP_NAME.app not found"; exit 1; }
           ZIP="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.zip"
           DMG="$RUNNER_TEMP/$APP_NAME-$VERSION-macos-universal.dmg"
+          DMG_SOURCE="$RUNNER_TEMP/dmg-source"
           ditto -c -k --keepParent "$APP" "$ZIP"
-          # create-dmg can exit non-zero on a headless runner even on success — verify the file.
+          [ -s "$ZIP" ] || { echo "::error::ZIP was not created"; exit 1; }
+          ZIP_CHECK="$RUNNER_TEMP/verify-zip"
+          mkdir -p "$ZIP_CHECK"
+          ditto -x -k "$ZIP" "$ZIP_CHECK"
+          Scripts/verify-mac-app.sh "$ZIP_CHECK/$APP_NAME.app"
+
+          # create-dmg can exit non-zero on a headless runner after producing a valid
+          # image. Record that status, then accept only an image hdiutil can verify,
+          # mount read-only, and validate as a complete signed app bundle.
+          mkdir -p "$DMG_SOURCE"
+          ditto "$APP" "$DMG_SOURCE/$APP_NAME.app"
+          set +e
           create-dmg \
             --volname "$APP_NAME $VERSION" \
             --window-size 540 380 \
             --icon-size 100 \
             --icon "$APP_NAME.app" 150 185 \
             --app-drop-link 390 185 \
-            "$DMG" "$APP" || true
-          [ -f "$DMG" ] || { echo "::error::DMG was not created"; exit 1; }
+            "$DMG" "$DMG_SOURCE"
+          CREATE_DMG_STATUS=$?
+          set -e
+          if [ "$CREATE_DMG_STATUS" -ne 0 ]; then
+            echo "::warning::create-dmg exited $CREATE_DMG_STATUS; validating its output"
+          fi
+          [ -s "$DMG" ] || { echo "::error::DMG was not created"; exit 1; }
+          hdiutil verify "$DMG"
+          DMG_MOUNT="$RUNNER_TEMP/verify-dmg"
+          mkdir -p "$DMG_MOUNT"
+          hdiutil attach "$DMG" -readonly -nobrowse -mountpoint "$DMG_MOUNT"
+          trap 'hdiutil detach "$DMG_MOUNT" >/dev/null 2>&1 || true' EXIT
+          Scripts/verify-mac-app.sh "$DMG_MOUNT/$APP_NAME.app"
+          hdiutil detach "$DMG_MOUNT" || { sleep 2; hdiutil detach "$DMG_MOUNT"; }
+          trap - EXIT
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
