@@ -25,10 +25,12 @@ struct Contents {
     QVector<HistorySnapshot> history;      // dated Markdown backups under history/
 };
 
-/// Serializes the package. content.md is regenerated from the model; only
-/// referenced images are written (a referenced image with no bytes throws — a
-/// silent unopenable-picture save is worse than an error). Throws
-/// MiniZip::ZipError or std::runtime_error.
+/// Serializes the package. A `src` that isn't a flat "images/<file>" name is
+/// normalized to "images/<basename>" on write ('\' and NUL replaced by '_',
+/// shared sources renamed once, collisions refused); content.md is then
+/// regenerated from the renamed model and only referenced images are written
+/// (a referenced image with no bytes throws — a silent unopenable-picture save
+/// is worse than an error). Throws MiniZip::ZipError or std::runtime_error.
 QByteArray write(const DocumentModel &model, const QMap<QString, QByteArray> &images,
                  const QVector<HistorySnapshot> &history = {});
 

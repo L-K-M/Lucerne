@@ -384,14 +384,26 @@ type; readers **MUST** ignore objects whose `type` they do not understand.
 
 ### 7.1 Image payloads
 
-- `src` **MUST** name an entry inside the archive, and that entry **MUST** be a
-  flat path of the form `images/<filename>`: the literal prefix `images/` followed by
-  a single filename component with **no** further subdirectories and no `.` or `..`
-  segments (e.g. `images/lake.png` — never `images/2026/lake.png`). Earlier drafts
-  described this only as "conventionally under `images/`"; that was looser than the
-  reference implementation, which reads and writes only the flat shape (a nested path
-  is ignored on read and its bytes are dropped on the next save), so the flat form is
-  stated normatively here.
+- `src` **MUST** name an entry inside the archive. A conforming writer
+  **MUST** store every image payload under a flat name of the form
+  `images/<filename>`: the literal prefix `images/` followed by a single
+  filename component that is non-empty, is not `.` or `..`, and contains no
+  `/`, `\`, or NUL (e.g. `images/lake.png` — never `images/2026/lake.png` or
+  `images/a\b.png`). A `\` is a path separator to Windows extractors and a NUL
+  ends the name early in C-based ZIP tools, so neither may appear in a written
+  entry name.
+- On save, a writer that meets a `src` which is not already such a flat name
+  **MUST** rename it to `images/<basename>` — the source's last path
+  component, ignoring any trailing `/`, with every `\` and NUL replaced by
+  `_` — and write `document.json` with the renamed `src` values. Several
+  objects sharing one source are renamed once, together. If the basename is
+  still unusable, or the renamed source would collide with another entry, the
+  writer **MUST** refuse the save with a clear error naming the source; it
+  **MUST NOT** write the unsafe name verbatim or silently drop the payload.
+- A reader **MUST** accept any `src` that names an entry, matched by exact
+  name — `images/` is the writer's convention, not a read-time gate — so files
+  produced by older or third-party tools still open, and save back normalized
+  per the rules above.
 - The bytes are the image's original encoded form (e.g. PNG, JPEG). Readers
   **SHOULD** support common raster formats; if a payload is missing or
   undecodable, a reader **SHOULD** render a placeholder and **MUST NOT** fail to
