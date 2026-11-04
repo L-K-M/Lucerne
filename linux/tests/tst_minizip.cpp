@@ -22,6 +22,18 @@ class tst_minizip : public QObject {
             "dFBLBQYAAAAAAQABADoAAAByAAAAAAA=");
     }
 
+    // Overwrite every central directory's declared uncompressed size field
+    // (offset 24) — the numbers the aggregate budget sums — without touching
+    // the real payloads.
+    static void patchDeclaredUncompressedSizes(QByteArray &archive, quint32 declared) {
+        const QByteArray signature("PK\x01\x02", 4);
+        for (qsizetype at = archive.indexOf(signature); at >= 0;
+             at = archive.indexOf(signature, at + 4)) {
+            for (int i = 0; i < 4; ++i)
+                archive[at + 24 + i] = char((declared >> (8 * i)) & 0xff);
+        }
+    }
+
 private slots:
     void storedRoundTrip() {
         const QVector<MiniZip::Entry> entries = {
@@ -125,18 +137,48 @@ private slots:
 
     void aggregateDeclaredSizesAreCheckedBeforeExtraction() {
         QByteArray archive = MiniZip::archive({{"a.txt", "a"}, {"b.txt", "b"}});
-        const QByteArray signature("PK\x01\x02", 4);
-        // Each declaration is legal alone; together they exceed 512 MiB.
-        for (qsizetype at = archive.indexOf(signature); at >= 0;
-             at = archive.indexOf(signature, at + 4)) {
-            archive[at + 24] = char(1);
-            archive[at + 25] = char(0);
-            archive[at + 26] = char(0);
-            archive[at + 27] = char(0x10);
-        }
+        // Each declaration exceeds the 512 MiB per-entry cap (so every entry is
+        // droppable-skippable), yet the declared sizes still sum into the 2 GiB
+        // aggregate budget: 2 × (1 GiB + 1) > 2 GiB.
+        patchDeclaredUncompressedSizes(archive, 0x40000001);
         try {
             MiniZip::entries(archive, [](const QString &) { return true; });
             QFAIL("aggregate extraction budget was not enforced");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(error.message().contains(QStringLiteral("aggregate")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void aggregateBudgetAtTheLimitIsAccepted() {
+        // 4 × exactly 512 MiB declared sums to exactly the 2 GiB budget — the
+        // envelope must accept it. The stored-size mismatch it leaves behind
+        // (a real payload of 1 byte) then fails strict extraction, which the
+        // all-droppable read skips — proving the budget itself did not fire.
+        QByteArray archive = MiniZip::archive({
+            {"a.txt", "x"}, {"b.txt", "x"}, {"c.txt", "x"}, {"d.txt", "x"}});
+        patchDeclaredUncompressedSizes(archive, quint32(MiniZip::maxEntrySize));
+        const auto read = MiniZip::entries(archive, [](const QString &) { return true; });
+        QCOMPARE(read.size(), 0);
+        try {
+            MiniZip::entries(archive);
+            QFAIL("expected a downstream extraction failure");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(!error.message().contains(QStringLiteral("aggregate")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void aggregateJustOverTheLimitIsRejected() {
+        // One byte over the budget anywhere in the directory fails the read,
+        // even when every name is droppable — droppable relaxes payload
+        // damage, never the size envelope.
+        QByteArray archive = MiniZip::archive({
+            {"a.txt", "x"}, {"b.txt", "x"}, {"c.txt", "x"}, {"d.txt", "x"}});
+        patchDeclaredUncompressedSizes(archive, quint32(MiniZip::maxEntrySize) + 1);
+        try {
+            MiniZip::entries(archive, [](const QString &) { return true; });
+            QFAIL("aggregate budget was not enforced");
         } catch (const MiniZip::ZipError &error) {
             QVERIFY2(error.message().contains(QStringLiteral("aggregate")),
                      qPrintable(error.message()));
@@ -168,7 +210,7 @@ private slots:
     void writerChecksAggregateBeforeAllocatingOutput() {
         const QByteArray sharedPayload(1024 * 1024, 'x');
         QVector<MiniZip::Entry> entries;
-        const int count = int(MiniZip::maxTotalSize / sharedPayload.size()) + 1;
+        const int count = int(MiniZip::maxTotalUncompressedSize / sharedPayload.size()) + 1;
         for (int i = 0; i < count; ++i)
             entries.append({QString::number(i), sharedPayload});
         EXPECT_THROW(MiniZip::archive(entries), MiniZip::ZipError);
@@ -244,9 +286,9 @@ private slots:
 
     void hugeDeclaredSizeIsRejectedNotAllocated() {
         // Mirrors Swift's MiniZipHardeningTests: hostile declared sizes must
-        // be rejected by the size sanity check, never allocated. Two distinct
-        // branches: 0xFFFFFFFF wraps negative through int(), and 0x30000000
-        // (768 MiB) stays positive but exceeds the 512 MiB entry cap.
+        // be rejected by the size sanity checks, never allocated. Two distinct
+        // guards: 0xFFFFFFFF alone already exceeds the 2 GiB aggregate budget,
+        // and 0x30000000 (768 MiB) stays under it but over the 512 MiB entry cap.
         const QByteArray original = MiniZip::archive({{QStringLiteral("a.txt"), "x"}});
         const int central = int(original.indexOf(QByteArrayLiteral("PK\x01\x02")));
         QVERIFY(central > 0);

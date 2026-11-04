@@ -38,6 +38,10 @@ public enum MiniZip {
     /// Not `private` so the writer (and tests) can enforce the same cap on save.
     static let maxEntrySize = 512 * 1024 * 1024
 
+    /// Upper bound on the archive's entry count. Keeps the central-directory
+    /// walk bounded and keeps a save inside what the reader accepts.
+    static let maxEntryCount = 4096
+
     // Signatures
     private static let localHeaderSig: UInt32 = 0x0403_4b50
     private static let centralHeaderSig: UInt32 = 0x0201_4b50
@@ -54,26 +58,41 @@ public enum MiniZip {
     /// archives entirely in memory (unit tests). Real saves go through the checked
     /// overload below — that is the one that enforces the size/offset limits.
     public static func archive(_ entries: [Entry]) -> Data {
-        // These callers never approach the size or 32-bit-offset limits, so the
-        // checked build can't actually throw here; fall back to empty on the
-        // impossible path rather than trapping.
+        // These callers never approach the size, count or 32-bit-offset limits,
+        // so the checked build can't actually throw here; fall back to empty on
+        // the impossible path rather than trapping.
         (try? archive(entries, maxEntrySize: maxEntrySize)) ?? Data()
     }
 
-    /// Builds a stored-only ZIP, enforcing the SAME per-entry size cap the reader
-    /// applies and rejecting a running offset that would overflow ZIP's 32-bit
-    /// fields — so a save can never quietly produce a `.luce` this code then refuses
-    /// to reopen (1.13). Throws `ZipError` instead of trapping on the conversions.
-    public static func archive(_ entries: [Entry], maxEntrySize: Int) throws -> Data {
+    /// Builds a stored-only ZIP, enforcing the SAME envelope the reader applies —
+    /// entry count, per-entry size, and the aggregate uncompressed total — and
+    /// rejecting a running offset that would overflow ZIP's 32-bit fields, so a
+    /// save can never quietly produce a `.luce` this code then refuses to reopen
+    /// (1.13). Throws `ZipError` instead of trapping on the conversions.
+    public static func archive(_ entries: [Entry], maxEntrySize: Int,
+                               maxTotalUncompressedSize: Int = MiniZip.maxTotalUncompressedSize)
+        throws -> Data {
+        guard entries.count <= maxEntryCount else {
+            throw ZipError.unsupported(
+                "The archive has \(entries.count) entries; the limit is \(maxEntryCount).")
+        }
         var output = Data()
         var central = Data()
         var offsets: [(entry: Entry, crc: UInt32, offset: UInt32)] = []
+        var totalUncompressed = 0
 
         for entry in entries {
             if entry.data.count > maxEntrySize {
                 throw ZipError.unsupported(
                     "An entry (\(entry.name)) is too large to store: \(entry.data.count) bytes "
                     + "exceeds the \(maxEntrySize)-byte limit.")
+            }
+            // ≤ 4096 entries of ≤ 512 MiB can't approach Int64 overflow.
+            totalUncompressed += entry.data.count
+            guard totalUncompressed <= maxTotalUncompressedSize else {
+                throw ZipError.unsupported(
+                    "The archive's contents total \(totalUncompressed) bytes, over the "
+                    + "\(maxTotalUncompressedSize)-byte aggregate limit.")
             }
             // Sizes and the running offset go into ZIP's fixed 32-bit fields; a value
             // that no longer fits means a >4 GiB archive this reader could never
@@ -181,6 +200,10 @@ public enum MiniZip {
         // and reporting generic corruption (2.5).
         if total == 0xFFFF || cdOffset == 0xFFFF_FFFF {
             throw ZipError.unsupported("This archive uses ZIP64 extensions, which Lucerne can't open.")
+        }
+        guard total <= maxEntryCount else {
+            throw ZipError.unsupported(
+                "The archive has \(total) entries; the limit is \(maxEntryCount).")
         }
         var cursor = Int(cdOffset)
 

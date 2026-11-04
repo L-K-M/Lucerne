@@ -41,8 +41,11 @@ private:
 /// Upper bound on a single entry's uncompressed size: the size field of a
 /// hostile archive must not size an inflate buffer unchecked.
 constexpr int maxEntrySize = 512 * 1024 * 1024;
-constexpr qint64 maxTotalSize = 512LL * 1024 * 1024;
-constexpr qint64 maxArchiveSize = 1024LL * 1024 * 1024;
+/// Aggregate cap on the *declared* uncompressed sizes summed over every
+/// central-directory record, droppable entries included — per-entry caps alone
+/// don't stop a decompression bomb spread across many entries. Matches Swift
+/// MiniZip.maxTotalUncompressedSize.
+constexpr qint64 maxTotalUncompressedSize = 2LL * 1024 * 1024 * 1024;
 constexpr int maxEntryCount = 4096;
 
 /// Builds a stored-only ZIP. Throws ZipError on the same limits the reader

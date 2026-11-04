@@ -21,7 +21,6 @@ constexpr quint16 encryptedFlag = 0x0001;
 constexpr quint16 storedMethod = 0;
 constexpr int localHeaderSize = 30;
 constexpr int centralHeaderSize = 46;
-constexpr int endOfCentralSize = 22;
 
 void appendLE16(QByteArray &out, quint16 v) {
     out += char(v & 0xff);
@@ -125,10 +124,11 @@ QByteArray archive(const QVector<Entry> &entries) {
     if (entries.size() > maxEntryCount)
         unsupported(QStringLiteral("ZIP entry count exceeds the application limit"));
 
-    // Reject the whole save before allocating output, including name/header overhead.
+    // Reject the whole save before allocating output. The envelope caps the
+    // total uncompressed payload at 2 GiB, so with names at 64 KiB each the
+    // emitted archive can never reach the 32-bit ZIP field limits.
     QSet<QString> names;
-    qint64 totalSize = 0;
-    qint64 archiveSize = endOfCentralSize;
+    qint64 totalUncompressed = 0;
     for (const Entry &entry : entries) {
         if (names.contains(entry.name)) corrupt(QStringLiteral("duplicate ZIP entry name"));
         names.insert(entry.name);
@@ -138,10 +138,9 @@ QByteArray archive(const QVector<Entry> &entries) {
         const qsizetype nameSize = nameBytes.size();
         if (nameSize > 0xffff || entry.data.size() > maxEntrySize)
             unsupported(QStringLiteral("ZIP entry exceeds the application size limit"));
-        totalSize += entry.data.size();
-        archiveSize += entry.data.size() + localHeaderSize + centralHeaderSize + 2 * nameSize;
-        if (totalSize > maxTotalSize || archiveSize > maxArchiveSize)
-            unsupported(QStringLiteral("ZIP aggregate size exceeds the application limit"));
+        totalUncompressed += entry.data.size();
+        if (totalUncompressed > maxTotalUncompressedSize)
+            unsupported(QStringLiteral("ZIP aggregate uncompressed size exceeds the application limit"));
     }
 
     QByteArray output;
@@ -231,8 +230,6 @@ QVector<Entry> entries(const QByteArray &bytes,
         unsupported(QStringLiteral("multi-disk ZIP archives are not supported"));
     if (total > maxEntryCount)
         unsupported(QStringLiteral("ZIP entry count exceeds the application limit"));
-    if (bytes.size() > maxArchiveSize)
-        unsupported(QStringLiteral("ZIP aggregate archive size exceeds the application limit"));
     if (quint64(cdOffset) + cdSize != quint64(eocd))
         corrupt(QStringLiteral("invalid central directory bounds"));
 
@@ -248,7 +245,6 @@ QVector<Entry> entries(const QByteArray &bytes,
     };
     QVector<Record> records;
     QSet<QString> names;
-    qint64 compressedTotal = 0;
     qint64 uncompressedTotal = 0;
     qsizetype cursor = qsizetype(cdOffset);
 
@@ -277,14 +273,18 @@ QVector<Entry> entries(const QByteArray &bytes,
         names.insert(name);
         cursor = recordEnd;
 
+        // Aggregate budget over ALL entries, droppable included — the
+        // droppable predicate is a name check on attacker-controlled names, so
+        // exempting droppable entries would let a bomb name itself history/*.
+        // quint32 into qint64: at most 4096 records times 4 GiB can't overflow.
+        uncompressedTotal += uncompressedSize;
+        if (uncompressedTotal > maxTotalUncompressedSize)
+            corrupt(QStringLiteral("ZIP aggregate uncompressed size exceeds the application limit"));
+
         if (compressedSize > maxEntrySize || uncompressedSize > maxEntrySize) {
             if (isDroppable && isDroppable(name)) continue;
             corrupt(QStringLiteral("entry size out of bounds"));
         }
-        compressedTotal += compressedSize;
-        uncompressedTotal += uncompressedSize;
-        if (compressedTotal > maxTotalSize || uncompressedTotal > maxTotalSize)
-            corrupt(QStringLiteral("ZIP aggregate extraction size exceeds the application limit"));
         records.append({name, nameBytes, flags, method, crc,
                         int(compressedSize), int(uncompressedSize), localOffset});
     }

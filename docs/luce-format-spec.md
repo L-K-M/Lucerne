@@ -72,6 +72,25 @@ unzipping the file. This is purely additive and does not change `formatVersion`.
   then roughly hourly for a day, daily for a month, weekly for a year, and monthly
   beyond, capped to a maximum — so the trail stays small.
 
+### 2.4 Size and count limits
+
+The container is bounded so that opening a `.luce` file cannot demand unbounded
+memory or work. A conforming archive stays within this envelope:
+
+- **Entry count:** at most **4096** entries.
+- **Entry size:** each entry's uncompressed size is at most **512 MiB**
+  (536 870 912 bytes).
+- **Aggregate size:** the sum of the declared uncompressed sizes over **all**
+  entries — including `history/` and any other non-authoritative entries a
+  reader may drop — is at most **2 GiB** (2 147 483 648 bytes).
+- **ZIP32 only:** all count, size, and offset fields **MUST** fit the classic
+  32-bit ZIP records; ZIP64 is out of scope (§2.2).
+- Entry names **MUST** be unique within the archive.
+
+A writer **MUST NOT** produce an archive outside this envelope, and a reader
+**MUST** reject an archive that violates it. There is no separate cap on the
+archive's file size or on compressed totals beyond what these limits imply.
+
 ## 3. `document.json`
 
 `document.json` **MUST** be a single JSON object encoded in UTF-8 (no BOM). It

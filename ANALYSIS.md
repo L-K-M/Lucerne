@@ -282,7 +282,7 @@ test-enabled and app-only configurations. Effort S. Includes S3-09.
 
 general issues — nice-to-have
 
-`Sources/LucerneCore/IO/MiniZip.swift:56-61` turns an unexpected writer error into
+`Sources/LucerneCore/IO/MiniZip.swift:60-65` turns an unexpected writer error into
 valid-looking empty `Data` through its nonthrowing overload.
 
 Remove that overload or make an internal invariant failure explicit. Effort S.

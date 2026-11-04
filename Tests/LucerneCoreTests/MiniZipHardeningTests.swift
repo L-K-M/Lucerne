@@ -250,4 +250,72 @@ final class MiniZipAggregateBudgetTests: XCTestCase {
         XCTAssertEqual(String(decoding: content.data, as: UTF8.self),
                        MarkdownExporter.export(model) + "")
     }
+
+    // MARK: - Entry-count cap (reader and writer share it)
+
+    func testEntryCountAtTheLimitRoundTrips() throws {
+        let entries = (0 ..< MiniZip.maxEntryCount).map {
+            MiniZip.Entry(name: "e\($0).txt", data: Data())
+        }
+        let data = try MiniZip.archive(entries, maxEntrySize: MiniZip.maxEntrySize)
+        XCTAssertEqual(try MiniZip.entries(from: data).count, MiniZip.maxEntryCount)
+    }
+
+    func testEntryCountOverTheLimitIsRejectedOnWrite() {
+        let entries = (0 ... MiniZip.maxEntryCount).map {
+            MiniZip.Entry(name: "e\($0).txt", data: Data())
+        }
+        XCTAssertThrowsError(try MiniZip.archive(entries, maxEntrySize: MiniZip.maxEntrySize)) {
+            guard case MiniZip.ZipError.unsupported = $0 else {
+                return XCTFail("expected .unsupported, got \($0)")
+            }
+        }
+    }
+
+    func testEntryCountOverTheLimitIsRejectedOnRead() {
+        // The writer refuses to emit an over-cap archive, so fake one: patch
+        // both EOCD entry-count fields to 4097 on a real one-entry archive.
+        var data = MiniZip.archive([MiniZip.Entry(name: "a.txt", data: Data("x".utf8))])
+        let signature = Data([0x50, 0x4b, 0x05, 0x06])
+        guard let eocd = data.range(of: signature, options: .backwards)?.lowerBound else {
+            return XCTFail("end of central directory not found")
+        }
+        let count = UInt16(MiniZip.maxEntryCount + 1)
+        for offset in [8, 10] {
+            data[eocd + offset] = UInt8(count & 0xff)
+            data[eocd + offset + 1] = UInt8(count >> 8)
+        }
+        XCTAssertThrowsError(try MiniZip.entries(from: data)) {
+            guard case MiniZip.ZipError.unsupported = $0 else {
+                return XCTFail("expected .unsupported, got \($0)")
+            }
+        }
+    }
+
+    // MARK: - Writer-side aggregate budget
+
+    func testWriterRefusesAggregateOverBudget() {
+        let entries = [
+            MiniZip.Entry(name: "a.txt", data: Data("hello".utf8)),
+            MiniZip.Entry(name: "b.txt", data: Data("world!".utf8))
+        ]
+        XCTAssertThrowsError(try MiniZip.archive(
+            entries, maxEntrySize: MiniZip.maxEntrySize, maxTotalUncompressedSize: 10)) {
+            guard case MiniZip.ZipError.unsupported(let message) = $0,
+                  message.contains("aggregate") else {
+                return XCTFail("expected aggregate-budget refusal, got \($0)")
+            }
+        }
+    }
+
+    func testWriterAcceptsAggregateAtBudget() throws {
+        // 11 bytes across two entries: exactly at the budget must still pass.
+        let entries = [
+            MiniZip.Entry(name: "a.txt", data: Data("hello".utf8)),
+            MiniZip.Entry(name: "b.txt", data: Data("world!".utf8))
+        ]
+        let data = try MiniZip.archive(entries, maxEntrySize: MiniZip.maxEntrySize,
+                                       maxTotalUncompressedSize: 11)
+        XCTAssertEqual(try MiniZip.entries(from: data).count, 2)
+    }
 }
