@@ -701,7 +701,7 @@ void MainWindow::exportPdf() {
 
     QString error;
     if (!PdfExport::write(*m_editor, path, &error)) {
-        QMessageBox::warning(this, tr("Couldn’t export"), error);
+        QMessageBox::warning(this, tr("Couldn’t export"), tr("%1\n%2").arg(path, error));
         return;
     }
     statusBar()->showMessage(tr("Exported %1").arg(path), 4000);
