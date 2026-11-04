@@ -97,11 +97,16 @@ final class StyleLibrarySaveFailureTests: XCTestCase {
         return StyleLibrary(fileURL: url)
     }
 
+    /// Expects `name` from `library` only. Observers are scoped to the sender and
+    /// removed when the test ends: an observer left on every sender would also
+    /// fire for later tests' libraries, and XCTest on macOS raises on the second
+    /// `fulfill()` of an already-fulfilled expectation.
     private func expectNotification(_ name: Notification.Name,
-                                    file: StaticString = #filePath, line: UInt = #line) -> XCTestExpectation {
+                                    from library: StyleLibrary) -> XCTestExpectation {
         let exp = expectation(description: "notification \(name.rawValue)")
-        NotificationCenter.default.addObserver(
-            forName: name, object: nil, queue: nil) { _ in exp.fulfill() }
+        let token = NotificationCenter.default.addObserver(
+            forName: name, object: library, queue: nil) { _ in exp.fulfill() }
+        addTeardownBlock { NotificationCenter.default.removeObserver(token) }
         return exp
     }
 
@@ -113,7 +118,7 @@ final class StyleLibrarySaveFailureTests: XCTestCase {
         try Data("x".utf8).write(to: blocker)
         let library = StyleLibrary(fileURL: blocker.appendingPathComponent("styles.json"))
 
-        let exp = expectNotification(StyleLibrary.didFailToSave)
+        let exp = expectNotification(StyleLibrary.didFailToSave, from: library)
         let ok = library.save(["body": ParagraphStyleDef(name: "Body", markdown: "p")])
         wait(for: [exp], timeout: 2)
         XCTAssertFalse(ok, "a failed write must not report success")
@@ -128,7 +133,7 @@ final class StyleLibrarySaveFailureTests: XCTestCase {
         XCTAssertTrue(library.load().isEmpty)
         XCTAssertEqual(library.loadFailure, .undecodable)
 
-        let exp = expectNotification(StyleLibrary.didFailToSave)
+        let exp = expectNotification(StyleLibrary.didFailToSave, from: library)
         XCTAssertFalse(library.save(["body": ParagraphStyleDef(name: "Body", markdown: "p")]))
         wait(for: [exp], timeout: 2)
         XCTAssertEqual(try String(contentsOf: library.fileURL, encoding: .utf8),
@@ -137,7 +142,7 @@ final class StyleLibrarySaveFailureTests: XCTestCase {
 
     func testSuccessfulSaveReturnsTrueAndPostsDidChange() {
         let library = temporaryLibrary()
-        let exp = expectNotification(StyleLibrary.didChange)
+        let exp = expectNotification(StyleLibrary.didChange, from: library)
         XCTAssertTrue(library.save(["body": ParagraphStyleDef(name: "Body", markdown: "p")]))
         wait(for: [exp], timeout: 2)
         XCTAssertEqual(Set(library.load().keys), ["body"])
