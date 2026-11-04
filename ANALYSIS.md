@@ -194,6 +194,21 @@ IDs, grids/spans/widths, furniture, unknown objects and cross-field invariants;
 do not duplicate numeric guards already implemented or in open PRs. Effort M/L;
 data-loss/architecture risk high.
 
+### Align the Swift and Qt ZIP readers' structural checks
+
+general issues — important
+
+Both apps now share the archive size, count, name and geometry limits, but the Qt
+reader (`linux/src/core/MiniZip.cpp`) also rejects multi-disk records, the ZIP64
+central-directory sentinel, encrypted entries, non-UTF-8 names, local headers that
+disagree with their central record and extra records between the central
+directory and its end record. The Swift reader (`Sources/LucerneCore/IO/MiniZip.swift`)
+checks none of these and drops an encrypted droppable entry, so a foreign or
+damaged archive can open on macOS and fail on Linux.
+
+Port the checks to Swift or relax them in Qt, and state the result in spec §2.
+Effort S/M.
+
 ## Nice-to-have
 
 ### Reject undecodable image imports before mutating
@@ -392,7 +407,10 @@ lifecycle/save-review, AppleScript command execution or updater behavior in the
 assembled application.
 
 Extend Qt coverage beyond PDF export. Add launch/menu/save-review/AppleScript/
-updater fixtures and multi-document quit review. Effort M/L.
+updater fixtures and multi-document quit review. The update downloader's host,
+redirect, size and SHA-256 checks (`Sources/Lucerne/Updates/UpdateDownloader.swift`)
+are reachable from no test target; move its pure helpers into a library target or
+add an app test bundle. Effort M/L.
 
 ### Finish Qt composition before clipboard and selection changes
 
@@ -1287,6 +1305,46 @@ bezel gradients also make a small active-segment hover animation inexpensive.
 Add per-segment tooltips/live preview, respecting reduced motion. Keep the existing
 private corner-mask fallback decision separate. Effort S/M.
 
+### Use one table fallback threshold in both Markdown exporters
+
+bugs — nice-to-have
+
+The Swift exporter falls back to plain paragraphs when a table grid exceeds 1000
+rows or columns (`Sources/LucerneCore/Model/MarkdownExporter.swift:128`); the Qt
+exporter does so above 100000 cells (`linux/src/core/Markdown.cpp:184`). A
+decode-valid 400 x 300 table therefore exports as a grid on macOS and as prose on
+Linux. Use one rule in both. Effort S.
+
+### Keep the page-break carrier out of PDF text and Find
+
+bugs — nice-to-have
+
+An empty paragraph that ends the document with a forced page break is carried by
+an invisible U+200B character. It is stripped from the model, copy, RTF/DOCX,
+Markdown and AppleScript text, but still reaches the PDF text layer and in-app
+Find. Strip it there too. Effort S.
+
+### Give the missing-image placeholder a document point size
+
+bugs — nice-to-have
+
+`linux/src/app/Editor.cpp:622` and `linux/src/app/PageCanvas.cpp:236` pass a
+default `QFont()` to `DocumentUnits::fontForDevice`. Its point size is -1, so the
+conversion leaves it unchanged and the "Image" label renders at a different size
+from the surrounding furniture text and varies with display DPI. Give it an
+explicit size in document points. Effort S.
+
+### Strip resource references from pasted HTML
+
+bugs — nice-to-have
+
+Rich paste imports clipboard HTML with `NSAttributedString` and then drops
+attachments (`Sources/LucerneKit/Text/PasteNormalizer.swift`). On macOS 27 the
+importer fetched no `<img>` or stylesheet URLs (checked with a logging server),
+but macOS 13 and 14, which the package still supports, were not tested. Remove
+resource-referencing tags before import, or confirm the importer stays offline on
+those releases. Effort S.
+
 ## Verification still needed
 
 Automated coverage should expand around:
@@ -1314,6 +1372,9 @@ Keep on-device QA separate from build/test results:
    substitutions, spelling, updater alerts, save sheets and quit review.
 6. Clean-Mac ZIP/DMG installation, Gatekeeper, update progress/cancel/offline errors
    and altered-artifact rejection after signing changes.
+7. Forced page breaks: Insert Page Break at the end and type; Return, Backspace,
+   Cut, Delete and word deletes in and around break paragraphs; undo/redo; and no
+   alert sound when a deletion keeps an empty break paragraph.
 
 ## Architecture constraints
 
