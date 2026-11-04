@@ -22,6 +22,18 @@ class tst_minizip : public QObject {
             "dFBLBQYAAAAAAQABADoAAAByAAAAAAA=");
     }
 
+    // Overwrite every central directory's declared uncompressed size field
+    // (offset 24) — the numbers the aggregate budget sums — without touching
+    // the real payloads.
+    static void patchDeclaredUncompressedSizes(QByteArray &archive, quint32 declared) {
+        const QByteArray signature("PK\x01\x02", 4);
+        for (qsizetype at = archive.indexOf(signature); at >= 0;
+             at = archive.indexOf(signature, at + 4)) {
+            for (int i = 0; i < 4; ++i)
+                archive[at + 24 + i] = char((declared >> (8 * i)) & 0xff);
+        }
+    }
+
 private slots:
     void storedRoundTrip() {
         const QVector<MiniZip::Entry> entries = {
@@ -83,6 +95,162 @@ private slots:
         QCOMPARE(entries.first().name, QStringLiteral("document.json"));
     }
 
+    void oversizedOptionalDeclarationsAreDropped_data() {
+        QTest::addColumn<QString>("name");
+        QTest::addColumn<int>("sizeOffset");
+        QTest::newRow("history compressed") << QStringLiteral("history/old.md") << 20;
+        QTest::newRow("history expanded") << QStringLiteral("history/old.md") << 24;
+        QTest::newRow("markdown compressed") << QStringLiteral("content.md") << 20;
+        QTest::newRow("markdown expanded") << QStringLiteral("content.md") << 24;
+    }
+
+    void oversizedOptionalDeclarationsAreDropped() {
+        QFETCH(QString, name);
+        QFETCH(int, sizeOffset);
+        QByteArray archive = MiniZip::archive({{"document.json", "{}"}, {name, "old"}});
+        const qsizetype central = archive.lastIndexOf(QByteArray("PK\x01\x02", 4));
+        QVERIFY(central > 0);
+        const quint32 invalidSize = quint32(MiniZip::maxEntrySize) + 1;
+        for (int i = 0; i < 4; ++i)
+            archive[central + sizeOffset + i] = char((invalidSize >> (8 * i)) & 0xff);
+
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+        try {
+            const auto recovered = MiniZip::entries(archive,
+                [&](const QString &candidate) { return candidate == name; });
+            QCOMPARE(recovered, (QVector<MiniZip::Entry>{{"document.json", "{}"}}));
+        } catch (const MiniZip::ZipError &error) {
+            QFAIL(qPrintable(error.message()));
+        }
+    }
+
+    void duplicateNamesAreRejectedByWriter() {
+        EXPECT_THROW(MiniZip::archive({{"document.json", "first"},
+                                       {"document.json", "second"}}), MiniZip::ZipError);
+    }
+
+    void duplicateNamesAreRejectedByReader() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "first"}, {"b.txt", "second"}});
+        archive.replace("b.txt", "a.txt");
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void aggregateDeclaredSizesAreCheckedBeforeExtraction() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "a"}, {"b.txt", "b"}});
+        // Each declaration exceeds the 512 MiB per-entry cap (so every entry is
+        // droppable-skippable), yet the declared sizes still sum into the 2 GiB
+        // aggregate budget: 2 × (1 GiB + 1) > 2 GiB.
+        patchDeclaredUncompressedSizes(archive, 0x40000001);
+        try {
+            MiniZip::entries(archive, [](const QString &) { return true; });
+            QFAIL("aggregate extraction budget was not enforced");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(error.message().contains(QStringLiteral("aggregate")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void aggregateBudgetAtTheLimitIsAccepted() {
+        // 4 × exactly 512 MiB declared sums to exactly the 2 GiB budget — the
+        // envelope must accept it. The stored-size mismatch it leaves behind
+        // (a real payload of 1 byte) then fails strict extraction, which the
+        // all-droppable read skips — proving the budget itself did not fire.
+        QByteArray archive = MiniZip::archive({
+            {"a.txt", "x"}, {"b.txt", "x"}, {"c.txt", "x"}, {"d.txt", "x"}});
+        patchDeclaredUncompressedSizes(archive, quint32(MiniZip::maxEntrySize));
+        const auto read = MiniZip::entries(archive, [](const QString &) { return true; });
+        QCOMPARE(read.size(), 0);
+        try {
+            MiniZip::entries(archive);
+            QFAIL("expected a downstream extraction failure");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(!error.message().contains(QStringLiteral("aggregate")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void aggregateJustOverTheLimitIsRejected() {
+        // One byte over the budget anywhere in the directory fails the read,
+        // even when every name is droppable — droppable relaxes payload
+        // damage, never the size envelope.
+        QByteArray archive = MiniZip::archive({
+            {"a.txt", "x"}, {"b.txt", "x"}, {"c.txt", "x"}, {"d.txt", "x"}});
+        patchDeclaredUncompressedSizes(archive, quint32(MiniZip::maxEntrySize) + 1);
+        try {
+            MiniZip::entries(archive, [](const QString &) { return true; });
+            QFAIL("aggregate budget was not enforced");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(error.message().contains(QStringLiteral("aggregate")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void entryCountIsBoundedOnWriteAndRead() {
+        constexpr int entryBudget = 4096;
+        QVector<MiniZip::Entry> entries;
+        for (int i = 0; i <= entryBudget; ++i)
+            entries.append({QString::number(i), {}});
+        EXPECT_THROW(MiniZip::archive(entries), MiniZip::ZipError);
+
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype eocd = archive.size() - 22;
+        for (const int offset : {8, 10}) {
+            archive[eocd + offset] = char(1);
+            archive[eocd + offset + 1] = char(0x10);
+        }
+        try {
+            MiniZip::entries(archive);
+            QFAIL("entry count was not bounded");
+        } catch (const MiniZip::ZipError &error) {
+            QVERIFY2(error.message().contains(QStringLiteral("entry count")),
+                     qPrintable(error.message()));
+        }
+    }
+
+    void writerChecksAggregateBeforeAllocatingOutput() {
+        const QByteArray sharedPayload(1024 * 1024, 'x');
+        QVector<MiniZip::Entry> entries;
+        const int count = int(MiniZip::maxTotalUncompressedSize / sharedPayload.size()) + 1;
+        for (int i = 0; i < count; ++i)
+            entries.append({QString::number(i), sharedPayload});
+        EXPECT_THROW(MiniZip::archive(entries), MiniZip::ZipError);
+    }
+
+    void entryCountAtTheLimitRoundTrips() {
+        QVector<MiniZip::Entry> entries;
+        for (int i = 0; i < MiniZip::maxEntryCount; ++i)
+            entries.append({QString::number(i), {}});
+        QCOMPARE(MiniZip::entries(MiniZip::archive(entries)), entries);
+    }
+
+    void storedSizeMismatchIsRejected() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype central = archive.indexOf(QByteArray("PK\x01\x02", 4));
+        archive[central + 24] = char(2);
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void encryptedEntryIsRejected() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype central = archive.indexOf(QByteArray("PK\x01\x02", 4));
+        archive[6] = char(1);
+        archive[central + 8] = char(1);
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void localNameMustMatchDirectoryName() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        archive[30] = 'b';
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
+    void directorySizeMustMatchItsRecords() {
+        QByteArray archive = MiniZip::archive({{"a.txt", "x"}});
+        const qsizetype eocd = archive.size() - 22;
+        archive[eocd + 12] = char(quint8(archive[eocd + 12]) + 1);
+        EXPECT_THROW(MiniZip::entries(archive), MiniZip::ZipError);
+    }
+
     void notAZipIsRejected() {
         EXPECT_THROW(MiniZip::entries(QByteArrayLiteral("plain text")), MiniZip::ZipError);
     }
@@ -118,9 +286,9 @@ private slots:
 
     void hugeDeclaredSizeIsRejectedNotAllocated() {
         // Mirrors Swift's MiniZipHardeningTests: hostile declared sizes must
-        // be rejected by the size sanity check, never allocated. Two distinct
-        // branches: 0xFFFFFFFF wraps negative through int(), and 0x30000000
-        // (768 MiB) stays positive but exceeds the 512 MiB entry cap.
+        // be rejected by the size sanity checks, never allocated. Two distinct
+        // guards: 0xFFFFFFFF alone already exceeds the 2 GiB aggregate budget,
+        // and 0x30000000 (768 MiB) stays under it but over the 512 MiB entry cap.
         const QByteArray original = MiniZip::archive({{QStringLiteral("a.txt"), "x"}});
         const int central = int(original.indexOf(QByteArrayLiteral("PK\x01\x02")));
         QVERIFY(central > 0);

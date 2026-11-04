@@ -36,6 +36,9 @@ Rules that keep this honest:
 3. **Images are stored uncompressed** inside the ZIP. They're already compressed
    formats (PNG/JPEG), so this costs nothing and keeps the writer simple (see
    `MiniZip`).
+4. **The container is bounded.** At most 4096 entries, ≤512 MiB uncompressed
+   per entry, ≤2 GiB total declared uncompressed across all entries, unique
+   entry names, ZIP32 only — see the spec, §2.4.
 
 ## `document.json` schema (v1)
 
