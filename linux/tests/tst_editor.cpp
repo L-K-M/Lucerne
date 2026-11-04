@@ -82,6 +82,28 @@ private slots:
         QCOMPARE(model.body.first().runs.first().font, std::optional<QString>());
     }
 
+    void typingAfterSaveStartsANewDirtyUndoStep() {
+        QTemporaryDir dir;
+        Editor editor;
+        QTextCursor cursor(editor.document());
+        cursor.insertText(QStringLiteral("Saved"));
+
+        QString error;
+        QVERIFY2(editor.saveFile(dir.filePath(QStringLiteral("letter.luce")), &error),
+                 qPrintable(error));
+        QVERIFY(!editor.isModified());
+
+        cursor.insertText(QStringLiteral(" later"));
+        QVERIFY2(editor.isModified(), "post-save typing must trigger the close prompt");
+
+        editor.undoStack()->undo();
+        QCOMPARE(editor.document()->toPlainText(), QStringLiteral("Saved"));
+        QVERIFY(!editor.isModified());
+        editor.undoStack()->redo();
+        QCOMPARE(editor.document()->toPlainText(), QStringLiteral("Saved later"));
+        QVERIFY(editor.isModified());
+    }
+
     void bridgeRoundTripsTheKitchenSinkFixture() {
         // Every save runs the model through DocumentBridge::build() into a
         // QTextDocument and back out via readBody(); nothing tested that pair

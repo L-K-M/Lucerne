@@ -75,7 +75,8 @@ public final class EditorController: NSObject {
 
     public func load(model: LucerneDocumentModel) {
         self.model = model
-        self.metrics = PageMetrics(page: model.page)
+        deduplicateParagraphIDs(in: &self.model.body)
+        self.metrics = PageMetrics(page: self.model.page)
         canvasView.pageSize = metrics.pageSize
 
         // Tear down existing pages/images (used on open/revert).
@@ -85,16 +86,17 @@ public final class EditorController: NSObject {
         appliedExclusionRects.removeAll()   // containers are gone; drop their cache
 
         addPage()                       // ensure a container exists before text flows
-        let attributed = AttributedStringBuilder.attributedString(for: model)
+        let attributed = AttributedStringBuilder.attributedString(for: self.model)
         textStorage.setAttributedString(attributed)
         relayoutText(syncImages: true)
 
         // Seed typing attributes from the first paragraph so an empty document
         // still types in the Body style rather than the system default.
         if let first = pages.first?.textView {
-            let role = model.body.first?.style ?? LucerneDocumentModel.defaultStyleRole
-            let id = model.body.first?.id ?? IDGenerator.next("p")
-            first.typingAttributes = AttributedStringBuilder.typingAttributes(role: role, in: model, paragraphID: id)
+            let role = self.model.body.first?.style ?? LucerneDocumentModel.defaultStyleRole
+            let id = self.model.body.first?.id ?? IDGenerator.next("p")
+            first.typingAttributes = AttributedStringBuilder.typingAttributes(
+                role: role, in: self.model, paragraphID: id)
         }
     }
 
@@ -102,6 +104,7 @@ public final class EditorController: NSObject {
     public func snapshotModel() -> LucerneDocumentModel {
         var snapshot = model
         snapshot.body = AttributedStringReader.paragraphs(from: textStorage, styles: model.styles)
+        deduplicateParagraphIDs(in: &snapshot.body)
         // Spec §5: a writer MUST define every role a paragraph references. A role
         // can dangle (e.g. undoing a style's creation while text still names it,
         // or a hand-edited file); materialize a body-based definition rather than
@@ -113,6 +116,20 @@ public final class EditorController: NSObject {
             snapshot.styles[paragraph.style] = def
         }
         return snapshot
+    }
+
+    /// Repairs legacy or pasted duplicate identities before they reach the file.
+    private func deduplicateParagraphIDs(in paragraphs: inout [Paragraph]) {
+        var seen = Set<String>()
+        for index in paragraphs.indices {
+            if seen.insert(paragraphs[index].id).inserted { continue }
+
+            var replacement = IDGenerator.next("p")
+            while !seen.insert(replacement).inserted {
+                replacement = IDGenerator.next("p")
+            }
+            paragraphs[index].id = replacement
+        }
     }
 
     // MARK: - Pagination
@@ -1366,43 +1383,98 @@ public final class EditorController: NSObject {
         return true
     }
 
-    /// Whether Return in the caret's (non-empty) list item should continue the list —
-    /// checked by PageTextView before it inserts the newline.
-    func caretWillContinueList(in tv: PageTextView) -> Bool {
-        guard let storage = tv.textStorage, tv.selectedRange().length == 0 else { return false }
+    /// The non-empty list item Return should continue, captured before NSTextView
+    /// inserts the newline and drops custom list metadata from typing attributes.
+    func listItemContinuedByReturn(in tv: PageTextView) -> ListItemModel? {
+        guard let storage = tv.textStorage, tv.selectedRange().length == 0 else { return nil }
         let ns = storage.string as NSString
         let caret = min(tv.selectedRange().location, ns.length)
         var start = 0, end = 0, contentsEnd = 0
         ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                              for: NSRange(location: caret, length: 0))
-        guard contentsEnd > start else { return false }
-        return currentListItem() != nil
+        guard contentsEnd > start else { return nil }
+        return ListItemCodec.decode(
+            storage.attribute(.lucerneList, at: start, effectiveRange: nil))
     }
 
-    /// Called after PageTextView inserts the newline that continues a list: the split
-    /// already carried list membership onto the new paragraph; when that paragraph is
-    /// the document's trailing empty one, stamp the terminator so it round-trips (and
-    /// draws its marker). Then refresh so an ordered list renumbers.
-    func didInsertListContinuationNewline(in tv: PageTextView) {
+    /// NSTextView copies structural attributes when it splits a paragraph. Give the
+    /// new paragraph its own identity while preserving its inherited style and list.
+    func didInsertParagraphBreak(in tv: PageTextView, continuedList: ListItemModel?) {
         guard let storage = tv.textStorage else { return }
         let ns = storage.string as NSString
         let caret = min(tv.selectedRange().location, ns.length)
+        let newID = IDGenerator.next("p")
+
+        var typing = tv.typingAttributes
+        typing[.lucerneParagraphID] = newID
+        if let continuedList, let encoded = ListItemCodec.encode(continuedList) {
+            typing[.lucerneList] = encoded
+        }
+
         var start = 0, end = 0, contentsEnd = 0
         ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                              for: NSRange(location: caret, length: 0))
-        if contentsEnd == start, caret >= ns.length, ns.length > 0 {
-            // The inserted newline (the split's separator) carries the list item's role
-            // and membership; take them from there rather than the post-insert typing
-            // attributes, and mint a fresh id for the new empty paragraph.
-            let term = NSRange(location: ns.length - 1, length: 1)
-            let role = (storage.attribute(.lucerneStyleRole, at: ns.length - 1, effectiveRange: nil) as? String)
-                ?? LucerneDocumentModel.defaultStyleRole
-            storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: term)
-            storage.addAttribute(.lucerneTrailingParagraphID, value: IDGenerator.next("p"), range: term)
-            if let encoded = storage.attribute(.lucerneList, at: ns.length - 1, effectiveRange: nil) as? String {
-                storage.addAttribute(.lucerneTrailingList, value: encoded, range: term)
+        storage.beginEditing()
+        if end > start {
+            storage.addAttribute(.lucerneParagraphID, value: newID,
+                                 range: NSRange(location: start, length: end - start))
+        } else if caret > 0 {
+            // Cocoa drops Lucerne's custom structural keys from typingAttributes
+            // when Return creates a trailing empty paragraph. Restore the role from
+            // the separator and the list captured before insertion, then stamp them
+            // before the paragraph receives its first typed character.
+            let terminator = caret - 1
+            if let role = storage.attribute(.lucerneStyleRole, at: terminator,
+                                            effectiveRange: nil) as? String {
+                typing[.lucerneStyleRole] = role
             }
+            if continuedList == nil {
+                typing.removeValue(forKey: .lucerneList)
+            }
+            stampTrailingParagraph(from: typing, id: newID, terminator: caret - 1,
+                                   in: storage)
         }
+        storage.endEditing()
+        tv.typingAttributes = typing
+    }
+
+    private func stampTrailingParagraph(from attributes: [NSAttributedString.Key: Any],
+                                        id: String, terminator: Int,
+                                        in storage: NSTextStorage) {
+        let range = NSRange(location: terminator, length: 1)
+        let role = (attributes[.lucerneStyleRole] as? String)
+            ?? LucerneDocumentModel.defaultStyleRole
+        storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: range)
+        storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: range)
+
+        if let list = attributes[.lucerneList] {
+            storage.addAttribute(.lucerneTrailingList, value: list, range: range)
+            return
+        }
+        storage.removeAttribute(.lucerneTrailingList, range: range)
+    }
+
+    private func assignFreshIdentity(toParagraphAt location: Int,
+                                     textView tv: PageTextView,
+                                     storage: NSTextStorage) {
+        let ns = storage.string as NSString
+        let clamped = min(max(0, location), ns.length)
+        let newID = IDGenerator.next("p")
+        var start = 0, end = 0, contentsEnd = 0
+        ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                             for: NSRange(location: clamped, length: 0))
+        if end > start {
+            storage.addAttribute(.lucerneParagraphID, value: newID,
+                                 range: NSRange(location: start, length: end - start))
+        }
+
+        var typing = tv.typingAttributes
+        typing[.lucerneParagraphID] = newID
+        tv.typingAttributes = typing
+    }
+
+    /// Refresh after a continued list item so ordered markers renumber immediately.
+    func didInsertListContinuationNewline(in tv: PageTextView) {
         setPagesNeedDisplay()
     }
 
@@ -1486,7 +1558,8 @@ public final class EditorController: NSObject {
         let bodyRole = LucerneDocumentModel.defaultStyleRole
         let ns = storage.string as NSString
         let caret = min(tv.selectedRange().location, ns.length)
-        let newID = IDGenerator.next("p")
+        let newID = (tv.typingAttributes[.lucerneParagraphID] as? String)
+            ?? IDGenerator.next("p")
         let attrs = AttributedStringBuilder.typingAttributes(role: bodyRole, in: model, paragraphID: newID)
 
         var start = 0, end = 0, contentsEnd = 0
@@ -1520,13 +1593,19 @@ public final class EditorController: NSObject {
             let loc = min(tv.selectedRange().location, ns.length)
             let atParagraphStart = loc == 0 || ns.character(at: loc - 1) == 0x0A || ns.character(at: loc - 1) == 0x0D
             var markLoc = loc
+            var createdParagraph = false
             if !atParagraphStart {
                 storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: loc)
                 markLoc = loc + 1
+                createdParagraph = true
             }
             if markLoc >= storage.length {
                 // Page break at the very end: add an empty paragraph to carry it.
                 storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: storage.length)
+                createdParagraph = true
+            }
+            if createdParagraph {
+                assignFreshIdentity(toParagraphAt: markLoc, textView: tv, storage: storage)
             }
             if markLoc < storage.length {
                 let updated = storage.string as NSString
@@ -1566,18 +1645,26 @@ public final class EditorController: NSObject {
             let ns = storage.string as NSString
             let caret = min(tv.selectedRange().location, ns.length)
             let atParagraphStart = caret == 0 || ns.character(at: caret - 1) == 0x0A
-            let bodyAttrs = AttributedStringBuilder.typingAttributes(
-                role: LucerneDocumentModel.defaultStyleRole, in: model, paragraphID: IDGenerator.next("p"))
+            func bodyAttributes() -> [NSAttributedString.Key: Any] {
+                AttributedStringBuilder.typingAttributes(
+                    role: LucerneDocumentModel.defaultStyleRole,
+                    in: model,
+                    paragraphID: IDGenerator.next("p"))
+            }
             // Prepend a body paragraph when the caret is mid-paragraph (to break out of
             // it) OR at the very start of the document — otherwise a table that is the
             // first paragraph has no line above it, and the caret can't be placed there.
             let needsLeading = !atParagraphStart || caret == 0
             let insert = NSMutableAttributedString()
-            if needsLeading { insert.append(NSAttributedString(string: "\n", attributes: bodyAttrs)) }
+            if needsLeading {
+                insert.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+            }
             insert.append(cells)
             // Ensure a normal body paragraph follows the table (terminates the last
             // cell with non-cell text) when inserting at the very end of the document.
-            if caret == ns.length { insert.append(NSAttributedString(string: "\n", attributes: bodyAttrs)) }
+            if caret == ns.length {
+                insert.append(NSAttributedString(string: "\n", attributes: bodyAttributes()))
+            }
             storage.insert(insert, at: caret)
             let firstCell = caret + (needsLeading ? 1 : 0)
             tv.setSelectedRange(NSRange(location: min(firstCell, (storage.string as NSString).length), length: 0))

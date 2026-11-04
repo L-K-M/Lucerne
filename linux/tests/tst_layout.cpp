@@ -195,6 +195,35 @@ private slots:
         QCOMPARE(spy.count(), 0);
     }
 
+    void movingAnExclusionBetweenExistingPagesReflows() {
+        DocumentModel model = longDocument(60);
+        PlacedObject image;
+        image.id = QStringLiteral("moving");
+        image.page = 0;
+        image.frame = RectModel{200, 200, 150, 150};
+        model.objects.append(image);
+
+        // Keep the maximum object page unchanged while the wrapping image moves.
+        PlacedObject overlay = image;
+        overlay.id = QStringLiteral("overlay");
+        overlay.page = 1;
+        overlay.wrap = QStringLiteral("none");
+        model.objects.append(overlay);
+        Editor editor(model);
+        const auto before = editor.lineRects();
+
+        model.objects[0].page = 1;
+        editor.layout->setObjects(model.objects);
+        const auto after = editor.lineRects();
+        QVERIFY2(after != before, "a page-only move must invalidate text flow");
+        Editor expected(model);
+        QCOMPARE(after, expected.lineRects());
+
+        model.objects[0].page = 0;
+        editor.layout->setObjects(model.objects);
+        QCOMPARE(editor.lineRects(), before);
+    }
+
     void wrapNoneOverlaysWithoutReflow() {
         DocumentModel model = longDocument(4);
         PlacedObject overlay;
