@@ -83,6 +83,16 @@ cp "$ROOT/Scripts/Info.plist" "$CONTENTS/Info.plist"
 # the About / Welcome windows load via Bundle.module) into Resources so they resolve
 # in the bundled app.
 BIN_DIR="$(dirname "$BIN_PATH")"
+if [[ "$STRICT" -eq 1 ]]; then
+    RESOURCE_BUNDLE="$BIN_DIR/Lucerne_Lucerne.bundle"
+    # Swift 5.10 emits a flat resource bundle while Swift 6 uses the nested macOS
+    # bundle layout; either is a valid build output.
+    if [[ ! -s "$RESOURCE_BUNDLE/icon.png" &&
+          ! -s "$RESOURCE_BUNDLE/Contents/Resources/icon.png" ]]; then
+        echo "error: required SwiftPM resource bundle is missing or lacks icon.png: $RESOURCE_BUNDLE" >&2
+        exit 1
+    fi
+fi
 for bundle in "$BIN_DIR"/*.bundle; do
     [[ -d "$bundle" ]] && cp -R "$bundle" "$RES_DIR/"
 done
@@ -93,9 +103,9 @@ fi
 
 # Generate the app + document icons from media-sources/icon.png (Info.plist
 # already references AppIcon / DocumentIcon).
-rm -f "$ROOT/Scripts/AppIcon.icns" "$ROOT/Scripts/DocumentIcon.icns"
 if [[ -f "$ROOT/media-sources/icon.png" ]]; then
     echo "==> Generating icons…"
+    rm -f "$ROOT/Scripts/AppIcon.icns" "$ROOT/Scripts/DocumentIcon.icns"
     if [[ "$STRICT" -eq 1 ]]; then
         ( cd "$ROOT" && swift Scripts/GenerateIcons.swift )
     else

@@ -58,6 +58,7 @@ if [[ ! -s "$FLAT_RESOURCE_ICON" && ! -s "$NESTED_RESOURCE_ICON" ]]; then
 fi
 
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
+/usr/bin/xmllint --noout "$RESOURCES/Lucerne.sdef"
 require_plist_value CFBundleExecutable Lucerne
 require_plist_value CFBundleIconFile AppIcon
 require_plist_value OSAScriptingDefinition Lucerne.sdef

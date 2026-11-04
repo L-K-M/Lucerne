@@ -137,7 +137,7 @@ jobs:
             || { echo "::error::DMG is missing the Applications link"; exit 1; }
           [ "$(readlink "$MOUNT_POINT/Applications")" = "/Applications" ] \
             || { echo "::error::DMG Applications link has the wrong target"; exit 1; }
-          hdiutil detach "$MOUNT_POINT"
+          hdiutil detach "$MOUNT_POINT" || { sleep 5; hdiutil detach "$MOUNT_POINT"; }
           DMG_MOUNTED=0
           rm -rf "$MOUNT_ROOT"
           trap - EXIT
