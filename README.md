@@ -52,7 +52,7 @@ Lucerne ships for **macOS** (the original AppKit app) and **Ubuntu/Linux**
 files, `.deb`, Flatpak, and AppImage builds on every release). The Linux quick start:
 
 ```sh
-sudo apt install qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev zlib1g-dev cmake ninja-build
+sudo apt install qt6-base-dev qt6-base-dev-tools libqt6svg6-dev libgl1-mesa-dev zlib1g-dev cmake ninja-build
 cmake -S linux -B linux/build -G Ninja && cmake --build linux/build
 ./linux/build/lucerne
 ```
