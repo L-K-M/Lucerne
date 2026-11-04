@@ -45,7 +45,10 @@ require_file() {
 require_file "$PLIST"
 /usr/bin/plutil -lint "$PLIST" >/dev/null
 
-EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST")"
+if ! EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST" 2>/dev/null)"; then
+    echo "error: could not read CFBundleExecutable from $PLIST" >&2
+    exit 1
+fi
 [[ -n "$EXECUTABLE_NAME" ]] || { echo "error: CFBundleExecutable is empty" >&2; exit 1; }
 if [[ ! -x "$CONTENTS/MacOS/$EXECUTABLE_NAME" ]]; then
     echo "error: bundle executable is missing or not executable: $EXECUTABLE_NAME" >&2
