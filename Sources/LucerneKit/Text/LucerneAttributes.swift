@@ -9,8 +9,18 @@ import AppKit
 public extension NSAttributedString.Key {
     static let lucerneStyleRole = NSAttributedString.Key("ch.lkmc.lucerne.styleRole")
     static let lucerneParagraphID = NSAttributedString.Key("ch.lkmc.lucerne.paragraphID")
-    /// Marks the first character of a paragraph that must start on a new page.
+    /// Marks a paragraph that must start on a new page. The builder stamps the
+    /// whole paragraph, including its terminator, so ordinary edits cannot erase
+    /// the structural marker by replacing its first character.
     static let lucernePageBreakBefore = NSAttributedString.Key("ch.lkmc.lucerne.pageBreakBefore")
+    /// Identifies one logical page-break marker across its attributed range. If a
+    /// paragraph is split and both halves inherit the range, the reader uses this
+    /// token to keep one break rather than duplicating it.
+    static let lucernePageBreakMarker = NSAttributedString.Key("ch.lkmc.lucerne.pageBreakMarker")
+    /// Marks the invisible layout carrier used only when the final paragraph is
+    /// empty and starts on a new page. The reader removes this character from the
+    /// model, so it never reaches saved document text.
+    static let lucernePageBreakSentinel = NSAttributedString.Key("ch.lkmc.lucerne.pageBreakSentinel")
     /// The *requested* font identity (family + bold/italic), stashed when the font
     /// system had to substitute (a missing family, or a trait it couldn't add).
     /// Encoded by `FontIntent`. Inert for display; the reader persists it in place

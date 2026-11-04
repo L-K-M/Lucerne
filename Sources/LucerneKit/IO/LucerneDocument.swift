@@ -117,7 +117,10 @@ public final class LucerneDocument: NSDocument, EditorControllerDocument {
     /// paragraph per line (coarse, by design — fine formatting isn't scriptable).
     @objc public var scriptingText: String {
         get {
-            editor?.textStorage.string ?? pendingModel.body.map(\.plainText).joined(separator: "\n")
+            if let storage = editor?.textStorage {
+                return AttributedStringReader.removingPageBreakSentinels(from: storage).string
+            }
+            return pendingModel.body.map(\.plainText).joined(separator: "\n")
         }
         set {
             var model = editor?.snapshotModel() ?? pendingModel

@@ -63,6 +63,7 @@ public final class PageTextView: NSTextView {
         if Self.isPlainSpace(string), editor?.applyMarkdownShortcutOnSpace(in: self) == true {
             return
         }
+        if replacePageBreakSentinel(string, in: replacementRange) { return }
         super.insertText(string, replacementRange: replacementRange)
     }
 
@@ -70,6 +71,158 @@ public final class PageTextView: NSTextView {
         if let s = string as? String { return s == " " }
         if let s = string as? NSAttributedString { return s.string == " " }
         return false
+    }
+
+    /// Keep the internal layout carrier out of copied text and rich text. Normal
+    /// selections still use NSTextView's full pasteboard support.
+    public override func copy(_ sender: Any?) {
+        guard let storage = textStorage else { return super.copy(sender) }
+        let range = selectedRange()
+        guard range.length > 0, NSMaxRange(range) <= storage.length else {
+            return super.copy(sender)
+        }
+        let selected = storage.attributedSubstring(from: range)
+        let sanitized = AttributedStringReader.removingPageBreakSentinels(from: selected)
+        guard sanitized.length != selected.length else { return super.copy(sender) }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(sanitized.string, forType: .string)
+        if let rtf = sanitized.rtf(
+            from: NSRange(location: 0, length: sanitized.length), documentAttributes: [:]
+        ) {
+            pasteboard.setData(rtf, forType: .rtf)
+        }
+    }
+
+    /// A final empty page-break paragraph has an invisible layout carrier. Replace
+    /// that carrier as part of the first real insertion so it never remains as a
+    /// hidden caret position, while transferring the structural break attributes
+    /// to the inserted content in the same edit.
+    private func replacePageBreakSentinel(
+        _ value: Any, in requestedRange: NSRange
+    ) -> Bool {
+        let inserted = (value as? NSAttributedString)?.string ?? (value as? String) ?? ""
+        guard !inserted.isEmpty, let storage = textStorage, storage.length > 0 else {
+            return false
+        }
+
+        let editRange = requestedRange.location == NSNotFound ? selectedRange() : requestedRange
+        guard editRange.location <= storage.length else { return false }
+
+        var carrier: NSRange?
+        storage.enumerateAttribute(
+            .lucernePageBreakSentinel,
+            in: NSRange(location: 0, length: storage.length), options: []
+        ) { marker, range, stop in
+            guard (marker as? Bool) == true else { return }
+            let touches = editRange.length > 0
+                ? NSIntersectionRange(editRange, range).length > 0
+                : editRange.location >= range.location && editRange.location <= NSMaxRange(range)
+            if touches {
+                carrier = range
+                stop.pointee = true
+            }
+        }
+        guard let carrier else { return false }
+
+        let carrierAttributes = storage.attributes(at: carrier.location, effectiveRange: nil)
+        let structuralKeys: [NSAttributedString.Key] = [
+            .lucernePageBreakBefore, .lucernePageBreakMarker,
+            .lucerneStyleRole, .lucerneParagraphID, .lucerneList,
+        ]
+        var preparedTyping = typingAttributes
+        for key in structuralKeys {
+            if let structuralValue = carrierAttributes[key] {
+                preparedTyping[key] = structuralValue
+            } else {
+                preparedTyping.removeValue(forKey: key)
+            }
+        }
+        if preparedTyping[.paragraphStyle] == nil,
+           let paragraphStyle = carrierAttributes[.paragraphStyle] {
+            preparedTyping[.paragraphStyle] = paragraphStyle
+        }
+        preparedTyping.removeValue(forKey: .lucernePageBreakSentinel)
+
+        let range = NSUnionRange(editRange, carrier)
+        let prepared: NSMutableAttributedString
+        let isAttributedInsertion = value is NSAttributedString
+        if let attributed = value as? NSAttributedString {
+            prepared = NSMutableAttributedString(attributedString: attributed)
+            prepared.removeAttribute(.lucernePageBreakSentinel,
+                                     range: NSRange(location: 0, length: prepared.length))
+        } else {
+            prepared = NSMutableAttributedString(string: inserted, attributes: preparedTyping)
+        }
+
+        let preparedString = prepared.string as NSString
+        var location = 0
+        var paragraphIndex = 0
+        while location < preparedString.length {
+            var start = 0, end = 0, contentsEnd = 0
+            preparedString.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                             for: NSRange(location: location, length: 0))
+            let paragraphRange = NSRange(location: start, length: end - start)
+            if paragraphIndex == 0 {
+                for key in structuralKeys {
+                    if let structuralValue = carrierAttributes[key] {
+                        prepared.addAttribute(key, value: structuralValue, range: paragraphRange)
+                    } else {
+                        prepared.removeAttribute(key, range: paragraphRange)
+                    }
+                }
+                if let paragraphStyle = carrierAttributes[.paragraphStyle] {
+                    prepared.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
+                }
+            } else {
+                prepared.addAttribute(.lucerneParagraphID, value: IDGenerator.next("p"),
+                                      range: paragraphRange)
+                if !isAttributedInsertion {
+                    prepared.removeAttribute(.lucernePageBreakBefore, range: paragraphRange)
+                    prepared.removeAttribute(.lucernePageBreakMarker, range: paragraphRange)
+                }
+                if prepared.attribute(.lucerneStyleRole, at: start, effectiveRange: nil) == nil,
+                   let role = carrierAttributes[.lucerneStyleRole] {
+                    prepared.addAttribute(.lucerneStyleRole, value: role, range: paragraphRange)
+                }
+                if prepared.attribute(.paragraphStyle, at: start, effectiveRange: nil) == nil,
+                   let paragraphStyle = carrierAttributes[.paragraphStyle] {
+                    prepared.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
+                }
+            }
+            if end == location { break }
+            location = end
+            paragraphIndex += 1
+        }
+
+        guard shouldChangeText(in: range, replacementString: inserted) else { return true }
+        storage.replaceCharacters(in: range, with: prepared)
+        var continuationAttributes = prepared.length > 0
+            ? prepared.attributes(at: prepared.length - 1, effectiveRange: nil)
+            : preparedTyping
+        if let last = prepared.string.utf16.last, last == 0x0A || last == 0x0D {
+            continuationAttributes[.lucerneParagraphID] = IDGenerator.next("p")
+            continuationAttributes.removeValue(forKey: .lucernePageBreakBefore)
+            continuationAttributes.removeValue(forKey: .lucernePageBreakMarker)
+            continuationAttributes.removeValue(forKey: .lucernePageBreakSentinel)
+            let terminator = NSRange(location: range.location + prepared.length - 1, length: 1)
+            if let id = continuationAttributes[.lucerneParagraphID] {
+                storage.addAttribute(.lucerneTrailingParagraphID, value: id, range: terminator)
+            }
+            if let role = continuationAttributes[.lucerneStyleRole] {
+                storage.addAttribute(.lucerneTrailingStyleRole, value: role, range: terminator)
+            }
+            if let list = continuationAttributes[.lucerneList] {
+                storage.addAttribute(.lucerneTrailingList, value: list, range: terminator)
+            } else {
+                storage.removeAttribute(.lucerneTrailingList, range: terminator)
+            }
+        }
+        typingAttributes = continuationAttributes
+        setSelectedRange(NSRange(location: range.location + prepared.length, length: 0))
+        didChangeText()
+        return true
     }
 
     // Return behaviour, in priority order:

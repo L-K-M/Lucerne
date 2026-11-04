@@ -10,6 +10,27 @@ public enum AttributedStringReader {
 
     private static let eps = 0.01
 
+    /// Returns an interchange-safe copy without Lucerne's invisible layout
+    /// carriers. Only tagged U+200B characters are removed, so genuine zero-width
+    /// spaces authored by the user remain intact.
+    static func removingPageBreakSentinels(from attributed: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: attributed)
+        var sentinelRanges: [NSRange] = []
+        result.enumerateAttribute(
+            .lucernePageBreakSentinel,
+            in: NSRange(location: 0, length: result.length), options: []
+        ) { value, range, _ in
+            guard (value as? Bool) == true else { return }
+            let string = result.string as NSString
+            for location in range.location ..< NSMaxRange(range)
+            where string.character(at: location) == 0x200B {
+                sentinelRanges.append(NSRange(location: location, length: 1))
+            }
+        }
+        for range in sentinelRanges.reversed() { result.deleteCharacters(in: range) }
+        return result
+    }
+
     public static func paragraphs(from attr: NSAttributedString,
                                   styles: [String: ParagraphStyleDef]) -> [Paragraph] {
         let model = StyleLookup(styles: styles)
@@ -21,13 +42,19 @@ public enum AttributedStringReader {
         var location = 0
         // Distinct NSTextTable instances → stable ids, so cells of one table group.
         var tableIDs: [ObjectIdentifier: String] = [:]
+        // A page-break token can span two paragraphs after Return inherits the
+        // original attributes. Only its first occurrence is the structural break.
+        var seenPageBreakMarkers: Set<String> = []
         while location < length {
             var start = 0, end = 0, contentsEnd = 0
             ns.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
                                  for: NSRange(location: location, length: 0))
             let contentRange = NSRange(location: start, length: contentsEnd - start)
+            let paragraphRange = NSRange(location: start, length: end - start)
             paragraphs.append(buildParagraph(from: attr, contentRange: contentRange,
-                                             styles: model, tableIDs: &tableIDs))
+                                             paragraphRange: paragraphRange,
+                                             styles: model, tableIDs: &tableIDs,
+                                             seenPageBreakMarkers: &seenPageBreakMarkers))
             if end == location { break }              // guard against non-advancing ranges
             location = end
         }
@@ -71,8 +98,10 @@ public enum AttributedStringReader {
 
     private static func buildParagraph(from attr: NSAttributedString,
                                        contentRange: NSRange,
+                                       paragraphRange: NSRange,
                                        styles: StyleLookup,
-                                       tableIDs: inout [ObjectIdentifier: String]) -> Paragraph {
+                                       tableIDs: inout [ObjectIdentifier: String],
+                                       seenPageBreakMarkers: inout Set<String>) -> Paragraph {
         let length = (attr.string as NSString).length
         let probe = contentRange.length > 0 ? contentRange.location
                                             : min(contentRange.location, max(0, length - 1))
@@ -90,8 +119,23 @@ public enum AttributedStringReader {
         paragraph.list = ListItemCodec.decode(attr.attribute(.lucerneList, at: probe, effectiveRange: nil))
         stripDerivedListIndent(&paragraph)
 
-        if length > 0,
-           (attr.attribute(.lucernePageBreakBefore, at: probe, effectiveRange: nil) as? Bool) == true {
+        var hasPageBreakFlag = false
+        attr.enumerateAttribute(.lucernePageBreakBefore, in: paragraphRange, options: []) { value, _, stop in
+            guard (value as? Bool) == true else { return }
+            hasPageBreakFlag = true
+            stop.pointee = true
+        }
+        var markers: Set<String> = []
+        attr.enumerateAttribute(.lucernePageBreakMarker, in: paragraphRange, options: []) { value, _, _ in
+            if let marker = value as? String { markers.insert(marker) }
+        }
+        // The token is the durable structural carrier. Keep accepting the older
+        // Boolean-only representation for attributed strings already in memory.
+        var hasPageBreak = hasPageBreakFlag && markers.isEmpty
+        for marker in markers where seenPageBreakMarkers.insert(marker).inserted {
+            hasPageBreak = true
+        }
+        if hasPageBreak {
             paragraph.pageBreakBefore = true
         }
 
@@ -150,7 +194,11 @@ public enum AttributedStringReader {
                              styleDef: ParagraphStyleDef) -> [Run] {
         var runs: [Run] = []
         attr.enumerateAttributes(in: range, options: []) { attrs, runRange, _ in
-            let text = (attr.string as NSString).substring(with: runRange)
+            var text = (attr.string as NSString).substring(with: runRange)
+            if (attrs[.lucernePageBreakSentinel] as? Bool) == true {
+                text = text.replacingOccurrences(of: AttributedStringBuilder.pageBreakSentinel,
+                                                 with: "")
+            }
             guard !text.isEmpty else { return }
             runs.append(makeRun(text: text, attrs: attrs, styleDef: styleDef))
         }

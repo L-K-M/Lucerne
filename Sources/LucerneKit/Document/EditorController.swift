@@ -259,13 +259,24 @@ public final class EditorController: NSObject {
 
     private func pageBreakCharIndices() -> [Int] {
         guard textStorage.length > 0 else { return [] }
-        var result: [Int] = []
+        var result: Set<Int> = []
+        var seenMarkers: Set<String> = []
+        textStorage.enumerateAttribute(.lucernePageBreakMarker,
+                                       in: NSRange(location: 0, length: textStorage.length),
+                                       options: []) { value, range, _ in
+            guard let marker = value as? String,
+                  seenMarkers.insert(marker).inserted else { return }
+            result.insert(range.location)
+        }
         textStorage.enumerateAttribute(.lucernePageBreakBefore,
                                        in: NSRange(location: 0, length: textStorage.length),
                                        options: []) { value, range, _ in
-            if (value as? Bool) == true { result.append(range.location) }
+            guard (value as? Bool) == true,
+                  textStorage.attribute(.lucernePageBreakMarker,
+                                        at: range.location, effectiveRange: nil) == nil else { return }
+            result.insert(range.location)
         }
-        return result
+        return result.sorted()
     }
 
     private func breakPageAndLineTop(forCharAt charIndex: Int) -> (page: Int, top: CGFloat)? {
@@ -1518,8 +1529,14 @@ public final class EditorController: NSObject {
                 storage.insert(NSAttributedString(string: "\n", attributes: tv.typingAttributes), at: storage.length)
             }
             if markLoc < storage.length {
-                storage.addAttribute(.lucernePageBreakBefore, value: true,
-                                     range: NSRange(location: markLoc, length: 1))
+                let updated = storage.string as NSString
+                var start = 0, end = 0, contentsEnd = 0
+                updated.getParagraphStart(&start, end: &end, contentsEnd: &contentsEnd,
+                                          for: NSRange(location: markLoc, length: 0))
+                let range = NSRange(location: start, length: end - start)
+                storage.addAttribute(.lucernePageBreakBefore, value: true, range: range)
+                storage.addAttribute(.lucernePageBreakMarker,
+                                     value: IDGenerator.next("page-break"), range: range)
             }
             tv.setSelectedRange(NSRange(location: min(markLoc, (storage.string as NSString).length), length: 0))
         }
@@ -2714,9 +2731,10 @@ public final class EditorController: NSObject {
     /// survive; free-placed images are dropped (RTF can't express page-anchored
     /// frames — plan §4). The pictures live on in the .luce package and the PDF.
     public func makeRTFData() throws -> Data {
-        let range = NSRange(location: 0, length: textStorage.length)
+        let interchange = interchangeAttributedString()
+        let range = NSRange(location: 0, length: interchange.length)
         return try ExportValidation.requireData(
-            textStorage.rtf(from: range, documentAttributes: [:]), format: "RTF")
+            interchange.rtf(from: range, documentAttributes: [:]), format: "RTF")
     }
 
     /// Lossy Word (.docx) interchange export, mirroring `makeRTFData`. Text, fonts,
@@ -2724,13 +2742,21 @@ public final class EditorController: NSObject {
     /// (Office Open XML can't express page-anchored frames — plan §4). The pictures
     /// live on in the .luce package and the PDF.
     public func makeDOCXData() throws -> Data {
-        let range = NSRange(location: 0, length: textStorage.length)
+        let interchange = interchangeAttributedString()
+        let range = NSRange(location: 0, length: interchange.length)
         // The value dictionary is typed `[…: Any]`, so the document type is spelled
         // out in full (a leading-dot member can't infer its base against `Any`).
-        let data = try textStorage.data(
+        let data = try interchange.data(
             from: range,
             documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])
         return try ExportValidation.requireData(data, format: "Word")
+    }
+
+    /// Internal layout sentinels are not document text. Strip only attributed
+    /// sentinel characters from interchange copies, leaving the live editor and
+    /// any genuine zero-width spaces untouched.
+    private func interchangeAttributedString() -> NSAttributedString {
+        AttributedStringReader.removingPageBreakSentinels(from: textStorage)
     }
 
     /// The whole document as a single multi-page PDF (share / print / export).
