@@ -66,6 +66,7 @@ add_executable(lucerne
     src/app/Ruler.h             src/app/Ruler.cpp
     src/app/WelcomeDialog.h     src/app/WelcomeDialog.cpp
     src/app/Dialogs.h           src/app/Dialogs.cpp
+    src/app/PdfExport.h         src/app/PdfExport.cpp
     resources/lucerne.qrc
 )
 target_link_libraries(lucerne PRIVATE lucerne-core Qt6::Widgets Qt6::PrintSupport Qt6::Svg)
@@ -80,7 +81,7 @@ if(Qt6Test_FOUND)
     # root — both implementations walk the same files (docs/ubuntu-port.md §3).
     set(LUCERNE_FIXTURES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Tests/Fixtures")
 
-    foreach(t minizip coding markdown lists history fixtures metrics furniture layout editor)
+    foreach(t minizip coding markdown lists history fixtures metrics furniture layout editor pdf)
         if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tst_${t}.cpp")
             message(WARNING "lucerne: tests/tst_${t}.cpp not found — suite '${t}' skipped")
             continue()
@@ -105,6 +106,13 @@ if(Qt6Test_FOUND)
             src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp
             src/app/PageCanvas.cpp)
         target_link_libraries(tst_editor PRIVATE Qt6::Widgets)
+    endif()
+    if(TARGET tst_pdf)
+        target_sources(tst_pdf PRIVATE
+            src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp
+            src/app/PageCanvas.cpp src/app/MainWindow.cpp src/app/Ruler.cpp
+            src/app/Dialogs.cpp src/app/WelcomeDialog.cpp src/app/PdfExport.cpp)
+        target_link_libraries(tst_pdf PRIVATE Qt6::Widgets Qt6::PrintSupport)
     endif()
     add_executable(tst_document_units tests/tst_document_units.cpp
         src/app/DocumentBridge.cpp src/app/PageLayout.cpp src/app/Editor.cpp)

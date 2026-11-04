@@ -56,6 +56,98 @@ final class TextBridgeRoundTripTests: XCTestCase {
         let restored = AttributedStringReader.paragraphs(from: attributed, styles: model.styles)
         XCTAssertEqual(restored[0].align, "center")
     }
+
+    func testFormattingTrailingEmptyParagraphSurvivesSnapshot() throws {
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "p1", style: "body", runs: [Run(text: "Hello")]),
+                Paragraph(id: "p2", style: "body",
+                          indent: IndentModel(left: 18, right: 9, firstLine: 3),
+                          lineSpacing: 1.25, spaceAfter: 7,
+                          runs: [Run(text: "")])
+            ],
+            objects: [])
+        let editor = EditorController(model: model)
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        textView.setSelectedRange(NSRange(location: editor.textStorage.length, length: 0))
+        editor.textViewBecameActive(textView)
+        let activeStyle = try XCTUnwrap(
+            textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+        XCTAssertEqual(activeStyle.headIndent, 18)
+        XCTAssertEqual(activeStyle.tailIndent, -9)
+
+        editor.setAlignment(.center)
+        editor.setTabStops([NSTextTab(textAlignment: .right, location: 144)])
+
+        let snapshot = editor.snapshotModel()
+        let trailing = try XCTUnwrap(snapshot.body.last)
+        XCTAssertEqual(trailing.align, "center")
+        XCTAssertEqual(trailing.tabStops, [TabStopModel(pos: 144, type: "right")])
+        XCTAssertEqual(trailing.indent, IndentModel(left: 18, right: 9, firstLine: 3))
+        XCTAssertEqual(trailing.lineSpacing, 1.25)
+        XCTAssertEqual(trailing.spaceAfter, 7)
+
+        let first = try XCTUnwrap(snapshot.body.first)
+        XCTAssertNil(first.align, "trailing alignment must not leak into the preceding paragraph")
+        XCTAssertEqual(first.tabStops, [TabStopModel(pos: 144, type: "right")],
+                       "ruler tab stops are document-global")
+    }
+
+    func testFormattingCommandsHandleEmptyStorage() throws {
+        let editor = EditorController(model: DefaultDocuments.empty())
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        XCTAssertEqual(editor.textStorage.length, 0)
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        editor.textViewBecameActive(textView)
+
+        editor.setAlignment(.center)
+        let aligned = try XCTUnwrap(
+            textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+        XCTAssertEqual(aligned.alignment, .center)
+
+        editor.setTabStops([NSTextTab(textAlignment: .right, location: 144)])
+        let tabbed = try XCTUnwrap(
+            textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)
+        XCTAssertEqual(tabbed.tabStops.map(\.location), [144])
+
+        editor.applyStyleRole("heading1")
+        XCTAssertEqual(textView.typingAttributes[.lucerneStyleRole] as? String, "heading1")
+
+        editor.toggleBulletedList()
+        XCTAssertNotNil(ListItemCodec.decode(textView.typingAttributes[.lucerneList]))
+        XCTAssertEqual(editor.textStorage.length, 0)
+    }
+
+    func testApplyingStyleToTrailingListPreservesMembership() throws {
+        let list = ListItemModel(list: "L", ordered: false, marker: "disc", level: 1)
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [
+                Paragraph(id: "p1", style: "body", runs: [Run(text: "Hello")]),
+                Paragraph(id: "p2", style: "body", list: list, runs: [Run(text: "")])
+            ],
+            objects: [])
+        let editor = EditorController(model: model)
+        let textView = try XCTUnwrap(
+            editor.layoutManager.textContainers.first?.textView as? PageTextView)
+        textView.setSelectedRange(NSRange(location: editor.textStorage.length, length: 0))
+        editor.textViewBecameActive(textView)
+
+        editor.applyStyleRole("heading1")
+
+        let terminator = editor.textStorage.length - 1
+        let stamped = ListItemCodec.decode(editor.textStorage.attribute(
+            .lucerneTrailingList, at: terminator, effectiveRange: nil))
+        XCTAssertEqual(stamped, list)
+        XCTAssertEqual(ListItemCodec.decode(textView.typingAttributes[.lucerneList]), list)
+        let trailing = try XCTUnwrap(editor.snapshotModel().body.last)
+        XCTAssertEqual(trailing.style, "heading1")
+        XCTAssertEqual(trailing.list, list)
+        XCTAssertNil(trailing.indent, "derived list indentation must not become an override")
+    }
 }
 
 final class MiniZipTests: XCTestCase {

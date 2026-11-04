@@ -34,18 +34,21 @@ public enum AttributedStringBuilder {
             out.addAttribute(.lucernePageBreakBefore, value: true,
                              range: NSRange(location: location, length: 1))
         }
-        // A trailing empty paragraph contributes no characters, so its identity would
-        // otherwise live only on the terminating "\n" — which carries the *preceding*
-        // paragraph's role. Stamp that newline with the trailing paragraph's own id +
-        // role (two inert keys only; its paragraph style still belongs to the
-        // preceding paragraph) so the reader rebuilds it faithfully (review 1.8). A
-        // trailing empty *list* item likewise stamps its membership so an empty last
-        // bullet round-trips (and draws) instead of collapsing to a plain paragraph.
+        // A trailing empty paragraph contributes no characters, so its identity and
+        // formatting have nowhere to live: the terminating "\n" belongs to the
+        // preceding paragraph. Stamp inert copies there so the reader can rebuild the
+        // empty paragraph without misinterpreting the newline's real attributes.
         if let last = model.body.last, last.plainText.isEmpty, out.length > 0,
            (out.string as NSString).character(at: out.length - 1) == 0x0A {
             let terminator = NSRange(location: out.length - 1, length: 1)
             out.addAttribute(.lucerneTrailingParagraphID, value: last.id, range: terminator)
             out.addAttribute(.lucerneTrailingStyleRole, value: last.style, range: terminator)
+            let style = model.resolvedStyle(for: last.style)
+            let paragraphStyle = makeParagraphStyle(
+                last, style: style,
+                tableBlock: tableBlock(for: last, tables: tables))
+            out.addAttribute(.lucerneTrailingParagraphStyle, value: paragraphStyle,
+                             range: terminator)
             if let list = last.list, let encoded = ListItemCodec.encode(list) {
                 out.addAttribute(.lucerneTrailingList, value: encoded, range: terminator)
             }
