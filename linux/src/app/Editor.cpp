@@ -210,7 +210,9 @@ QString Editor::insertImage(const QByteArray &payload, const QString &suggestedN
     const QLatin1Char filenameReplacement('-');
     stem.replace(QLatin1Char('/'), filenameReplacement);
     stem.replace(QLatin1Char('\\'), filenameReplacement);
+    stem.replace(QChar::Null, filenameReplacement);
     extension.replace(QLatin1Char('\\'), filenameReplacement);
+    extension.replace(QChar::Null, filenameReplacement);
     QString src = LuceArchive::imagesPrefix() + stem + QLatin1Char('.') + extension;
     for (int n = 2; m_images.contains(src); ++n)
         src = LuceArchive::imagesPrefix() + stem + QStringLiteral("-%1.").arg(n) + extension;
