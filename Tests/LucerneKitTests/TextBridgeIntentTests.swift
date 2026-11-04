@@ -80,6 +80,35 @@ final class TextBridgeIntentTests: XCTestCase {
         XCTAssertEqual(restored.cell, trailing.cell)
     }
 
+    func testLegacyTrailingStampsUseRoleDefaults() throws {
+        var styles = DefaultDocuments.defaultStyles()
+        styles["centered"] = ParagraphStyleDef(
+            name: "Centered", font: "Helvetica", size: 12,
+            leftIndent: 24, alignment: "center", markdown: "p")
+        let model = LucerneDocumentModel(
+            page: .a4, styles: styles,
+            body: [
+                Paragraph(id: "p1", style: "body", align: "right",
+                          runs: [Run(text: "Hello")]),
+                Paragraph(id: "p2", style: "centered", runs: [Run(text: "")])
+            ],
+            objects: [])
+        let attributed = NSMutableAttributedString(
+            attributedString: AttributedStringBuilder.attributedString(for: model))
+        let terminator = NSRange(location: attributed.length - 1, length: 1)
+        attributed.removeAttribute(.lucerneTrailingParagraphStyle, range: terminator)
+
+        let restored = try XCTUnwrap(
+            AttributedStringReader.paragraphs(from: attributed, styles: styles).last)
+
+        XCTAssertEqual(restored.id, "p2")
+        XCTAssertEqual(restored.style, "centered")
+        XCTAssertNil(restored.align, "role defaults must not be persisted as overrides")
+        XCTAssertNil(restored.indent, "role defaults must not be persisted as overrides")
+        XCTAssertEqual(model.resolvedStyle(for: restored.style).alignment, "center")
+        XCTAssertEqual(model.resolvedStyle(for: restored.style).leftIndent, 24)
+    }
+
     // 1.37 — bold+italic on a real family must resolve to a face with *both* traits,
     // and survive the bridge round-trip as run overrides.
     func testBoldItalicResolvesAndRoundTrips() {
