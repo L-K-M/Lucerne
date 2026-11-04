@@ -1,17 +1,19 @@
 # Lucerne forward analysis
 
-Canonical unresolved work, consolidated on 2026-11-02 from the earlier analysis,
+Canonical unresolved work, consolidated on 2026-11-04 from the earlier analysis,
 `sol.md`, `fable-is-awesome.md`, the three-repository review, Sol's source review,
 and Solutions 2/3.
 Implemented work, including fixes in open PRs, is omitted. Open does not mean
 merged or approved; implementation and verification belong to the relevant PR.
 Historical audits remain historical, not duplicate live backlogs.
 
-Linux baselines passed 108 Swift core tests and all 10 Qt suites. The open PDF
-menu/dialog and typography fix branches each passed 11 suites independently.
-AppKit interaction, VoiceOver, real printers, and measured Mac scrolling/typing
-latency remain unverified. Cross-repository Sion/Rigi findings below are retained,
-not re-audited here.
+Linux baselines passed 108 Swift core tests and all 10 Qt suites. Solution 2 also
+passed the Mac Swift build/test suites, debug app assembly and strict code-signature
+verification on Apple silicon; it did not independently rerun Qt because CMake/Qt
+was unavailable. The open PDF menu/dialog and typography fix branches each passed
+11 suites independently. AppKit interaction, VoiceOver, real printers, and measured
+Mac scrolling/typing latency remain unverified. Cross-repository Sion/Rigi findings
+below are retained, not re-audited here.
 
 Effort: **S** = hours to one day; **M** = roughly 2-5 days; **L** = weeks.
 Earlier P0/P1 integrity priorities retain their stronger severity where a later
@@ -49,28 +51,6 @@ and forced-break paragraphs are the dangerous cases.
 
 Carry the full representable state through builder, typing attributes, reader and
 undo. Test sole, empty and trailing paragraphs across all fields. Effort M; risk high.
-
-### Ordinary Return duplicates paragraph IDs
-
-bugs — important
-
-`Sources/LucerneKit/Views/PageTextView.swift:83-90` permits an ordinary split to
-inherit `.lucerneParagraphID`. Both halves can save with the same ID, undermining
-paragraph anchors and tooling.
-
-Mint IDs on splits/paste and deduplicate defensively in `snapshotModel`. Test
-ordinary Return, split, list continuation, heading demotion, page break and paste.
-Effort S/M; needs Mac interaction QA.
-
-### Make page-break metadata edit-stable
-
-bugs — important
-
-The break is carried by a disposable character. Deleting/replacing the first
-character, or inserting before it, can separate layout behavior from saved state.
-
-Normalize break metadata across the paragraph and separator. Test insertion,
-deletion and replacement at paragraph start. Effort S/M; risk high.
 
 ### Define format evolution and unknown-field preservation
 
@@ -226,19 +206,44 @@ IDs, grids/spans/widths, furniture, unknown objects and cross-field invariants;
 do not duplicate numeric guards already implemented or in open PRs. Effort M/L;
 data-loss/architecture risk high.
 
-### Make release assembly fail closed
-
-general issues — important
-
-`Scripts/make-app.sh:64-67` continues after ad-hoc signing fails, and
-`.github/workflows/release.yml:79-86` tolerates DMG-tool failure. Artifact presence
-alone does not prove a usable signed bundle.
-
-Separate permissive local development from release gates. Fail on missing icons,
-SDEF/signatures or invalid DMGs; mount/extract and validate published contents at
-least as strictly as CI. Effort M; Mac runner required. Includes S2-07.
-
 ## Nice-to-have
+
+### Reject undecodable image imports before mutating
+
+bugs — nice-to-have
+
+`Sources/LucerneKit/Views/PageTextView.swift:232-237` and
+`Sources/LucerneKit/Document/EditorController.swift:455-477` accept readable bytes
+with an image extension even when `NSImage` cannot decode them. The editor then
+shows and persists a placeholder although the user expected a valid import.
+
+Decode and validate the image before changing the model, report read and decode
+failures clearly, and cover corrupt-extension drag/drop and file-panel imports.
+Effort S.
+
+### Refresh date furniture when the day changes
+
+bugs — nice-to-have
+
+`Sources/LucerneKit/Document/EditorController.swift:2478-2502` resolves `{date}`
+during furniture layout only. A document left open across midnight can therefore
+print or export yesterday's date until another action happens to trigger layout.
+
+Invalidate furniture at the next calendar-day boundary and refresh it immediately
+before print/PDF capture. Use an injectable clock/calendar for rollover tests.
+Effort S.
+
+### Restore page stacking after image manipulation
+
+bugs — nice-to-have
+
+`Sources/LucerneKit/Document/EditorController.swift:2800-2805,2824-2844` raises an
+image's entire page during drag or nudge work and does not restore canonical page
+subview order after commit or cancellation. Later-page paper and shadows can then
+stack incorrectly.
+
+Restore page order on every commit/cancel exit and add a view-order regression test
+covering cross-page drag and keyboard nudge. Effort S.
 
 ### Preserve Swift recovery Markdown across embedded newlines
 
@@ -259,6 +264,20 @@ coordinates or discard cells outside its assembled grid.
 
 Fall back to plain paragraph blocks and signal the loss when a grid is invalid.
 Keep this distinct from numeric decode bounds and the Qt Markdown fix. Effort S.
+
+### Prepare UI callbacks for Swift 6 isolation
+
+general issues — nice-to-have
+
+Swift 6.3 reports actor-isolation warnings in
+`Sources/LucerneKit/Views/FloatingPalette.swift:315-331` and
+`StyleEditorPanel.swift:229-232,769-790`. Current builds pass, but Swift 6 language
+mode will reject synchronous notification and timer closures that touch main-actor
+UI state.
+
+Make UI ownership explicitly `@MainActor` and bridge notification/timer callbacks
+to that actor without weakening sendability checks. Keep the build warning-free
+under both the configured Xcode and a current Swift toolchain. Effort S.
 
 ### Require QtTest when testing is enabled
 
@@ -417,10 +436,13 @@ general issues — nice-to-have
 `screenshot.png` still shows a dashed “lake” placeholder although
 `DefaultDocuments.sampleLetterImages()` now supplies bytes. More broadly, model,
 spec/schema, architecture, progress, roadmap, help and screenshots can drift.
+`README.md:3-5,14-15` repeats the platform disclosure, while the `AGENTS.md`
+source map still points at model/IO paths that moved into `LucerneCore`.
 
-Capture the current app with platform/version context. Keep docs, both format
-implementations and shared fixtures synchronized when features land. Effort S for
-the screenshot; ongoing process for documentation. Includes S2-08.
+Capture the current app with platform/version context, keep one concise platform
+disclosure, and update the source map. Keep docs, both format implementations and
+shared fixtures synchronized when features land. Effort S for the immediate cleanup;
+ongoing process for documentation. Includes S2-08.
 
 ### Separate scroll chrome from structural page layout
 
@@ -513,6 +535,19 @@ Image-heavy letters and live resizing are the main risks, not measured stalls.
 Validate/decode off-main and cache display-size representations. Use a lower-cost
 live-resize preview without changing original image bytes. Effort M/L; fidelity
 risk medium. Includes the image portion of S2-12.
+
+### Release deleted image payloads with undo history
+
+performance — nice-to-have
+
+`Sources/LucerneKit/Document/EditorController.swift:535-544` retains removed image
+payloads so undo can restore them, but does not release bytes when the corresponding
+undo action expires. Repeated insert/delete cycles with large photos can therefore
+grow memory for the document lifetime.
+
+Associate retained payloads with undo registrations and purge unreferenced bytes
+when actions are discarded or the undo stack is cleared. Add a bounded-memory test
+that preserves immediate undo/redo behavior. Effort M.
 
 ### Cache table ruler state
 
@@ -622,6 +657,18 @@ activation; `NavigatorView.swift:64-68,83` needs an explicit keyboard contract.
 
 Support Return/Space, set an initial responder/default New action, preserve Escape
 behavior and expose semantic heading indentation. Effort S/M. Includes S2-21.
+
+### Handle multi-file image drops explicitly
+
+usability — nice-to-have
+
+`Sources/LucerneKit/Views/PageTextView.swift:216-237` accepts a multi-file drag but
+silently inserts only the first image URL. Users receive no indication that the
+remaining files were ignored.
+
+Either insert every valid image with predictable cascading placement and grouped
+undo, or reject multi-file drops with visible feedback. Test mixed valid/invalid
+URLs and preserve deterministic ordering. Effort S/M.
 
 ### Disable palettes consistently without a document
 
@@ -1230,8 +1277,8 @@ private corner-mask fallback decision separate. Effort S/M.
 
 Automated coverage should expand around:
 
-1. Paragraph-ID uniqueness, normalized paste, complete empty/trailing paragraph
-   state and page-break stability, including dirty tracking and undo.
+1. Normalized paste and complete empty/trailing paragraph state, including dirty
+   tracking and undo.
 2. Cross-field semantic invariants, list downgrade/version policy, canonical
    color/tab/list/empty-field bridge round trips and implicit table widths.
 3. Corrupt-image recovery, selective extraction, style-library read-only/recovery
@@ -1276,8 +1323,8 @@ Keep on-device QA separate from build/test results:
 
 ## Suggested sequence
 
-1. Resolve format evolution, rich paste, paragraph identity, empty/trailing state,
-   page-break stability and document-wide commands.
+1. Resolve format evolution, rich paste, empty/trailing state and document-wide
+   commands.
 2. Establish accessibility/keyboard behavior and signed distribution before
    extending the format.
 3. Measure long documents, then reduce redundant scroll/layout/list/table/style
