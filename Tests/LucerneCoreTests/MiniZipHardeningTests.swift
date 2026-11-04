@@ -365,4 +365,50 @@ extension ZipEntryNameSafetyTests {
             }
         }
     }
+
+    func testWriteRenamesASharedNonFlatSourceOnce() throws {
+        // Two placements of one picture must not make the document unsavable.
+        var model = DefaultDocuments.empty()
+        model.objects = [
+            PlacedObject(id: "a", type: "image", src: "pictures/lake.png", page: 0,
+                         frame: RectModel(x: 0, y: 0, width: 10, height: 10)),
+            PlacedObject(id: "b", type: "image", src: "pictures/lake.png", page: 0,
+                         frame: RectModel(x: 20, y: 0, width: 10, height: 10))
+        ]
+
+        let data = try LuceArchive.write(model: model,
+                                         images: ["pictures/lake.png": imagePayload])
+
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model.objects.map(\.src), ["images/lake.png", "images/lake.png"])
+        XCTAssertEqual(contents.images["images/lake.png"], imagePayload)
+        XCTAssertEqual(try MiniZip.entries(from: data).filter { $0.name.hasPrefix("images/") }.count, 1)
+    }
+
+    func testWriteReplacesBackslashAndNulInImageNames() throws {
+        let model = modelWithImage(src: "images/a\\b\0c.png")
+        XCTAssertFalse(LuceArchive.isFlatImageName("images/a\\b.png"))
+        XCTAssertFalse(LuceArchive.isFlatImageName("images/a\0b.png"))
+
+        let data = try LuceArchive.write(model: model,
+                                         images: ["images/a\\b\0c.png": imagePayload])
+
+        let contents = try LuceArchive.read(data)
+        XCTAssertEqual(contents.model.objects.first?.src, "images/a_b_c.png")
+        XCTAssertEqual(contents.images["images/a_b_c.png"], imagePayload)
+    }
+
+    func testPrecomputedMarkdownIsReplacedWhenSourcesAreRenamed() throws {
+        let model = modelWithImage(src: "pictures/lake.png")
+        let stale = MarkdownExporter.export(model)
+
+        let data = try LuceArchive.write(model: model,
+                                         images: ["pictures/lake.png": imagePayload],
+                                         precomputedMarkdown: stale)
+
+        let markdown = try XCTUnwrap(try MiniZip.entries(from: data)
+            .first { $0.name == "content.md" }.map { String(decoding: $0.data, as: UTF8.self) })
+        XCTAssertFalse(markdown.contains("pictures/lake.png"))
+        XCTAssertTrue(markdown.contains("images/lake.png"))
+    }
 }

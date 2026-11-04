@@ -29,7 +29,10 @@ public enum LuceArchive {
     /// True for a safe, flat archive entry name under `images/` ("images/lake.png").
     public static func isFlatImageName(_ name: String) -> Bool {
         let filename = (name as NSString).lastPathComponent
+        // A backslash is a path separator to Windows extractors, and NUL ends the
+        // name early in C-based ZIP tools, so neither belongs in an entry name.
         return !filename.isEmpty && filename != "." && filename != ".."
+            && !filename.contains("\\") && !filename.contains("\0")
             && name == imagesPrefix + filename
     }
 
@@ -60,12 +63,13 @@ public enum LuceArchive {
         }
         for object in model.objects {
             guard object.type == "image", let src = object.src, !isFlatImageName(src) else { continue }
+            // Several objects may place the same picture; it is renamed once.
+            if renamed[src] != nil { continue }
             let filename = (src as NSString).lastPathComponent
+                .replacingOccurrences(of: "\\", with: "_")
+                .replacingOccurrences(of: "\0", with: "_")
             let newName = imagesPrefix + filename
             guard isFlatImageName(newName) else {
-                throw ArchiveError.invalidImageSource(src)
-            }
-            guard renamed[src] == nil || renamed[src] == newName else {
                 throw ArchiveError.invalidImageSource(src)
             }
             guard takenNames.insert(newName).inserted else {
@@ -105,7 +109,11 @@ public enum LuceArchive {
             entries.append(MiniZip.Entry(name: src, data: data))
         }
 
-        let markdown = precomputedMarkdown ?? MarkdownExporter.export(model)
+        // A caller's precomputed export predates the renames above, so it would
+        // reference sources the archive no longer contains.
+        let markdown = renamed.isEmpty
+            ? precomputedMarkdown ?? MarkdownExporter.export(model)
+            : MarkdownExporter.export(model)
         entries.append(MiniZip.Entry(name: markdownEntryName, data: Data(markdown.utf8)))
 
         // Dated Markdown backups (oldest→newest), tiny plain-text recovery trail.
