@@ -154,6 +154,8 @@ bool Editor::saveFile(const QString &path, QString *error) {
         m_history = updatedHistory;
         m_model = model;   // body now canonical again
         m_filePath = path;
+        // End native typing coalescence so later text cannot mutate a clean command.
+        m_doc->setModified(false);
         m_undo->setClean();
         return true;
     } catch (const std::exception &e) {
