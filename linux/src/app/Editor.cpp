@@ -214,7 +214,13 @@ QString Editor::insertImage(const QByteArray &payload, const QString &suggestedN
     QString extension = QFileInfo(suggestedName).suffix().toLower();
     if (stem.isEmpty()) stem = QStringLiteral("image");
     if (extension.isEmpty()) extension = QStringLiteral("png");
-    stem.replace(QLatin1Char('/'), QLatin1Char('-'));
+    // Sanitize before choosing a unique name so inserted images remain saveable.
+    const QLatin1Char filenameReplacement('-');
+    stem.replace(QLatin1Char('/'), filenameReplacement);
+    stem.replace(QLatin1Char('\\'), filenameReplacement);
+    stem.replace(QChar::Null, filenameReplacement);
+    extension.replace(QLatin1Char('\\'), filenameReplacement);
+    extension.replace(QChar::Null, filenameReplacement);
     QString src = LuceArchive::imagesPrefix() + stem + QLatin1Char('.') + extension;
     for (int n = 2; m_images.contains(src); ++n)
         src = LuceArchive::imagesPrefix() + stem + QStringLiteral("-%1.").arg(n) + extension;
