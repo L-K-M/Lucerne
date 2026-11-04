@@ -27,6 +27,7 @@ public:
         FormatTooNew,       // `formatVersion` above what this build understands (§9)
         InvalidObjectPage,  // page-anchored object outside the editor's page range
         InvalidListLevel,   // list level outside 0…8
+        InvalidTableCell,   // cell row/column/span outside the 1000×1000 grid
     };
 
     CodingError(Kind kind, const QString &message)
@@ -43,6 +44,10 @@ private:
 namespace Coding {
 
 /// Parses and validates a document.json payload. Throws CodingError.
+/// Geometry is bounded to 100,000 points (Qt layout and scrollbar math): page
+/// extents must be positive, margins nonnegative and smaller than the page,
+/// object frames finite and never negative (zero size is allowed), and table
+/// cells must fit a 1000×1000 grid.
 DocumentModel decode(const QByteArray &json);
 
 /// Serializes the model to the stable reference form described above.
