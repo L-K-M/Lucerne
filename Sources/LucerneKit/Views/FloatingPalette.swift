@@ -3,13 +3,19 @@ import RigiUI
 import AppKit
 
 // The app-global floating palettes torn off the format bar's chooser controls:
-// exactly ONE per kind (Typefaces, Styles) for the whole app, floating above
-// every document. A palette acts on whichever document window is currently main
-// — switch windows and its list/selection re-syncs — and every pick is a
-// committed edit (its own undo step) on that document. While a palette is open,
-// every window's chooser control draws "engaged elsewhere" and summons it
-// instead of spawning a second one; closing it (the classic close box) returns
-// the controls to their normal popover behavior everywhere.
+// exactly ONE per kind (Typefaces, Styles, Lists) for the whole app, floating
+// above every document. A palette acts on whichever document window is
+// currently main — switch windows and its list/selection re-syncs — and every
+// pick is a committed edit (its own undo step) on that document. While a
+// palette is open, every window's chooser control draws "engaged elsewhere"
+// and summons it instead of spawning a second one; closing it (the classic
+// close box) returns the controls to their normal popover behavior everywhere.
+//
+// The floating form is a Rigi `Palette` registered with `PaletteCenter`, so the
+// palettes share Rigi's panel: they group as tabs, dock, snap, collapse and
+// keep their arrangement across launches. This class stays the app-side
+// adapter: it owns the item tables, the list, the document routing and the
+// styles footer, and forwards the try-on tear-off to the Rigi palette.
 final class FloatingPalette: NSObject, TearOffPalette {
 
     enum Kind { case typefaces, styles, lists }
@@ -24,12 +30,18 @@ final class FloatingPalette: NSObject, TearOffPalette {
     static let visibilityDidChangeNotification =
         Notification.Name("LucernePaletteVisibilityDidChange")
 
+    /// Whether the palette floats, alone or as a tab of a palette group.
     private(set) var isOpen = false
     private let kind: Kind
     private let paletteTitle: String
-    private var panel: ClassicPaletteWindow?
     private lazy var list = PickerListView(hint: "Applies to the front document")
+    /// The floating body: the list, plus the footer for styles. Rigi only asks
+    /// for the floating form's body (the attached form is the try-on popover),
+    /// so one body serves the palette for the app's lifetime.
+    fileprivate lazy var body: NSView = buildBody()
+    private lazy var palette: Palette = registerPalette()
     private var observers: [NSObjectProtocol] = []
+    private var presentationObserver: NSObjectProtocol?
 
     private init(kind: Kind, title: String) {
         self.kind = kind
@@ -37,68 +49,78 @@ final class FloatingPalette: NSObject, TearOffPalette {
         super.init()
     }
 
-    // MARK: - Open / close
-
-    /// Builds and configures the panel for a try-on popover's tear-off
-    /// (NSPopoverDelegate.detachableWindow), without showing it or marking the
-    /// palette open — AppKit only commits the detach afterwards (didDetach).
-    func windowForDetach(selecting id: String?) -> NSWindow {
-        let panel = ensurePanel()
-        list.clearFilter()
-        refreshFromActiveDocument(selecting: id)
-        // Pre-position under the cursor; the detach machinery normally re-places
-        // the panel at the drag, this just keeps a stale frame from flashing.
-        let mouse = NSEvent.mouseLocation
-        panel.setFrameTopLeftPoint(NSPoint(x: mouse.x - 24, y: mouse.y + 8))
-        return panel
-    }
-
-    /// Whether the panel is actually on screen (the tear-off fallback signal).
-    var isShowingPanel: Bool { panel?.isVisible == true }
-
-    /// The tear-off committed: the popover closed detaching to our panel. Mark
-    /// the palette open (every format bar flips its chooser) and make sure the
-    /// panel landed on screen with a shadow matching the custom silhouette.
-    func didDetach() {
-        setOpen(true)
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.isOpen, let panel = self.panel else { return }
-            if !panel.isVisible { panel.orderFront(nil) }
-            panel.invalidateShadow()
+    private var paletteKind: PaletteKind {
+        switch kind {
+        case .typefaces: return PaletteKind("lucerne.typefaces")
+        case .styles: return PaletteKind("lucerne.styles")
+        case .lists: return PaletteKind("lucerne.lists")
         }
     }
 
+    private func registerPalette() -> Palette {
+        let footerHeight: CGFloat = kind == .styles ? 30 : 0
+        let palette = PaletteCenter.shared.palette(
+            for: PaletteDefinition(kind: paletteKind, title: paletteTitle,
+                                   contentSize: NSSize(width: 280, height: 400 + footerHeight)),
+            target: { FloatingPalette.activeDocumentWindowController() },
+            makeContent: { [unowned self] in FloatingPaletteContent(owner: self) })
+        // Synchronous, so the choosers flip in the same turn the palette opens
+        // or closes — from the close box, a group's close dot or a tear-off.
+        presentationObserver = NotificationCenter.default.addObserver(
+            forName: Palette.presentationDidChangeNotification, object: palette,
+            queue: nil) { [weak self] _ in self?.presentationDidChange() }
+        return palette
+    }
+
+    // MARK: - Open / close
+
+    /// Prepares the floating form for a try-on popover's tear-off
+    /// (NSPopoverDelegate.detachableWindow), without showing it or marking the
+    /// palette open — AppKit only commits the detach afterwards (didDetach).
+    func windowForDetach(selecting id: String?) -> NSWindow {
+        let window = palette.windowForDetach(selecting: id)
+        list.clearFilter()
+        refreshFromActiveDocument(selecting: id)
+        return window
+    }
+
+    /// Whether the panel is actually on screen (the tear-off fallback signal).
+    var isShowingPanel: Bool { palette.isShowingPanel }
+
+    /// The tear-off committed: the popover closed detaching to our panel.
+    func didDetach() {
+        palette.didDetach()
+    }
+
+    /// The tear-off drag was abandoned; the prepared panel goes away again.
+    func cancelDetach() {
+        palette.cancelDetach()
+    }
+
     /// Raises the open palette (the chooser controls route clicks here while it
-    /// floats). Non-activating: no focus moves.
+    /// floats), selecting its tab if it shares a panel. Non-activating.
     func bringToFront() {
-        guard isOpen, let panel else { return }
-        panel.orderFront(nil)
+        guard isOpen else { return }
+        palette.bringToFront()
     }
 
     func close() {
-        panel?.orderOut(nil)
-        setOpen(false)
-        returnFocusToDocument()
+        palette.close()
     }
 
-    private func setOpen(_ open: Bool) {
+    private func presentationDidChange() {
+        let open = palette.isFloating
         guard isOpen != open else { return }
         isOpen = open
         if open { installObservers() } else { removeObservers() }
         NotificationCenter.default.post(name: Self.visibilityDidChangeNotification, object: self)
+        if !open { returnFocusToDocument() }
     }
 
-    // MARK: - Panel
+    // MARK: - Body
 
-    private func ensurePanel() -> ClassicPaletteWindow {
-        if let panel { return panel }
+    private func buildBody() -> NSView {
         let footerHeight: CGFloat = kind == .styles ? 30 : 0
-        let panel = ClassicPaletteWindow(
-            contentSize: NSSize(width: 280, height: 400 + footerHeight + PaletteChromeView.titleBarHeight))
-        let chrome = PaletteChromeView(title: paletteTitle)
-        chrome.onClose = { [weak self] in self?.close() }
-        panel.contentView = chrome
-
         list.specimenFont = { [weak self] item in
             self?.specimenFont(for: item) ?? .systemFont(ofSize: 13)
         }
@@ -108,33 +130,28 @@ final class FloatingPalette: NSObject, TearOffPalette {
         list.onCommit = { [weak self] in self?.returnFocusToDocument() }
         list.onCancel = { [weak self] in self?.returnFocusToDocument() }
 
-        if kind == .styles {
-            // The styles palette is editable (STYLES.md §5): per-row edit wells
-            // (double-click edits too), and a New… / Duplicate / Delete footer.
-            list.onEdit = { [weak self] item in self?.editStyle(item) }
-            let container = NSView()
-            let footer = buildStylesFooter()
-            for view in [list, footer] {
-                view.translatesAutoresizingMaskIntoConstraints = false
-                container.addSubview(view)
-            }
-            NSLayoutConstraint.activate([
-                list.topAnchor.constraint(equalTo: container.topAnchor),
-                list.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                list.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                footer.topAnchor.constraint(equalTo: list.bottomAnchor),
-                footer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                footer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                footer.heightAnchor.constraint(equalToConstant: footerHeight),
-                footer.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-            ])
-            chrome.embedContent(container)
-        } else {
-            chrome.embedContent(list)
-        }
+        guard kind == .styles else { return list }
 
-        self.panel = panel
-        return panel
+        // The styles palette is editable (STYLES.md §5): per-row edit wells
+        // (double-click edits too), and a New… / Duplicate / Delete footer.
+        list.onEdit = { [weak self] item in self?.editStyle(item) }
+        let container = NSView()
+        let footer = buildStylesFooter()
+        for view in [list, footer] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            list.topAnchor.constraint(equalTo: container.topAnchor),
+            list.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            list.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            footer.topAnchor.constraint(equalTo: list.bottomAnchor),
+            footer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            footer.heightAnchor.constraint(equalToConstant: footerHeight),
+            footer.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        return container
     }
 
     private func buildStylesFooter() -> NSView {
@@ -240,7 +257,7 @@ final class FloatingPalette: NSObject, TearOffPalette {
     /// from that document's stylesheet, and the selection highlight follows the
     /// document's current font/style (`preferredID` overrides, for the tear-off
     /// moment).
-    private func refreshFromActiveDocument(selecting preferredID: String? = nil) {
+    fileprivate func refreshFromActiveDocument(selecting preferredID: String? = nil) {
         let wc = Self.activeDocumentWindowController()
         let newItems: [PickerItem]
         switch kind {
@@ -310,12 +327,9 @@ final class FloatingPalette: NSObject, TearOffPalette {
 
     private func installObservers() {
         let center = NotificationCenter.default
-        // Track the active document as windows trade places (and as the last one
-        // closes — the selection highlight clears when no document remains).
-        observers.append(center.addObserver(
-            forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.refreshFromActiveDocument()
-            })
+        // PaletteCenter re-targets the palette as main windows trade places. A
+        // closing document is still main while it closes, so re-sync once it
+        // has gone (the selection highlight clears when no document remains).
         observers.append(center.addObserver(
             forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] note in
                 guard (note.object as? NSWindow)?.delegate is DocumentWindowController else { return }
@@ -417,5 +431,29 @@ final class FloatingPalette: NSObject, TearOffPalette {
             return PickerItem(id: style.marker, title: sample)
         }
         return items
+    }
+}
+
+/// The floating form's content for Rigi's palette: hosts the palette's body
+/// and re-syncs it whenever PaletteCenter resolves a new front document.
+private final class FloatingPaletteContent: NSViewController, PaletteContent {
+    typealias Target = DocumentWindowController
+
+    private unowned let owner: FloatingPalette
+
+    init(owner: FloatingPalette) {
+        self.owner = owner
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func loadView() {
+        view = owner.body
+    }
+
+    func retarget(to target: DocumentWindowController?) {
+        owner.refreshFromActiveDocument()
     }
 }
