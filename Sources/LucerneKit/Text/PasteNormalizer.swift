@@ -75,6 +75,7 @@ enum PasteNormalizer {
             ?? NSMutableAttributedString(attributedString: source)
         removeAttachments(from: cleanedSource)
         canonicalizeNewlines(in: cleanedSource)
+        removeSpelledListMarkers(from: cleanedSource)
         guard cleanedSource.length > 0 else { return NSAttributedString() }
 
         let destinationParagraphStyle = destination[.paragraphStyle] as? NSParagraphStyle
@@ -430,6 +431,51 @@ enum PasteNormalizer {
             guard range.location != NSNotFound else { break }
             text.deleteCharacters(in: range)
         }
+    }
+
+    /// AppKit's RTF reader on macOS 15 and earlier spells each list item's
+    /// marker into the text ("\t•\tFirst"); later releases leave it to the
+    /// list attribute. Pasting drops the list structure
+    /// (`cleanParagraphStyle`), so a spelled-out marker would stay behind as
+    /// literal text. Only a leading tab-marker-tab that is a marker of the
+    /// paragraph's own list goes; anything else is the person's text.
+    private static func removeSpelledListMarkers(from text: NSMutableAttributedString) {
+        let string = text.string as NSString
+        var paragraphs: [NSRange] = []
+        string.enumerateSubstrings(in: NSRange(location: 0, length: string.length),
+                                   options: [.byParagraphs, .substringNotRequired]) {
+            _, range, _, _ in
+            paragraphs.append(range)
+        }
+
+        // Back to front, so earlier ranges stay valid as markers go.
+        for range in paragraphs.reversed() where range.length > 2 {
+            guard let style = text.attribute(.paragraphStyle, at: range.location,
+                                             effectiveRange: nil) as? NSParagraphStyle,
+                  let list = style.textLists.last,
+                  string.character(at: range.location) == UInt16(UInt8(ascii: "\t")) else {
+                continue
+            }
+            let afterTab = range.location + 1
+            let closing = string.range(of: "\t", options: [],
+                                       range: NSRange(location: afterTab,
+                                                      length: NSMaxRange(range) - afterTab))
+            guard closing.location != NSNotFound else { continue }
+
+            let token = string.substring(with: NSRange(location: afterTab,
+                                                       length: closing.location - afterTab))
+            guard isMarker(token, of: list, itemCount: paragraphs.count) else { continue }
+
+            text.deleteCharacters(in: NSRange(location: range.location,
+                                              length: NSMaxRange(closing) - range.location))
+        }
+    }
+
+    private static func isMarker(_ token: String, of list: NSTextList, itemCount: Int) -> Bool {
+        guard !token.isEmpty else { return false }
+
+        let first = list.startingItemNumber
+        return (first...(first + itemCount)).contains { list.marker(forItemNumber: $0) == token }
     }
 
     private static func canonicalizeNewlines(in text: NSMutableAttributedString) {

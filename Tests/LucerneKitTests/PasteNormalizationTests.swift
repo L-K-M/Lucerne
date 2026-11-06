@@ -3,6 +3,39 @@ import AppKit
 @testable import LucerneKit
 
 final class PasteNormalizationTests: XCTestCase {
+    /// AppKit's RTF reader on macOS 15 and earlier spells each list item's
+    /// marker into the text; later releases leave it to the list attribute.
+    /// Either way the pasted text must not keep a marker Lucerne no longer
+    /// draws (it drops the pasted list structure).
+    func testSpelledOutListMarkersFromOlderRTFReadersAreDropped() {
+        let model = LucerneDocumentModel(
+            page: .a4, styles: DefaultDocuments.defaultStyles(),
+            body: [Paragraph(id: "destination", style: "body", runs: [Run(text: "x")])],
+            objects: [])
+        func listStyle(_ format: NSTextList.MarkerFormat) -> NSParagraphStyle {
+            let style = NSMutableParagraphStyle()
+            style.textLists = [NSTextList(markerFormat: format, options: 0)]
+            return style
+        }
+        let source = NSMutableAttributedString()
+        source.append(NSAttributedString(string: "\t•\tFirst\n",
+                                         attributes: [.paragraphStyle: listStyle(.disc)]))
+        source.append(NSAttributedString(string: "\t•\tSecond\n",
+                                         attributes: [.paragraphStyle: listStyle(.disc)]))
+        source.append(NSAttributedString(string: "\t2.\tNumbered\n",
+                                         attributes: [.paragraphStyle: listStyle(
+                                             NSTextList.MarkerFormat("{decimal}."))]))
+        // Not a marker of its list, and not in a list: both stay as typed.
+        source.append(NSAttributedString(string: "\tName\tValue\n",
+                                         attributes: [.paragraphStyle: listStyle(.disc)]))
+        source.append(NSAttributedString(string: "\t•\tPlain"))
+
+        let normalized = PasteNormalizer.normalize(source, destination: [:], model: model)
+
+        XCTAssertEqual(normalized.string,
+                       "First\nSecond\nNumbered\n\tName\tValue\n\t•\tPlain")
+    }
+
     func testRichPasteImmediatelyMatchesLucerneRepresentableFormatting() throws {
         let model = LucerneDocumentModel(
             page: .a4, styles: DefaultDocuments.defaultStyles(),
