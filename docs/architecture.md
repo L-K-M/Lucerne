@@ -114,7 +114,8 @@ is character *i* on?" use one shared primitive,
 - `Layout/` — `PageMetrics` (pure math), `ExclusionPathController`.
 - `Views/` — canvas, page, text view, ruler, navigator, sheets, floating images,
   and app-specific toolbar/palette adapters. [RigiUI](https://github.com/L-K-M/Rigi)
-  owns classic controls, window and palette chrome, the status bar, searchable
+  owns classic controls, window and palette chrome, palette groups and docking,
+  the status bar, searchable
   specimen lists, and try-on popover presentation. Lucerne supplies item tables,
   active-document resolution, editor commands, and preview/undo transactions.
   `LucerneKit` re-exports RigiUI to preserve its existing public UI type names.
