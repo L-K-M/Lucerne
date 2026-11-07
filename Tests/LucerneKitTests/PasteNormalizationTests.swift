@@ -12,9 +12,11 @@ final class PasteNormalizationTests: XCTestCase {
             page: .a4, styles: DefaultDocuments.defaultStyles(),
             body: [Paragraph(id: "destination", style: "body", runs: [Run(text: "x")])],
             objects: [])
-        func listStyle(_ format: NSTextList.MarkerFormat) -> NSParagraphStyle {
+        func listStyle(_ format: NSTextList.MarkerFormat, start: Int = 1) -> NSParagraphStyle {
             let style = NSMutableParagraphStyle()
-            style.textLists = [NSTextList(markerFormat: format, options: 0)]
+            let list = NSTextList(markerFormat: format, options: 0)
+            list.startingItemNumber = start
+            style.textLists = [list]
             return style
         }
         let source = NSMutableAttributedString()
@@ -24,7 +26,7 @@ final class PasteNormalizationTests: XCTestCase {
                                          attributes: [.paragraphStyle: listStyle(.disc)]))
         source.append(NSAttributedString(string: "\t2.\tNumbered\n",
                                          attributes: [.paragraphStyle: listStyle(
-                                             NSTextList.MarkerFormat("{decimal}."))]))
+                                             NSTextList.MarkerFormat("{decimal}."), start: 2)]))
         // Not a marker of its list, and not in a list: both stay as typed.
         source.append(NSAttributedString(string: "\tName\tValue\n",
                                          attributes: [.paragraphStyle: listStyle(.disc)]))

@@ -38,6 +38,18 @@ What's **not** done is tracked in Milestone 3 below and, canonically, in
 overhang, in-place header/footer editing, table/list polish, and accessibility. The
 whole app still needs on-device QA (CI only verifies build + automated tests).
 
+## Paste follow-up (2026-11-07)
+
+- [x] Legacy rich-text list markers are removed only when they match that
+  specific item's number, including the list's starting number. Literal
+  tab-delimited text and other items' numbers are preserved.
+- [x] Nested markers support indentation tabs, resumed parent counters,
+  restarted child lists, and prepended enclosing markers. Source list
+  structure still normalizes to Lucerne's destination paragraph structure.
+- [x] Regression coverage includes synthetic legacy-reader text and a real
+  RTF import with TextKit 1 markers explicitly enabled. Four new checks
+  failed before the fix; the focused paste tests now pass locally on macOS.
+
 ## Milestone 0 — scaffolding
 - [x] Package manifest (`Package.swift`), executable + library + test targets
 - [x] README, AGENTS, PROGRESS, docs skeleton

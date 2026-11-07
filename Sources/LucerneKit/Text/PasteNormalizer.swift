@@ -448,34 +448,54 @@ enum PasteNormalizer {
             paragraphs.append(range)
         }
 
-        // Back to front, so earlier ranges stay valid as markers go.
+        // Back to front, so earlier ranges and item ordinals stay valid.
         for range in paragraphs.reversed() where range.length > 2 {
             guard let style = text.attribute(.paragraphStyle, at: range.location,
                                              effectiveRange: nil) as? NSParagraphStyle,
-                  let list = style.textLists.last,
-                  string.character(at: range.location) == UInt16(UInt8(ascii: "\t")) else {
-                continue
-            }
-            let afterTab = range.location + 1
-            let closing = string.range(of: "\t", options: [],
-                                       range: NSRange(location: afterTab,
-                                                      length: NSMaxRange(range) - afterTab))
-            guard closing.location != NSNotFound else { continue }
+                  !style.textLists.isEmpty else { continue }
 
-            let token = string.substring(with: NSRange(location: afterTab,
-                                                       length: closing.location - afterTab))
-            guard isMarker(token, of: list, itemCount: paragraphs.count) else { continue }
+            // Legacy readers use one leading tab; nested sources may use one
+            // per level. Additional tabs are literal content, not a marker.
+            var markerStart = range.location
+            while markerStart < NSMaxRange(range), string.character(at: markerStart) == 0x09 {
+                markerStart += 1
+            }
+            let indent = markerStart - range.location
+            guard (1...style.textLists.count).contains(indent) else { continue }
+            let closing = string.range(of: "\t", options: [],
+                                       range: NSRange(location: markerStart,
+                                                      length: NSMaxRange(range) - markerStart))
+            guard closing.location != NSNotFound else { continue }
+            let token = string.substring(with: NSRange(location: markerStart,
+                                                       length: closing.location - markerStart))
+            guard !token.isEmpty,
+                  token == spelledListMarker(in: text, lists: style.textLists,
+                                             at: range.location) else { continue }
 
             text.deleteCharacters(in: NSRange(location: range.location,
                                               length: NSMaxRange(closing) - range.location))
         }
     }
 
-    private static func isMarker(_ token: String, of list: NSTextList, itemCount: Int) -> Bool {
-        guard !token.isEmpty else { return false }
-
-        let first = list.startingItemNumber
-        return (first...(first + itemCount)).contains { list.marker(forItemNumber: $0) == token }
+    private static func spelledListMarker(in text: NSAttributedString,
+                                          lists: [NSTextList], at location: Int) -> String? {
+        var marker = ""
+        for list in lists {
+            var number = 1
+            if list.isOrdered {
+                // AppKit resolves nesting, restarts and resumed parents, but
+                // returns an ordinal independent of startingItemNumber.
+                let ordinal = text.itemNumber(in: list, at: location)
+                guard ordinal > 0 else { return nil }
+                let (value, overflow) = list.startingItemNumber.addingReportingOverflow(ordinal - 1)
+                guard !overflow else { return nil }
+                number = value
+            }
+            let ownMarker = list.marker(forItemNumber: number)
+            marker = list.listOptions.contains(.prependEnclosingMarker)
+                ? marker + ownMarker : ownMarker
+        }
+        return marker
     }
 
     private static func canonicalizeNewlines(in text: NSMutableAttributedString) {
