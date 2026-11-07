@@ -21,6 +21,13 @@ The macOS classic controls, palette/window chrome, status bar, and live pickers
 are shared through [RigiUI](https://github.com/L-K-M/Rigi). Lucerne retains
 formatting commands and preview/undo ownership; the Qt implementation is separate.
 
+Rigi's palette/focus/activation follow-ups are adopted. Restored off-screen
+palette positions save immediately, pickers preserve the invoking editor's
+focus, and activation redraw is restricted to chrome. Lucerne's ruler and
+style-editor footer explicitly opt into `ClassicChromeDrawing`; document
+views do not. The ruler opt-in regression failed before the conformance was
+added and now passes.
+
 All four pillars of the brief are implemented and CI-green: the **editing surface**
 (NSDocument-based, undo/redo, printing), **text formatting** (font/size/bold/italic/
 underline/color/alignment/spacing + named paragraph styles), **rulers & tabs**, and

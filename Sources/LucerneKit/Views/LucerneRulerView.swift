@@ -11,7 +11,7 @@ import RigiUI
 //
 // Tab stops are document-global (see EditorController.setTabStops); indents apply
 // to the selected paragraphs. Hovering reports contextual help via onHoverHelp.
-public final class LucerneRulerView: NSView {
+public final class LucerneRulerView: NSView, ClassicChromeDrawing {
 
     public weak var editor: EditorController?
     public var rulerHeight: CGFloat = 30
