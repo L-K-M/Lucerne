@@ -856,7 +856,7 @@ enum UserNumber {
 
 /// The strip's backdrop: the classic bar gradient under a hairline rule, so it
 /// reads as a footer distinct from the form above it.
-private final class StripBackgroundView: NSView {
+private final class StripBackgroundView: NSView, ClassicChromeDrawing {
     override func draw(_ dirtyRect: NSRect) {
         let active = ClassicChrome.active(for: self)
         ClassicChrome.gradient(top: active ? 0.955 : 0.965,
