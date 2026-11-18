@@ -1,10 +1,12 @@
 import AppKit
 import LucerneKit
+import UpdraftKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let updateChecker = UpdateChecker(
-        configuration: .init(owner: "L-K-M", repo: "Lucerne", appName: "Lucerne")
+        configuration: .init(owner: "L-K-M", repo: "Lucerne", appName: "Lucerne",
+                             currentVersion: AppVersion.shortVersionString)
     )
 
     func applicationWillFinishLaunching(_ notification: Notification) {

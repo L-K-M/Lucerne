@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import LucerneKit
+import UpdraftKit
 
 // The Settings window. Small for now: the ruler unit and update checking. Writes
 // through to `Preferences`, which posts a change notification so open rulers

@@ -22,7 +22,13 @@ var products: [Product] = [
     .library(name: "LucerneCore", targets: ["LucerneCore"])
 ]
 
-var dependencies: [Package.Dependency] = []
+// Updraft supplies `SemanticVersion` to `LucerneCore` on every platform and the
+// `UpdateChecker` to the macOS app, so it is declared unconditionally; only the
+// `UpdraftKit` product is used on macOS. Pinned by tag, up to the next minor.
+var dependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/L-K-M/Updraft.git",
+             .upToNextMinor(from: "0.1.0"))
+]
 
 var targets: [Target] = [
     .systemLibrary(
@@ -32,7 +38,7 @@ var targets: [Target] = [
     ),
     .target(
         name: "LucerneCore",
-        dependencies: ["CZlib"],
+        dependencies: ["CZlib", .product(name: "UpdraftCore", package: "updraft")],
         path: "Sources/LucerneCore"
     ),
     .testTarget(
@@ -45,6 +51,8 @@ var targets: [Target] = [
 #if os(macOS)
 dependencies.append(.package(url: "https://github.com/L-K-M/Rigi.git",
                              revision: "4b4762fa528162fe33a75662839974e98270403e"))
+// RigiUI stays macOS-only; Updraft was already declared above because the Linux
+// core needs UpdraftCore.
 products += [
     .executable(name: "Lucerne", targets: ["Lucerne"]),
     .library(name: "LucerneKit", targets: ["LucerneKit"])
@@ -52,7 +60,7 @@ products += [
 targets += [
     .executableTarget(
         name: "Lucerne",
-        dependencies: ["LucerneKit"],
+        dependencies: ["LucerneKit", .product(name: "UpdraftKit", package: "updraft")],
         path: "Sources/Lucerne",
         // Bundled so the About / Welcome windows show the real artwork even when
         // running unbundled (where NSApp.applicationIconImage is the generic icon).
