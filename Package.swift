@@ -27,7 +27,7 @@ var products: [Product] = [
 // `UpdraftKit` product is used on macOS. Pinned by tag, up to the next minor.
 var dependencies: [Package.Dependency] = [
     .package(url: "https://github.com/L-K-M/Updraft.git",
-             .upToNextMinor(from: "0.1.0"))
+             .upToNextMinor(from: "0.2.0"))
 ]
 
 var targets: [Target] = [

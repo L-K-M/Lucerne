@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- When GitHub's rate limit stops a Check for Updates, the alert says when to
+  try again instead of showing a bare HTTP 403 (Updraft 0.2.0).
 - Share classic controls, window/palette chrome, the status bar, and live pickers
   through RigiUI. Preserve Lucerne's document targeting and formatting undo.
 
