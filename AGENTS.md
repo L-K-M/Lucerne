@@ -142,7 +142,18 @@ The macOS `LucerneKit` target depends on [RigiUI](https://github.com/L-K-M/Rigi)
 and re-exports its classic control, window/palette chrome, status bar, and picker
 types. Rigi owns their presentation; Lucerne keeps document targeting, item
 tables, style/library commands, and preview/undo transactions. Follow Rigi's
-interface guidelines when composing new UI. The Linux core has no Rigi dependency.
+interface guidelines when composing new UI.
+
+Swift package dependencies:
+
+- [RigiUI](https://github.com/L-K-M/Rigi) — classic controls, window and palette
+  chrome, status bar and searchable pickers for the macOS UI; pinned by revision.
+- [Updraft](https://github.com/L-K-M/Updraft) — GitHub release checking;
+  `UpdraftCore` gives `LucerneCore` `SemanticVersion` on every platform, and
+  `UpdraftKit` provides the macOS app's `UpdateChecker`. Pinned by tag
+  (`v0.1.0`, up to the next minor).
+
+The Linux core has no Rigi dependency, but it does link UpdraftCore.
 
 ### Feature subsystems (all on the core pipeline above)
 
@@ -243,7 +254,9 @@ summary is [`docs/roadmap.md`](docs/roadmap.md), and the shipped-feature checkli
   (fonts, images, icons, data), confirm its license allows redistribution in
   the `.app`, `.deb`, Flatpak and AppImage, and ship its notices in each
   artifact that carries it. Never vendor third-party code without its license
-  file. Today only the AppImage bundles third-party code.
+  file. Today the AppImage bundles third-party system libraries; the macOS app
+  embeds the first-party RigiUI and Updraft packages (both public domain,
+  Unlicense), whose license requires no attribution notice.
 - `Scripts/appimage-notices.py` adds the AppImage's notices from the libraries
   linuxdeploy actually bundled (`usr/share/doc/lucerne/Third-Party-Notices.txt`
   and `SOURCES.txt`, each package's `copyright`, the referenced

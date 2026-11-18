@@ -47,6 +47,10 @@ controls, window chrome, status bar, searchable pickers, and tear-off behavior.
 Its [interface guidelines](https://github.com/L-K-M/Rigi/blob/main/docs/interface-guidelines.md)
 define the shared appearance and interactions used by Lucerne and Sion.
 
+Update checks use [Updraft](https://github.com/L-K-M/Updraft): `UpdraftKit`
+drives the app's update alerts while `UpdraftCore` supplies the portable core's
+`SemanticVersion`. It is pinned by tag (`v0.1.0`, up to the next minor).
+
 Lucerne ships for **macOS** (the original AppKit app) and **Ubuntu/Linux**
 (a native Qt port in [`linux/`](linux/README.md) — same features, same `.luce`
 files, `.deb`, Flatpak, and AppImage builds on every release). The Linux quick start:
@@ -94,12 +98,13 @@ See [`docs/building.md`](docs/building.md) for details and troubleshooting.
 
 ## License
 
-The macOS app, the `.deb` and the Flatpak bundle no third-party code: the Mac
-app links only macOS system libraries, the `.deb` uses the system's Qt 6, and
-the Flatpak uses the KDE runtime from Flathub. The AppImage bundles Qt 6 (GNU
-LGPL v3) and other Ubuntu 22.04 libraries, plus the AppImage runtime, which
-statically links libfuse (GNU LGPL v2.1); they keep their own licenses. Their
-notices ship inside the AppImage: `usr/share/doc/lucerne/Third-Party-Notices.txt`
+The macOS app, the `.deb` and the Flatpak carry no third-party code: the Mac
+app links only macOS system libraries and embeds the first-party RigiUI and
+Updraft packages, both released into the public domain (Unlicense); the `.deb`
+uses the system's Qt 6, and the Flatpak uses the KDE runtime from Flathub. The
+AppImage bundles Qt 6 (GNU LGPL v3) and other Ubuntu 22.04 libraries, plus the
+AppImage runtime, which statically links libfuse (GNU LGPL v2.1); they keep
+their own licenses. Their notices ship inside the AppImage: `usr/share/doc/lucerne/Third-Party-Notices.txt`
 collects them, each library's Debian `copyright` file is under `usr/share/doc/`,
 the license texts those reference are under `usr/share/common-licenses/`, and
 `usr/share/doc/lucerne/SOURCES.txt` lists the exact source packages and where to

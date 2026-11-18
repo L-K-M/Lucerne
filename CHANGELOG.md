@@ -16,4 +16,17 @@
   exact source packages, plus the AppImage runtime's licenses. The Linux
   About box credits Qt under the GNU LGPL and the Help menu gains About Qt.
 
+- Update checks move to the shared Updraft package. Lucerne now offers the
+  disk image built for this Mac's architecture instead of whichever one was
+  uploaded first, stamps downloads with the quarantine attribute so Gatekeeper
+  evaluates them on first open, always checks that the downloaded file is the
+  promised size, and keeps honouring "Skip This Version" across a retag. A
+  Check Now click made while a background check is running is queued and
+  reported rather than dropped. An unparseable installed version or release
+  tag shows a "Couldn't compare versions" alert naming it (an unreadable
+  installed version used to report "You're up to date"), the download-failure
+  alert comes to the front, the daily check runs at 90% of the interval so a
+  punctual timer no longer skips a day, and a failed download's temporary
+  file is deleted.
+
 Earlier history lives in the commit log and the GitHub releases.
